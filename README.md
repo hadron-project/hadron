@@ -1,6 +1,6 @@
 railgun
 =======
-Railgun is a streaming and messaging platform written in Rust.
+A distributed streaming and messaging platform written in Rust.
 
 The name is not final.
 
