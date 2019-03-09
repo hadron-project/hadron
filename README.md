@@ -38,7 +38,6 @@ Everything is a stream.
 - Clustering is natively supported. Nodes internally maintain distinction and leadership elections. Configurations are the same no matter the node.
 - Planning on using Raft for this.
 - Will support modern clustering protocols. DNS srv record peer discovery. Allows members to automatically join as long as they can present needed credentials.
-- Raft for consensus.
 
 ### Admin API
 - Used to “ensure” PS or ES streams. If ensured configuration is different, this can be detected and updated. Maybe options to overwrite config & another to warn if config is different. No startup config specific to streams. Only general maintenance config &c.
