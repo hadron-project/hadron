@@ -46,6 +46,7 @@ Everything is a stream.
 - Railgun client <-> server communication takes place over multiplexed TCP keepalive connections (similar to AMQP style systems).
 - Clients may use a single pipe for consumption as well as publication.
 - Server <-> server clustering communication takes place over persistent TCP connections as well.
+- Will probably use protobuf as the framing protocol.
 
 ### Central Thesis
 Older AMQP style systems were great and have some advantages, but fall short of Kafka style streaming capabilities, specifically message persistence. More recent blends of the technologies, like Nats, offer a nice blend, but lack many of the core features needed from both domains.
