@@ -118,7 +118,7 @@ As far as CAP theorem, this system prioritizes *Availability* and *Partition Tol
 
 ----
 
-### id pools vs transactions
+### id time boxes vs transactions
 
 transactions pros:
 - allows for atomically comitting messages to multiple streams simultaneously.
@@ -127,19 +127,19 @@ transactions pros:
 transactions cons:
 - does not work well with systems outside of the cluster. Eg, writing to MongoDB or some other store.
 
-id pool pros:
+id time box pros:
 - can be used to accomplish the same thing as transactions within a cluster.
 - works well with systems outside of the cluster. Eg, unique message IDs can be used to guarantee uniqueness across system boundaries. Consider the following:
     - a consumer process may need to receive a message, write information to MongoDB and then write a result to another stream.
-    - transactions will not help us here as the MongoDB operations may fail in various ways. Or may succeed and thent he write to the final stream may fail.
+    - transactions will not help us here as the MongoDB operations may fail in various ways. Or may succeed and then the write to the final stream may fail.
     - id pools will work well in this situation. Original message will have an ID. MongoDB can use this with a unique index on an array field. Will use `$nin` on the query to ensure the ID hasn't already been used in a document for an update. Then will use a `$push` to add the ID to the unique array field atomically.
     - when dealing with retries, if the ID has already been used, you can safely skip it, and move on to the next phase of the workflow.
 
-id pool cons:
+id time box cons:
 - error handling patterns are needed to ensure idempotent transaction-like semantics. Eg, specific error variant will be returned when ID has already been used for the specific stream.
 - clients must be using a correct implementation of UUID4 when ID pools are needed.
 
 discussion:
-- transactions can be used to simply populate multiple streams where each stream is used by one of the downstream (external to the cluster) systems. This reduces the complexity by making in operation a read-write-ack operation.
-- the ack could still fail after the downstream system has been populated (duplicates).
-- ordering can not be guaranteed with this pattern. The ordering in which downstream systems read and populate their stores could be out of sync (a consumer could be down) and this could cause invariants of the system to be violated.
+- thought transactions could be used to simply populate multiple streams where each stream is used by one of the downstream (external to the cluster) systems:
+    - the ack could still fail after the downstream system has been populated, which would lead to duplicates when a retry takes place.
+    - ordering can not be guaranteed with this pattern. The ordering in which downstream systems read and populate their stores could be out of sync (a consumer could be down) and this could cause invariants of the system to be violated.
