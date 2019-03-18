@@ -7,12 +7,12 @@ The name is not final. Might go with Lepton, as leptons (which include electrons
 ### central thesis
 Older AMQP style systems were great and have some advantages, but fall short of Kafka style streaming capabilities, specifically message persistence. More recent blends of the technologies, like Nats, offer a nice blend, but lack many of the core features needed from both domains.
 
-Rust is an excellent language to use for writing a system such as this. We will build upon the tokio runtime for networking. Will use Rusts async/await system for readability and approachability of the system (hopefully will have more contributors this way). Will leverage message passing patterns within the system to completely avoid locks & leverage Rust’s ownership system to its maximum potential.
+Rust is an excellent language to use for writing a system such as this. We will build upon the tokio runtime for networking. Will use Rust's async/await system for readability and approachability of the system (hopefully will have more contributors this way). Will leverage message passing patterns within the system to completely avoid locks & leverage Rust’s ownership system to its maximum potential.
 
 ### three types of streams
 Everything is a stream.
 
-- **Persistent (PS):** Messages are persistent. No topics. Optional ID time box for deduplication.
+- **Persistent (PS):** Messages are persistent. No topics. Optional ID time box for deduplication and transaction like semantics.
 - **Ephemeral (ES):** AMQP exchange style stream. Topics are used for consumer matching.
 - **Response (RS):** Similar to an ephemeral stream, except it is immediately removed after first message is published to it.
 
@@ -47,7 +47,7 @@ Everything is a stream.
 A node is an individual process instance. Usually running in a container, VM or the like.
 
 ##### node configuration
-The static configuration for a node when it is started. Configuration is broken up into a few individual sections. The decisions has been made (for now) not to support environment variable based config, or some sort of inheritence like cascading config. Only the config file will be used.
+The static configuration for a node when it is started. Configuration is broken up into a few individual sections. The decision has been made (for now) not to support environment variable based config, or some sort of inheritence like cascading config. Only a config file will be used.
 
 - `cluster`: Configuration for the cluster overall. Once the cluster has started successfully, certain pieces of the cluster configuration can not be changed by way of static configuration updates, but only via the Admin API.
 - `node`: Configuration specifically for the parent node. This will hold things like the regions which this node is part of. These config options can be updated freely using the node's static config.
@@ -55,12 +55,15 @@ The static configuration for a node when it is started. Configuration is broken 
 ##### region
 A region is simply a tag used to form replication groups among nodes.
 
-- A default region `global` will always be present, and all nodes entering the cluster will be eligible to participate in the `global` replication group, unless configured otherwise.
 - Streams are always associated with one, and only one, region.
-- Streams
+- When streams are created, a region may be specified (defaulting to `global` if not specified).
+- A default region `global` will always be present, and all nodes entering the cluster will be eligible to participate in the `global` replication group, unless configured otherwise.
+- Nodes may be configured as being eligible for becoming master or just replication for specific regions. This supports the pattern where some regions may want to replicate global streams for reads in a region, but may not want a node in that region to become a master.
+- If a region is specified for a stream, but there are no nodes in the cluster which are configured to replicate that region, then the command will result in an error.
+- Regions do not act as a namespace for streams. Stream names must be unique throughout the cluster.
 
 ##### stream
-A stream is the central most concept in this system. All data exists in streams. There are three types of streams. Streams belong to exactly one region, which will default to the `global` region.
+A stream is the central most concept in this system. All data exists in streams. There are three types of streams. Streams belong to exactly one region, which will default to the `global` region. Stream names must be unique throughout the cluster.
 
 ##### cluster
 A grouping of nodes working together. Clustering is natively supported by this system. Clustering is dynamic and there are a few different options available for automatic cluster formation.
