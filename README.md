@@ -20,19 +20,19 @@ Everything is a stream.
 - Provides **at least once delivery semantics** by default, or **exactly once delivery semantics** if using ID time boxes or properly functioning clients.
 - Does not specify number of partitions. Ordering is determined by time of receipt. Streams are replicated heuristically to guard against data loss.
 - Messages have no concept of “topics” on a PS.
-- Messages must be ack’ed. Messages may be Nack’ed to indicate that redelivery is needed. Redelivery may be immediate or may have a delay applied. Automatic redelivery takes place when consumer dies and can not ack or nack message.
+- Messages must be ack’ed. Messages may be nack’ed to indicate that redelivery is needed. Redelivery may be immediate or may have a delay applied. Automatic redelivery takes place when consumer dies and can not ack or nack message.
 - Support for optional time boxed unique message IDs. A message presented with an ID will have its ID checked against the time boxed IDs pool for that stream. If the ID was used within the time box, the message will be rejected. This provides a builtin mechanism for deduplication.
 - Consumers may consume from streams independently, or as groups. Server will track offset of consumers automatically. Automatic DLQ on messages according to stream config when successful processing of the message falls a specific distance behind most recently consumed message.
-- Consumer groups can be setup to be exclusive. This means that only one consumer from the group will receive messages at a time. This supports consumption ordering based on time message hit stream.
+- Consumer groups can be setup to be exclusive. This means that only one consumer from the group will receive messages at a time. This supports consumption ordering based on the time a message hit the stream.
 - Non-exclusive consumer groups will simply have messages load balanced across group members as messages arrive.
+- Consumers will receive all messages without any message level discrimination. May specify start points: start, end, or specific offset. If consumer already has a tracked offset, then start or end starting points will be ignored. Server keeps track of location of consumer by ID and offset. Groups will share this consumer ID to coordinate location in stream.
 
 ### es streams
-- Provides at most once delivery semantics.
+- Provides **at most once delivery semantics.**
 - Messages on an ephemeral stream may have “topics” (AMQP style). Defaulting to empty string. No ack or nack on ES streams.
 - Consumers may specify a “topic” matcher. Defaulting to a match all wildcard. AMQP style matchers are supported. If no consumer matches the topic of the message, it will be dropped.
 - Consumers may form groups, where messages will be load balanced across healthy group members.
 - Messages will be delivered once to each consuming entity by default. Entities are individual consumers or groups.
-- Persistent stream consumers will receive all messages without any message level discrimination. May specify start points. Server keeps track of location of consumer by ID. Groups will share this consumer ID to coordination location in stream.
 
 ### rs streams
 - Messages published to an ES stream may include a “response” field, in which case a RS stream will be created matching the response field. Will error if already in use.
@@ -67,6 +67,12 @@ A grouping of nodes working together. Clustering is natively supported by this s
 
 ##### message
 A message is a structured blob of data inbound to or outbound from a stream.
+
+##### consumer
+A consumer is a process which is connected to the cluster and is configured to receive messages from some set of streams in the cluster. Consumers may form groups.
+
+##### dlq
+Dead letter queue. This is a longstanding paradigm which represents resting place for messages which simply can not be successfully processed for some reason. In this system, persistent streams may be configured to automatically create a DLQ and have messages sent their if they fail to be processed successfully according to some configuration parameters.
 
 ----
 
