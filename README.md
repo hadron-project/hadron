@@ -63,10 +63,14 @@ A region is simply a tag used to form replication groups among nodes.
 - Regions do not act as a namespace for streams. Stream names must be unique throughout the cluster.
 
 ##### stream
-A stream is the central most concept in this system. All data exists in streams. There are three types of streams. Streams belong to exactly one region, which will default to the `global` region. Stream names must be unique throughout the cluster.
+Streams are the central most concept in this system. All data exists in streams. There are three types of streams. Streams belong to exactly one region, which will default to the `global` region. Stream names must be unique throughout the cluster.
 
 ##### cluster
 A grouping of nodes working together. Clustering is natively supported by this system. Clustering is dynamic and there are a few different options available for automatic cluster formation.
+
+The cluster may span multiple geographic regions, and streams may be tagged to correspond with these geographic regions. L3-L4 coordination should be employed for clients to target the regions that they are interested in to maximize throughput and reduce latency.
+
+Members of the cluster will forward requests to other nodes as needed for reads on streams which the receiving node does not replicate. For write operations, the request will be forwarded to the master for the target stream's region.
 
 ##### message
 A message is a structured blob of data inbound to or outbound from a stream.
