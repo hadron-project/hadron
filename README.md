@@ -26,6 +26,7 @@ Everything is a stream.
 - Consumer groups can be setup to be exclusive. This means that only one consumer from the group will receive messages at a time. This supports consumption ordering based on the time a message hit the stream.
 - Non-exclusive consumer groups will simply have messages load balanced across group members as messages arrive.
 - Consumers will receive all messages without any message level discrimination. May specify start points: start, end, or specific offset. If consumer already has a tracked offset, then start or end starting points will be ignored. Server keeps track of location of consumer by ID and offset. Groups will share this consumer ID to coordinate location in stream.
+- Stream should be `ensured` first to ensure that it exists with the expected configuration.
 
 ### es streams
 - Provides **at most once delivery semantics.**
@@ -33,6 +34,7 @@ Everything is a stream.
 - Consumers may specify a “topic” matcher. Defaulting to a match all wildcard. AMQP style matchers are supported. If no consumer matches the topic of the message, it will be dropped.
 - Consumers may form groups, where messages will be load balanced across healthy group members.
 - Messages will be delivered once to each consuming entity by default. Entities are individual consumers or groups.
+- Stream should be `ensured` first to ensure that it exists with the expected configuration.
 
 ### rs streams
 - Messages published to an ES stream may include a “response” field, in which case a RS stream will be created matching the response field. Will error if already in use.
@@ -68,10 +70,6 @@ Streams are the central most concept in this system. All data exists in streams.
 ##### cluster
 A grouping of nodes working together. Clustering is natively supported by this system. Clustering is dynamic and there are a few different options available for automatic cluster formation.
 
-The cluster may span multiple geographic regions, and streams may be tagged to correspond with these geographic regions. L3-L4 coordination should be employed for clients to target the regions that they are interested in to maximize throughput and reduce latency.
-
-Members of the cluster will forward requests to other nodes as needed for reads on streams which the receiving node does not replicate. For write operations, the request will be forwarded to the master for the target stream's region.
-
 ##### message
 A message is a structured blob of data inbound to or outbound from a stream.
 
@@ -79,7 +77,7 @@ A message is a structured blob of data inbound to or outbound from a stream.
 A consumer is a process which is connected to the cluster and is configured to receive messages from some set of streams in the cluster. Consumers may form groups.
 
 ##### dlq
-Dead letter queue. This is a longstanding paradigm which represents resting place for messages which simply can not be successfully processed for some reason. In this system, persistent streams may be configured to automatically create a DLQ and have messages sent their if they fail to be processed successfully according to some configuration parameters.
+Dead letter queue. This is a longstanding paradigm which represents a resting place for messages which simply can not be successfully processed for some reason. In this system, persistent streams may be configured to automatically create a DLQ and have messages sent their if they fail to be processed successfully according to some configuration parameters.
 
 ----
 
@@ -87,6 +85,10 @@ Dead letter queue. This is a longstanding paradigm which represents resting plac
 - Clustering is natively supported. Cluster roles are dynamic. Nodes are not configured for one role or another.
 - Using Raft for this.
 - Dead cluster members may be pruned after some period of time based on cluster configuration.
+- The cluster may span multiple geographic regions, and streams may be tagged to correspond with these geographic regions.
+- L3-L4 coordination should be employed for clients to target the regions that they are interested in to maximize throughput and reduce latency.
+- Members of the cluster will forward requests to other nodes as needed for reads on streams which the receiving node does not replicate.
+- For write operations, the request will be forwarded to the master for the target stream's region.
 
 #### discovery
 Will support a few discovery protocols. Allows members to automatically join as long as they can present needed credentials. AKA, cluster formation, peer discovery, auto clustering.
@@ -95,22 +97,20 @@ Will support a few discovery protocols. Allows members to automatically join as 
 - `crate discovery_consul`: Consul based discovery.
 - `crate discovery_etcd`: Etcd based discovery.
 
-### admin api
-- Used to “ensure” PS or ES streams. If ensured configuration is different, this can be detected and updated. Maybe options to overwrite config & another to warn if config is different. No startup config specific to streams. Only general maintenance config &c.
-
 ### networking
 - Railgun client <-> server communication takes place over multiplexed TCP keepalive connections (similar to AMQP style systems).
 - Clients may use a single pipe for consumption as well as publication.
 - Server <-> server clustering communication takes place over persistent TCP connections as well.
 - Will probably use protobuf as the framing protocol.
+- Nodes within a cluster may forward commands between each other as needed.
 
 ### ack & nack
-Messages being consumed from a stream must be ack'ed. At this point, no batch processing, just scale out the number of consumers in the group via concurrency model or horizontal scaling.
+Messages being consumed from a stream must be ack'ed. At this point, no batch processing patterns are planned, just scale out the number of consumers in the group via concurrency model or horizontal scaling.
 
 Messages may be nack'ed. By default, they will be immediately redelivered. A delay may be optionally specified which will block only the consumer or consumer group which sent the delay.
 
 ### cap
-As far as CAP theorem, this system prioritizes *Availability* and *Partition Tolerance*. This works perfectly for this type of system, because for streams which are persistent, they are immutable. So consistency is purely a matter whether the replica node has the most recent additions to the stream. There is no MVCC to be concerned about, no atomic updating concerns or the like.
+As far as CAP theorem, this system prioritizes *Availability* and *Partition Tolerance*. This works perfectly for this type of system as persistent streams are immutable. So consistency is purely a matter whether the replica node has the most recent additions to the stream. There is no MVCC to be concerned about, no atomic updating concerns or the like as transactions are not currently on the roadmap.
 
 ----
 
