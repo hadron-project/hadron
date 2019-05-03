@@ -84,14 +84,12 @@ Dead letter queue. This is a longstanding paradigm which represents a resting pl
 --------------------------------------------------------------------------------------------------
 
 
-### clustering
-- Clustering is natively supported. Cluster roles are dynamic. Nodes are not configured for one role or another.
-- Using Raft for this.
+## clustering
+- Clustering is natively supported. Cluster roles are dynamic. Nodes are master eligible by default, but can be configured to be read-only.
+- Using Raft for consensus.
 - Dead cluster members may be pruned after some period of time based on cluster configuration.
-- The cluster may span multiple geographic regions, and streams may be tagged to correspond with these geographic regions.
-- L3-L4 coordination should be employed for clients to target the regions that they are interested in to maximize throughput and reduce latency.
-- Members of the cluster will forward requests to other nodes as needed for reads on streams which the receiving node does not replicate.
-- For write operations, the request will be forwarded to the master for the target stream's region.
+
+### data replication
 
 #### discovery
 Will support a few discovery protocols. Allows members to automatically join as long as they can present needed credentials. AKA, cluster formation, peer discovery, auto clustering.
