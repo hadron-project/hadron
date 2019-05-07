@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod discovery;
 
 // Public exports for binaries.

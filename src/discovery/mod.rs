@@ -12,7 +12,15 @@
 
 pub mod dns;
 
+use std::{
+    sync::Arc,
+};
+
 use actix::prelude::*;
+
+use crate::{
+    config::Config,
+};
 
 /// All available discovery backends currently implemented in this system.
 #[derive(Clone, Debug)]
@@ -28,17 +36,18 @@ enum DiscoveryBackendAddr {
 /// An actor which provides a uniform interface to the peer discovery system.
 pub struct Discovery {
     backend_addr: DiscoveryBackendAddr,
+    config: Arc<Config>,
 }
 
 impl Discovery {
     /// Create a new discovery instance configured to use the specified backend.
-    pub fn new(backend: DiscoveryBackend) -> Self {
+    pub fn new(backend: DiscoveryBackend, config: Arc<Config>) -> Self {
         use DiscoveryBackend::*;
         let backend_addr = match backend {
-            Dns => DiscoveryBackendAddr::Dns(dns::DnsDiscovery::new().start()),
+            Dns => DiscoveryBackendAddr::Dns(dns::DnsDiscovery::new(config.clone()).start()),
         };
 
-        Self{backend_addr}
+        Self{backend_addr, config}
     }
 }
 

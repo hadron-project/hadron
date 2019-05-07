@@ -1,0 +1,10 @@
+version: '3.4'
+services:
+  railgun:
+    build:
+      context: .
+      target: release
+
+    environment:
+      RUST_LOG: railgun=debug
+      DISCOVERY_DNS_NAME: "railgun"

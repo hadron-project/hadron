@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     rc::Rc,
+    sync::Arc,
     time::Duration,
 };
 
@@ -9,9 +10,13 @@ use log::{debug, error};
 use tokio_timer::Interval;
 use trust_dns_resolver::{
     AsyncResolver,
-    config::{ResolverConfig, ResolverOpts},
     error::ResolveError,
-    lookup::SrvLookup,
+    lookup_ip::LookupIp,
+    system_conf::read_system_conf,
+};
+
+use crate::{
+    config::Config,
 };
 
 /// An actor used for DNS based peer discovery.
@@ -19,6 +24,7 @@ use trust_dns_resolver::{
 /// This discovery system will check for new peers on a regular interval, emitting discovered
 /// peers on a regular interval.
 pub struct DnsDiscovery {
+    config: Arc<Config>,
     resolver: Rc<AsyncResolver>,
     dns_arbiter: Arbiter,
     subscribers: Vec<()>,
@@ -28,9 +34,11 @@ pub struct DnsDiscovery {
 
 impl DnsDiscovery {
     /// Create a new DNS peer discovery backend instance.
-    pub fn new() -> Self {
+    pub fn new(config: Arc<Config>) -> Self {
         // Build the async resolver.
-        let (resolver, f) = AsyncResolver::new(ResolverConfig::google(), ResolverOpts::default());
+        let (resolvercfg, resolveropts) = read_system_conf()
+            .unwrap_or_else(|err| panic!("Failed to read system DNS config. On *nix systems, ensure your resolv.conf is present and properly formed. {}", err));
+        let (resolver, f) = AsyncResolver::new(resolvercfg, resolveropts);
 
         // Spawn the resolver on its own arbiter. Keep a reference to it so that we can spawn
         // other DNS related futures there.
@@ -38,6 +46,7 @@ impl DnsDiscovery {
         dns_arbiter.send(f);
 
         Self{
+            config,
             resolver: Rc::new(resolver),
             dns_arbiter,
             subscribers: Vec::with_capacity(0),
@@ -56,22 +65,26 @@ impl Actor for DnsDiscovery {
     /// configured DNS name.
     fn started(&mut self, ctx: &mut Context<Self>) {
         debug!("Booting the DNS discovery backend.");
-        let resolver = self.resolver.clone();
+
+        // Clone a few containers for move into closures.
+        let config = self.config.clone();
         let has_active_query = self.has_active_query.clone();
+        let resolver = self.resolver.clone();
+
         self.query_stream_handle = Some(Self::add_stream(
             Interval::new_interval(Duration::from_secs(10))
                 // Simply map timer errors over to resolver errors.
                 .map_err(|tokio_err| ResolveError::from(tokio_err.to_string()))
 
                 // Perform a new DNS lookup on each interval.
-                .and_then(move |_| -> Box<dyn Future<Item=Option<SrvLookup>, Error=ResolveError>> {
+                .and_then(move |_| -> Box<dyn Future<Item=Option<LookupIp>, Error=ResolveError>> {
                     let is_active = *has_active_query.borrow();
                     match is_active {
                         false => {
                             debug!("Starting new DNS peer discovery request.");
                             *has_active_query.borrow_mut() = true;
                             let (inner_rc0, inner_rc1) = (has_active_query.clone(), has_active_query.clone());
-                            Box::new(resolver.lookup_srv("rg-cluster.default.svc.cluster.local.") // TODO: update this to use provided config.
+                            Box::new(resolver.lookup_ip(config.discovery_dns_name.as_str())
                                 .map(move |srv| {
                                     *inner_rc0.borrow_mut() = false;
                                     Some(srv)
@@ -92,14 +105,14 @@ impl Actor for DnsDiscovery {
     }
 }
 
-impl StreamHandler<Option<SrvLookup>, ResolveError> for DnsDiscovery {
-    fn handle(&mut self, item: Option<SrvLookup>, _: &mut Self::Context) {
+impl StreamHandler<Option<LookupIp>, ResolveError> for DnsDiscovery {
+    fn handle(&mut self, item: Option<LookupIp>, _: &mut Self::Context) {
         let srv = match item {
             None => return,
             Some(srv) => srv,
         };
 
-        for addr in srv.ip_iter() {
+        for addr in srv.iter() {
             debug!("Resolved peer at: {:?}", addr);
         }
     }
