@@ -1,0 +1,16 @@
+[package]
+authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
+edition = "2018"
+name = "railgun"
+version = "0.1.0"
+
+[dependencies]
+actix = "0.8"
+env_logger = "0.6"
+envy = "0.4"
+futures = "0.1"
+log = "0.4"
+sled = "0.23"
+serde = { version="1", features=["derive"] }
+tokio-timer = "0.2"
+trust-dns-resolver = "0.11"

@@ -1,0 +1,17 @@
+namespace: default
+
+service:
+  name: railgun
+  annotations: {}
+  port: 15000
+  targetPort: 15000
+
+statefulSet:
+  name: railgun
+
+  serviceName: railgun
+  replicas: 3
+
+  pod:
+    annotations: {}
+    port: 15000

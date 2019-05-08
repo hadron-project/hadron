@@ -1,0 +1,41 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{.Values.statefulSet.name}}
+  namespace: {{.Values.namespace | default .Release.Namespace}}
+  {{- if .Values.statefulSet.annotations}}
+  annotations:
+{{toYaml .Values.statefulSet.annotations | indent 4}}
+  {{- end}}
+  labels:
+    # TODO: update this to use helm helpers and more precise selection.
+    app: railgun
+spec:
+  serviceName: {{.Values.statefulSet.serviceName}}
+  replicas: {{.Values.statefulSet.replicas}}
+  selector:
+    matchLabels:
+      app: railgun
+  template:
+    metadata:
+      labels:
+        app: railgun
+    spec:
+      # TODO: add service account option.
+      # serviceAccountName:
+
+      # TODO: add init containers option.
+
+      containers:
+        - name: railgun
+          image: railgun:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: {{.Values.statefulSet.pod.port}}
+          env:
+            - name: RUST_LOG
+              value: railgun=debug
+            - name: DISCOVERY_DNS_NAME
+              # The "*." prefix works with ClusterIP services as well as Headless services.
+              value: "*.railgun"
