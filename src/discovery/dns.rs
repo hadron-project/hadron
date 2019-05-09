@@ -69,6 +69,7 @@ impl Actor for DnsDiscovery {
         let has_active_query = self.has_active_query.clone();
         let resolver = self.resolver.clone();
 
+        // TODO: update this to use ctx.run_interval.
         self.query_stream_handle = Some(Self::add_stream(
             Interval::new_interval(Duration::from_secs(10))
                 // Simply map timer errors over to resolver errors.

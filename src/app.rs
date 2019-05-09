@@ -7,6 +7,7 @@ use log::{info};
 
 use crate::{
     config::Config,
+    connections::{Connections},
     discovery::{Discovery, DiscoveryBackend},
 };
 
@@ -28,8 +29,11 @@ impl App {
 
         // Boot the configured discovery system on a new dedicated thread.
         // NOTE: currently we only support DNS discovery, so its selection is hard-coded.
-        let (discovery_arbiter, discovery_cfg) = (Arbiter::new(), config.clone());
-        let _discovery_addr = Discovery::start_in_arbiter(&discovery_arbiter, move |_| Discovery::new(DiscoveryBackend::Dns, discovery_cfg));
+        let (discovery_arb, discovery_cfg) = (Arbiter::new(), config.clone());
+        let discovery_addr = Discovery::start_in_arbiter(&discovery_arb, move |_| Discovery::new(DiscoveryBackend::Dns, discovery_cfg));
+
+        // Boot the connections actor. Its network server will operate on dedicated threads.
+        let _conns_addr = Connections::new(discovery_addr.clone(), config.clone()).start();
 
         info!("Railgun is firing on port '{}'.", config.port);
         let _ = sys.run(); // This blocks. Actix automatically handles unix signals for termination & graceful shutdown.
