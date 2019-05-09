@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    net::IpAddr,
     rc::Rc,
     sync::Arc,
     time::Duration,
@@ -17,6 +18,7 @@ use trust_dns_resolver::{
 
 use crate::{
     config::Config,
+    discovery::Discovery,
 };
 
 /// An actor used for DNS based peer discovery.
@@ -26,32 +28,28 @@ use crate::{
 pub struct DnsDiscovery {
     config: Arc<Config>,
     resolver: Rc<AsyncResolver>,
-    dns_arbiter: Arbiter,
     subscribers: Vec<()>,
     query_stream_handle: Option<SpawnHandle>,
     has_active_query: Rc<RefCell<bool>>,
+    discovery: Addr<Discovery>,
 }
 
 impl DnsDiscovery {
     /// Create a new DNS peer discovery backend instance.
-    pub fn new(config: Arc<Config>) -> Self {
+    pub fn new(discovery: Addr<Discovery>, config: Arc<Config>) -> Self {
         // Build the async resolver.
         let (resolvercfg, resolveropts) = read_system_conf()
             .unwrap_or_else(|err| panic!("Failed to read system DNS config. On *nix systems, ensure your resolv.conf is present and properly formed. {}", err));
         let (resolver, f) = AsyncResolver::new(resolvercfg, resolveropts);
-
-        // Spawn the resolver on its own arbiter. Keep a reference to it so that we can spawn
-        // other DNS related futures there.
-        let dns_arbiter = Arbiter::new();
-        dns_arbiter.send(f);
+        Arbiter::spawn(f);
 
         Self{
             config,
             resolver: Rc::new(resolver),
-            dns_arbiter,
             subscribers: Vec::with_capacity(0),
             query_stream_handle: None,
             has_active_query: Rc::new(RefCell::new(false)),
+            discovery,
         }
     }
 }
@@ -106,19 +104,27 @@ impl Actor for DnsDiscovery {
 }
 
 impl StreamHandler<Option<LookupIp>, ResolveError> for DnsDiscovery {
+    /// Handle updates coming from the DNS polling stream.
     fn handle(&mut self, item: Option<LookupIp>, _: &mut Self::Context) {
         let srv = match item {
             None => return,
             Some(srv) => srv,
         };
 
-        for addr in srv.iter() {
-            debug!("Resolved peer at: {:?}", addr);
-        }
+        // Unconditionally send the payload over to the discovery actor.
+        self.discovery.do_send(DnsAddrs(srv.iter().collect()));
     }
 
+    /// Handle errors coming from the DNS polling stream.
     fn error(&mut self, error: ResolveError, _: &mut Self::Context) -> Running {
         error!("Error from DNS peer discovery routine: {:?}", error);
         Running::Continue
     }
+}
+
+/// A type representing a payload of IP addresses from a DNS discovery probe.
+pub struct DnsAddrs(pub Vec<IpAddr>);
+
+impl Message for DnsAddrs {
+    type Result = ();
 }

@@ -2,4 +2,4 @@ operations
 ==========
 
 #### contents
-- [DNS Peer Discovery Backend](./discovery-dns-backend.md)
+- [Peer Discovery](./peer-discovery.md)

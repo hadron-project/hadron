@@ -36,6 +36,8 @@ spec:
           env:
             - name: RUST_LOG
               value: railgun=debug
-            - name: DISCOVERY_DNS_NAME
+            - name: RG_PORT
+              value: {{.Values.statefulSet.pod.port | quote}}
+            - name: RG_DISCOVERY_DNS_NAME
               # The "*." prefix works with ClusterIP services as well as Headless services.
               value: "*.railgun"

@@ -7,4 +7,5 @@ services:
 
     environment:
       RUST_LOG: railgun=debug
-      DISCOVERY_DNS_NAME: "railgun"
+      RG_PORT: 1500
+      RG_DISCOVERY_DNS_NAME: "railgun"
