@@ -26,11 +26,12 @@ impl App {
         // Parse runtime config.
         let config = Arc::new(Config::new());
 
-        // Boot the configured discovery system.
-        // TODO: use runtime config for passing in the selected discovery backend.
-        let _discovery_addr = Discovery::new(DiscoveryBackend::Dns, config.clone()).start();
+        // Boot the configured discovery system on a new dedicated thread.
+        // NOTE: currently we only support DNS discovery, so its selection is hard-coded.
+        let (discovery_arbiter, discovery_cfg) = (Arbiter::new(), config.clone());
+        let _discovery_addr = Discovery::start_in_arbiter(&discovery_arbiter, move |_| Discovery::new(DiscoveryBackend::Dns, discovery_cfg));
 
-        info!("Running railgun.");
+        info!("Railgun is firing on port '{}'.", config.port);
         let _ = sys.run(); // This blocks. Actix automatically handles unix signals for termination & graceful shutdown.
     }
 }

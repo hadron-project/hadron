@@ -113,11 +113,9 @@ Read only servers will replicate all data of all streams, but typically replicat
 For now, configurable stream replicas seems to be sufficient. Let's stay tentative on this and see what sort of usecases emerge.
 
 ### discovery
-This system has planned support for a few different discovery protocols. Currently only DNS discovery is implemented. Discovery is what allows members to automatically join a cluster as long as they can present needed credentials. AKA, cluster formation, peer discovery, auto clustering.
+Discovery is what allows members to automatically join a cluster by way of network communication. This is often referred to as, cluster formation, peer discovery, auto clustering. A Railgun cluster can be configured to check credentials of peers during cluster formation.
 
-- `crate discovery_dns`: DNS based discovery.
-- `crate discovery_consul`: Consul based discovery.
-- `crate discovery_etcd`: Etcd based discovery.
+Currently only DNS based peer discovery is implemented in this system. However, Railgun has been designed so that new discovery backends can be easily added in the future as needed.
 
 ### networking
 - Railgun client <-> server communication takes place over WebSockets, which allows for multiplexed communication channels by default.
