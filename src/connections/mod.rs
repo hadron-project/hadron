@@ -121,8 +121,54 @@ impl Handler<ObservedPeersChangeset> for Connections {
     type Result = ();
 
     /// Handle changesets coming from the discovery system.
+    ///
+    /// This routine is responsible for checking each of the entries in the changeset to drive
+    /// logic for connecting to new peers, or flagging a peer as missing. Flagging a missing peer
+    /// is important as the system will attempt to reconnect to peers any time a connection is
+    /// lost. If the peer has disappeared from the discovery system, then the reconnect system
+    /// will stop attempting to reconnect to the peer.
+    ///
+    /// When new changesets come in from the discovery system, this handler should check the
+    /// routing table to ensure that a connection to the target IP doesn't already exist. It
+    /// would be rare for this to happen, but it is always possible for a peer to be removed from
+    /// the discovery system by the end-user (for maintenence or the like) without every actually
+    /// taking the node down. In such a case, the peer will still have a live connection even
+    /// though the discovery system reckoned it as being missing. In such a case, a new connection
+    /// will not be made.
+    ///
+    /// Railgun does not attempt to filter out its own addresses from the discovery protocol.
+    /// Typically the discovery protocol will yeild an entry which refers to a nodes own IP. In
+    /// such a case, the connection will be established, but the handshake protocol will determine
+    /// that it is a connection to self, and will drop the connection.
+    ///
+    /// The peer connection handshake protocol will also consult the routing table to check if a
+    /// peer with the same Node ID already has an open connection. A few reasons why this might
+    /// happen:
+    ///
+    /// - The end-users discovery system has added a new IP which points to a node which already
+    ///   has an IP in the list. Perhaps this is for a migration or the like.
+    /// - A connected peer has died but was immediately brought back bearing the same Node ID but
+    ///   on a different IP. The original connection may still be in a retry state and the
+    ///   discovery system may not have observed the removal yet.
+    ///
+    /// When situations like this arise, it is critical that the new IP pointing to the same node
+    /// not be discarded. It needs to be preserved in case of a disconnect, where only the new IP
+    /// could be successfully connected to, but where the discovery system may not yield the new
+    /// IP again.
+    ///
+    /// **The approach we take** is to maintain the registry of all observed peers in the routing
+    /// table. When the peer connection handshake determines that the new connection is to a peer
+    /// with which a connection already exists, then the new connection will be dropped, but the
+    /// new IP will be registered as a failover IP for the current connection.
+    ///
+    /// The peer handshake protocol ensures that duplicate connections will not be finalized. In
+    /// scenarios where a reconnect is attempted and fails and a failover IP needs to be used, the
+    /// reconnect protocol will ensure the old connection is removed from the routing table to
+    /// ensure a consistent and lean connection set.
+    ///
+    /// See docs/internals/peer-connection-management.md for more details.
     fn handle(&mut self, changeset: ObservedPeersChangeset, _: &mut Self::Context) -> Self::Result {
-        // TODO: build connections to peers based on these changesets & the peer routing table.
+        // TODO: build connnections.
         info!("Received changeset for connections: {:?}", changeset);
     }
 }
