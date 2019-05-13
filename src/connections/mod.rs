@@ -232,6 +232,22 @@ pub(self) enum PeerHandshakeState {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
+// ClosingPeerConnection /////////////////////////////////////////////////////////////////////////
+
+/// A message type used to indicate that a peer connection is closing.
+#[derive(Message)]
+pub(self) struct ClosingPeerConnection(pub SocketAddr);
+
+impl Handler<ClosingPeerConnection> for Connections {
+    type Result = ();
+
+    /// Handle messages from peer connections indicating that the peer connection is closing.
+    fn handle(&mut self, _msg: ClosingPeerConnection, _ctx: &mut Self::Context) {
+        // TODO: remove peer socket addr from connections table.
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
 // OutboundMessage ///////////////////////////////////////////////////////////////////////////////
 
 /// A wrapper type for outbound WebSocket messages.

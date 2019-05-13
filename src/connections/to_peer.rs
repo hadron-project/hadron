@@ -5,17 +5,15 @@
 
 use std::{
     net::SocketAddr,
-    marker,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use actix::{
     prelude::*,
-    io::{FramedWrite, WriteHandler, SinkWrite},
+    io::{WriteHandler, SinkWrite},
 };
-
-use actix_codec::{Framed};
 use actix_web::client::Client;
+use backoff::{backoff::Backoff, ExponentialBackoff};
 use futures::{
     prelude::*,
     sync::mpsc,
@@ -29,7 +27,7 @@ use log::{debug, error, warn};
 use crate::{
     connections::{
         PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
-        Connections, OutboundMessage, PeerHandshakeState,
+        ClosingPeerConnection, Connections, OutboundMessage, PeerHandshakeState,
     },
 };
 
@@ -57,11 +55,18 @@ pub(super) enum DiscoveryState {
 
 enum ConnectionState {
     Initializing,
-    Reconnecting(()),
+    Reconnecting(StateReconnecting),
     Connected(StateConnected),
+    Closing,
 }
 
-/// The state of the connection when it is fully connected.
+/// The state of this actor when it is attempting to reconnect.
+struct StateReconnecting {
+    backoff: ExponentialBackoff,
+    retry: Option<SpawnHandle>,
+}
+
+/// The state of this actor when it is fully connected to the target peer.
 struct StateConnected {
     /// The last successful heartbeat on this socket. Will reckon the peer as being dead after
     /// `PEER_HB_THRESHOLD` has been exceeded since last successful heartbeat.
@@ -116,6 +121,14 @@ impl WsToPeer {
             discovery_state: DiscoveryState::Observed,
             connection: ConnectionState::Initializing,
         }
+    }
+
+    /// The default backoff config to use for reconnects.
+    fn backoff() -> ExponentialBackoff {
+        let mut new = ExponentialBackoff::default();
+        new.max_interval = Duration::from_secs(10);
+        new.max_elapsed_time = None;
+        new
     }
 
     /// Perform the Railgun peer handshake protocol with the connected peer.
@@ -177,23 +190,33 @@ impl WsToPeer {
     }
 
     /// Handle the reconnect algorithm.
-    fn reconnect(&mut self, _ctx: &mut Context<Self>) {
+    fn reconnect(&mut self, ctx: &mut Context<Self>) {
+        // Shut down this actor if the target peer is no longer being observed by the discovery system.
+        if self.discovery_state == DiscoveryState::Disappeared {
+            self.connection = ConnectionState::Closing;
+            self.parent.do_send(ClosingPeerConnection(self.target.clone()));
+            ctx.stop();
+            return;
+        }
+
         // Ensure we are in a reconnecting state.
         match &self.connection {
             ConnectionState::Reconnecting(_) => (),
-            _ => self.connection = ConnectionState::Reconnecting(()),
+            _ => self.connection = ConnectionState::Reconnecting(StateReconnecting{
+                backoff: Self::backoff(),
+                retry: None,
+            }),
         };
-        let _state = match &mut self.connection {
-            ConnectionState::Reconnecting(state) => state,
+        let backoffcfg = match &mut self.connection {
+            ConnectionState::Reconnecting(backoffcfg) => backoffcfg,
             _ => return, // This will never be hit.
         };
 
-        // TODO: build out the reconnect algorithm.
-        // - first: check discovery state. If disappeared, then kill this instance
-        //   and notify parent.
-        // - get exponential backoff config in place.
-        // - issue a ctx.run_timeout based on the next backoff time. It will just call
-        //   `new_connection`. The rest of the algorithm is g2g.
+        // Get the next backoff. Our config is setup such that this will never return `None`.
+        let next_retry = backoffcfg.backoff.next_backoff().unwrap();
+        backoffcfg.retry = Some(ctx.run_later(next_retry, |inneract, innerctx| {
+            inneract.new_connection(innerctx);
+        }));
     }
 
     /// Write an outbound message to the connected peer.
