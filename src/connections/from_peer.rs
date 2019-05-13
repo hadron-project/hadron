@@ -14,7 +14,8 @@ use log::{debug, info, warn};
 use crate::{
     connections::{
         PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
-        Connections, OutboundMessage, PeerHandshakeState,
+        ClosingPeerConnection, Connections, OutboundMessage,
+        PeerConnectionIdentifier, PeerHandshakeState,
     },
 };
 
@@ -42,12 +43,17 @@ pub(super) struct WsFromPeer {
 
     /// The handshake state of the connection.
     state: PeerHandshakeState,
+
+    /// The NodeID of the connected peer.
+    ///
+    /// This will only be available after a successful handshake.
+    peer_node_id: Option<String>,
 }
 
 impl WsFromPeer {
     /// Create a new instance.
     pub fn new(parent: Addr<Connections>) -> Self {
-        Self{parent, heartbeat: Instant::now(), state: PeerHandshakeState::Initial}
+        Self{parent, heartbeat: Instant::now(), state: PeerHandshakeState::Initial, peer_node_id: None}
     }
 
     /// Setup a heartbeat protocol with the connected peer.
@@ -59,7 +65,9 @@ impl WsFromPeer {
             // Check client heartbeats.
             if Instant::now().duration_since(act.heartbeat) > PEER_HB_THRESHOLD {
                 info!("Peer connection appears to be dead, disconnecting.");
-                // ctx.state().parent.do_send(()); // TODO: send a message to parent actor to clean up this connection.
+                if let Some(id) = act.peer_node_id.as_ref() {
+                    act.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::NodeId(id.to_string())));
+                }
                 ctx.stop();
             } else {
                 ctx.ping("");

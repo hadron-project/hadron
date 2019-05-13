@@ -236,7 +236,18 @@ pub(self) enum PeerHandshakeState {
 
 /// A message type used to indicate that a peer connection is closing.
 #[derive(Message)]
-pub(self) struct ClosingPeerConnection(pub SocketAddr);
+pub(self) struct ClosingPeerConnection(pub PeerConnectionIdentifier);
+
+/// The element used to identify a peer connection.
+///
+/// For outbound connections, before a handshake is finished, only the socket addr will be
+/// available to identify the connection. For inbound connections, neither will be available at
+/// first, and the connection can only be identified by the NodeID accurately, which will only be
+/// available after a successful Railgun protocol handshake.
+pub enum PeerConnectionIdentifier {
+    SocketAddr(SocketAddr),
+    NodeId(String),
+}
 
 impl Handler<ClosingPeerConnection> for Connections {
     type Result = ();

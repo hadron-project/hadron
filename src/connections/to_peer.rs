@@ -27,7 +27,8 @@ use log::{debug, error, warn};
 use crate::{
     connections::{
         PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
-        ClosingPeerConnection, Connections, OutboundMessage, PeerHandshakeState,
+        ClosingPeerConnection, Connections, OutboundMessage,
+        PeerConnectionIdentifier, PeerHandshakeState,
     },
 };
 
@@ -194,7 +195,8 @@ impl WsToPeer {
         // Shut down this actor if the target peer is no longer being observed by the discovery system.
         if self.discovery_state == DiscoveryState::Disappeared {
             self.connection = ConnectionState::Closing;
-            self.parent.do_send(ClosingPeerConnection(self.target.clone()));
+            // TODO: update this to use NodeID when available.
+            self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddr(self.target.clone())));
             ctx.stop();
             return;
         }
