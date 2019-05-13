@@ -9,12 +9,12 @@ use std::{
 
 use actix::*;
 use actix_web_actors::ws;
-use log::{info};
+use log::{debug, info, warn};
 
 use crate::{
     connections::{
         PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
-        Connections, PeerHandshakeState,
+        Connections, OutboundMessage, PeerHandshakeState,
     },
 };
 
@@ -85,22 +85,30 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsFromPeer {
     /// Handle messages received over the WebSocket.
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
         match msg {
-            // We've received a ping from the peer. Update heartbeat on our end, then pong.
-            ws::Message::Ping(msg) => {
-                self.heartbeat = Instant::now();
-                ctx.pong(&msg);
-            }
-
-            // We've received a pong from the peer. Update heartbeat on our end.
+            ws::Message::Ping(_) => warn!("Protocol error. Unexpectedly received a ping frame from connected peer."),
             ws::Message::Pong(_) => {
+                // Heartbeat received from connected peer.
                 self.heartbeat = Instant::now();
             }
-
-            // We've received a frame from the connected peer.
-            ws::Message::Binary(bin) => ctx.binary(bin),
-
-            // All other messages will be dropped with no further action.
-            _ => (),
+            ws::Message::Text(_) => warn!("Protocol error. Unexpectedly received a text frame from connected peer."),
+            ws::Message::Binary(bin) => ctx.binary(bin), // TODO: handle inbound frames.
+            ws::Message::Close(reason) => {
+                debug!("Connection with peer is closing. {:?}", reason);
+            }
+            ws::Message::Nop => (),
         }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// OutboundMessage ///////////////////////////////////////////////////////////////////////////////
+
+impl Handler<OutboundMessage> for WsFromPeer {
+    type Result = ();
+
+    /// Handle requests to send outbound messages to the connected peer.
+    fn handle(&mut self, _msg: OutboundMessage, _ctx: &mut Self::Context) {
+        // TODO: implement this.
+        // self.write_outbound_message(ctx, msg.0);
     }
 }

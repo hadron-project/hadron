@@ -14,7 +14,6 @@ mod dns;
 mod observedset;
 
 use std::{
-    net::IpAddr,
     sync::Arc,
 };
 
@@ -40,13 +39,6 @@ pub enum DiscoveryBackend {
 /// An internal type used for tracking the addr of the configured discovery backend.
 enum DiscoveryBackendAddr {
     Dns(Addr<dns::DnsDiscovery>),
-}
-
-/// A type wrapping an IpAddr and a port.
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
-pub struct PeerAddr {
-    pub addr: IpAddr,
-    pub port: u16,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -106,11 +98,7 @@ impl Handler<DnsAddrs> for Discovery {
     /// Handle messages coming from the DNS discovery backend.
     fn handle(&mut self, new_addrs: DnsAddrs, _: &mut Self::Context) -> Self::Result {
         // Update our internally observed set of peers, which produces a changeset.
-        let changeset_opt = self.observed_peers.update_from_discovery_cycle(
-            new_addrs.0.into_iter()
-                .map(|addr| PeerAddr{addr, port: self.config.port})
-                .collect()
-        );
+        let changeset_opt = self.observed_peers.update_from_discovery_cycle(new_addrs.0);
 
         // Pump this changeset out to any registered subscribers.
         if let Some(changeset) = changeset_opt {

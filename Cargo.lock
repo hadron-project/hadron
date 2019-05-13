@@ -1103,6 +1103,7 @@ name = "railgun"
 version = "0.1.0"
 dependencies = [
  "actix 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "actix-codec 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "actix-web 1.0.0-beta.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "actix-web-actors 1.0.0-alpha.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "awc 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",

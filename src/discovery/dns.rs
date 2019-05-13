@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    net::IpAddr,
+    net::SocketAddr,
     rc::Rc,
     sync::Arc,
     time::Duration,
@@ -28,7 +28,6 @@ use crate::{
 pub struct DnsDiscovery {
     config: Arc<Config>,
     resolver: Rc<AsyncResolver>,
-    subscribers: Vec<()>,
     query_stream_handle: Option<SpawnHandle>,
     has_active_query: Rc<RefCell<bool>>,
     discovery: Addr<Discovery>,
@@ -46,7 +45,6 @@ impl DnsDiscovery {
         Self{
             config,
             resolver: Rc::new(resolver),
-            subscribers: Vec::with_capacity(0),
             query_stream_handle: None,
             has_active_query: Rc::new(RefCell::new(false)),
             discovery,
@@ -70,6 +68,7 @@ impl Actor for DnsDiscovery {
         let resolver = self.resolver.clone();
 
         // TODO: update this to use ctx.run_interval.
+        // TODO: update this to use https://docs.rs/actix/0.8.1/actix/actors/resolver/struct.Resolver.html
         self.query_stream_handle = Some(Self::add_stream(
             Interval::new_interval(Duration::from_secs(10))
                 // Simply map timer errors over to resolver errors.
@@ -84,9 +83,9 @@ impl Actor for DnsDiscovery {
                             *has_active_query.borrow_mut() = true;
                             let (inner_rc0, inner_rc1) = (has_active_query.clone(), has_active_query.clone());
                             Box::new(resolver.lookup_ip(config.discovery_dns_name.as_str())
-                                .map(move |srv| {
+                                .map(move |lookup_res| {
                                     *inner_rc0.borrow_mut() = false;
-                                    Some(srv)
+                                    Some(lookup_res)
                                 })
                                 .map_err(move |err| {
                                     *inner_rc1.borrow_mut() = false;
@@ -107,13 +106,15 @@ impl Actor for DnsDiscovery {
 impl StreamHandler<Option<LookupIp>, ResolveError> for DnsDiscovery {
     /// Handle updates coming from the DNS polling stream.
     fn handle(&mut self, item: Option<LookupIp>, _: &mut Self::Context) {
-        let srv = match item {
+        let records = match item {
             None => return,
             Some(srv) => srv,
         };
 
         // Unconditionally send the payload over to the discovery actor.
-        self.discovery.do_send(DnsAddrs(srv.iter().collect()));
+        self.discovery.do_send(DnsAddrs(
+            records.iter().map(|rcd| SocketAddr::from((rcd, self.config.port))).collect()
+        ));
     }
 
     /// Handle errors coming from the DNS polling stream.
@@ -124,7 +125,7 @@ impl StreamHandler<Option<LookupIp>, ResolveError> for DnsDiscovery {
 }
 
 /// A type representing a payload of IP addresses from a DNS discovery probe.
-pub struct DnsAddrs(pub Vec<IpAddr>);
+pub struct DnsAddrs(pub Vec<SocketAddr>);
 
 impl Message for DnsAddrs {
     type Result = ();

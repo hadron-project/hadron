@@ -15,6 +15,8 @@ mod from_peer;
 mod to_peer;
 
 use std::{
+    collections::HashMap,
+    net::SocketAddr,
     sync::Arc,
     time::{Duration},
 };
@@ -26,12 +28,14 @@ use actix_web::{
     web,
 };
 use actix_web_actors::ws;
-use log::{error, info};
+use awc::ws::Message;
+use log::{debug, error};
 
 use crate::{
     config::Config,
     connections::{
         from_peer::WsFromPeer,
+        to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer},
     },
     discovery::{
         Discovery, ObservedPeersChangeset, SubscribeToDiscoveryChangesets,
@@ -55,6 +59,17 @@ pub(self) struct ServerState {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
+// WsToPeerState /////////////////////////////////////////////////////////////////////////////////
+
+/// A type used to track the discovery state of a `WsToPeer`'s socket.
+///
+/// This helps to cut down on superfluous messaging.
+struct WsToPeerState {
+    addr: Addr<WsToPeer>,
+    discovery_state: DiscoveryState,
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
 // Connections ///////////////////////////////////////////////////////////////////////////////////
 
 /// An actor responsible for handling all network activity throughout the system.
@@ -65,13 +80,20 @@ pub struct Connections {
     config: Arc<Config>,
     has_successful_start: bool,
     server: Option<Server>,
+    socketaddr_to_peer: HashMap<SocketAddr, WsToPeerState>,
 }
 
 impl Connections {
     /// Create a new instance.
     pub fn new(discovery: Addr<Discovery>, config: Arc<Config>) -> Self {
         let has_successful_start = false;
-        Self{discovery, config, has_successful_start, server: None}
+        Self{
+            discovery,
+            config,
+            has_successful_start,
+            server: None,
+            socketaddr_to_peer: HashMap::new(),
+        }
     }
 
     /// Build a new network server instance for use by this system.
@@ -96,6 +118,7 @@ impl Connections {
 
     /// Handler for opening new peer WebSocket connections.
     fn handle_peer_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
+        debug!("Handling a new peer connection request.");
         ws::start(WsFromPeer::new(data.parent.clone()), &req, stream)
     }
 }
@@ -122,54 +145,49 @@ impl Handler<ObservedPeersChangeset> for Connections {
 
     /// Handle changesets coming from the discovery system.
     ///
-    /// This routine is responsible for checking each of the entries in the changeset to drive
-    /// logic for connecting to new peers, or flagging a peer as missing. Flagging a missing peer
-    /// is important as the system will attempt to reconnect to peers any time a connection is
-    /// lost. If the peer has disappeared from the discovery system, then the reconnect system
-    /// will stop attempting to reconnect to the peer.
-    ///
-    /// When new changesets come in from the discovery system, this handler should check the
-    /// routing table to ensure that a connection to the target IP doesn't already exist. It
-    /// would be rare for this to happen, but it is always possible for a peer to be removed from
-    /// the discovery system by the end-user (for maintenence or the like) without every actually
-    /// taking the node down. In such a case, the peer will still have a live connection even
-    /// though the discovery system reckoned it as being missing. In such a case, a new connection
-    /// will not be made.
-    ///
-    /// Railgun does not attempt to filter out its own addresses from the discovery protocol.
-    /// Typically the discovery protocol will yeild an entry which refers to a nodes own IP. In
-    /// such a case, the connection will be established, but the handshake protocol will determine
-    /// that it is a connection to self, and will drop the connection.
-    ///
-    /// The peer connection handshake protocol will also consult the routing table to check if a
-    /// peer with the same Node ID already has an open connection. A few reasons why this might
-    /// happen:
-    ///
-    /// - The end-users discovery system has added a new IP which points to a node which already
-    ///   has an IP in the list. Perhaps this is for a migration or the like.
-    /// - A connected peer has died but was immediately brought back bearing the same Node ID but
-    ///   on a different IP. The original connection may still be in a retry state and the
-    ///   discovery system may not have observed the removal yet.
-    ///
-    /// When situations like this arise, it is critical that the new IP pointing to the same node
-    /// not be discarded. It needs to be preserved in case of a disconnect, where only the new IP
-    /// could be successfully connected to, but where the discovery system may not yield the new
-    /// IP again.
-    ///
-    /// **The approach we take** is to maintain the registry of all observed peers in the routing
-    /// table. When the peer connection handshake determines that the new connection is to a peer
-    /// with which a connection already exists, then the new connection will be dropped, but the
-    /// new IP will be registered as a failover IP for the current connection.
-    ///
-    /// The peer handshake protocol ensures that duplicate connections will not be finalized. In
-    /// scenarios where a reconnect is attempted and fails and a failover IP needs to be used, the
-    /// reconnect protocol will ensure the old connection is removed from the routing table to
-    /// ensure a consistent and lean connection set.
-    ///
     /// See docs/internals/peer-connection-management.md for more details.
-    fn handle(&mut self, changeset: ObservedPeersChangeset, _: &mut Self::Context) -> Self::Result {
-        // TODO: build connnections.
-        info!("Received changeset for connections: {:?}", changeset);
+    ///
+    /// Our main objectives here are:
+    ///
+    /// - Connect to new addrs if we don't already have connections to them.
+    /// - Update the discovery state of connections. If they've disappeared from the discovery
+    ///   system, then update its discovery state to `Disappeared`. If it had previously
+    ///   disappeared, then update its discovery state to `Observed`.
+    fn handle(&mut self, changeset: ObservedPeersChangeset, ctx: &mut Self::Context) -> Self::Result {
+        // Determine which new addrs need to be spawned. Update discovery states & filter.
+        let tospawn: Vec<_> = changeset.new_peers.into_iter()
+            .filter(|socketaddr| match self.socketaddr_to_peer.get_mut(socketaddr) {
+                // If a disappeared addr has come back, then update it, notify actor & filter.
+                Some(ref mut state) if state.discovery_state == DiscoveryState::Disappeared => {
+                    debug!("Updating discovery state of connection '{}' to 'Observed'.", &socketaddr);
+                    state.discovery_state = DiscoveryState::Observed;
+                    state.addr.do_send(UpdateDiscoveryState(DiscoveryState::Observed));
+                    false
+                }
+                // Socket state is good, filter this element out.
+                Some(_) => false,
+                // New socket addrs will not be filtered out.
+                None => true,
+            }).collect();
+
+        // Spawn new outbound connections to peers.
+        tospawn.into_iter().for_each(|socketaddr| {
+            debug!("Spawning a new outbound peer connection to '{}'.", &socketaddr);
+            let addr = WsToPeer::new(ctx.address(), socketaddr).start();
+            let discovery_state = DiscoveryState::Observed;
+            self.socketaddr_to_peer.insert(socketaddr, WsToPeerState{addr, discovery_state});
+        });
+
+        // For any addr which has disappeared from the discovery system, update it here if needed.
+        changeset.purged_peers.into_iter()
+            .for_each(|socketaddr| match self.socketaddr_to_peer.get_mut(&socketaddr) {
+                None => (),
+                Some(state) => {
+                    debug!("Updating discovery state of connection '{}' to 'Disappeared'.", &socketaddr);
+                    state.discovery_state = DiscoveryState::Disappeared;
+                    state.addr.do_send(UpdateDiscoveryState(DiscoveryState::Disappeared));
+                }
+            });
     }
 }
 
@@ -212,3 +230,10 @@ pub(self) enum PeerHandshakeState {
     /// The finished state of the handshake protocol.
     Done,
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// OutboundMessage ///////////////////////////////////////////////////////////////////////////////
+
+/// A wrapper type for outbound WebSocket messages.
+#[derive(Message)]
+pub(self) struct OutboundMessage(pub Message);
