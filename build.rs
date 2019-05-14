@@ -5,7 +5,8 @@ fn main() {
     let _ = prost_build::Config::new()
         .out_dir("src/api/internal")
         .compile_protos(&[
-            "protobuf/internal/core.proto",
+            "protobuf/internal/api.proto",
+            "protobuf/internal/handshake.proto",
         ], &[
             "protobuf/internal",
         ])
@@ -15,7 +16,7 @@ fn main() {
     let _ = prost_build::Config::new()
         .out_dir("src/api/public")
         .compile_protos(&[
-            "protobuf/public/core.proto",
+            "protobuf/public/api.proto",
         ], &[
             "protobuf/public",
         ])

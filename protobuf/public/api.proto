@@ -1,5 +1,5 @@
 syntax = "proto3";
-package core;
+package api;
 
 // // A user's authentication context.
 // message Auth {

@@ -1,0 +1,26 @@
+syntax = "proto3";
+package handshake;
+
+// A handshake request.
+message Request {
+  oneof frame {
+    Initial handshake = 1;
+  }
+}
+
+// A handshake response.
+message Response {
+  oneof frame {
+    Initial handshake = 1;
+  }
+}
+
+// The initial frame of a handshake.
+message Initial {
+  string node_id = 1;
+}
+
+// The confirmation frame of a handshake.
+message Confirm {
+  string routing_info = 1;
+}
