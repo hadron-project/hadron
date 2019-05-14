@@ -201,3 +201,8 @@ A consumer is a process which is connected to the cluster and is configured to r
 
 ##### dlq
 Dead letter queue. This is a longstanding paradigm which represents a resting place for messages which simply can not be successfully processed for some reason. Users may create DLQ streams for particularly troublesom messages. No Railgun specific paradigm here. Use your own DLQ pattern based on message redelivery count and message staleness tracking wich are parts of every message delivered to clients. Redelivery information is only present on messages which have been redelivered.
+
+----
+
+## LICENSE
+Unless otherwise noted, the Railgun source files are distributed under the Apache Version 2.0 license found in the LICENSE file.
