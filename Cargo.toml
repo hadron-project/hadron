@@ -21,6 +21,7 @@ serde = { version="1", features=["derive"] }
 sled = "0.23"
 tokio-timer = "0.2"
 trust-dns-resolver = "0.11"
+uuid = { version="0.7", default-features=false, features=["v4"] }
 
 [build-dependencies]
 prost-build = "0.5"

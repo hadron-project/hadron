@@ -100,6 +100,9 @@ struct StateConnected {
 /// The Railgun heartbeat protcol for cluster peer connections is such that only
 /// the receiving end of the connection will send pings. That is not this end.
 pub(super) struct WsToPeer {
+    /// The ID of this node.
+    node_id: String,
+
     /// Address of the parent connections actor.
     parent: Addr<Connections>,
 
@@ -115,8 +118,9 @@ pub(super) struct WsToPeer {
 
 impl WsToPeer {
     /// Create a new instance.
-    pub fn new(parent: Addr<Connections>, target: SocketAddr) -> Self {
+    pub fn new(parent: Addr<Connections>, node_id: String, target: SocketAddr) -> Self {
         Self{
+            node_id,
             parent,
             target,
             discovery_state: DiscoveryState::Observed,
@@ -134,8 +138,13 @@ impl WsToPeer {
 
     /// Perform the Railgun peer handshake protocol with the connected peer.
     fn handshake(&mut self, _ctx: &mut Context<Self>) {
-        // TODO: begin the handshake protocol. This will only happen once per connection at the
-        // very beginning in order to establish properly structured communications.
+        // Get a handle to the current handshake state.
+        let hs_state = match &mut self.connection {
+            ConnectionState::Connected(conn_state) => &mut conn_state.handshake,
+            _ => return,
+        };
+
+
     }
 
     /// Healthcheck the connection on a regular interval.

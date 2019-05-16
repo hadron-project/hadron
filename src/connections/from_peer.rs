@@ -34,6 +34,9 @@ use crate::{
 /// The Railgun heartbeat protcol for cluster peer connections is such that only
 /// the receiving end of the connection will send pings. That is this end.
 pub(super) struct WsFromPeer {
+    /// The ID of this node.
+    node_id: String,
+
     /// Address of the parent connections actor.
     parent: Addr<Connections>,
 
@@ -52,8 +55,8 @@ pub(super) struct WsFromPeer {
 
 impl WsFromPeer {
     /// Create a new instance.
-    pub fn new(parent: Addr<Connections>) -> Self {
-        Self{parent, heartbeat: Instant::now(), state: PeerHandshakeState::Initial, peer_node_id: None}
+    pub fn new(parent: Addr<Connections>, node_id: String) -> Self {
+        Self{node_id, parent, heartbeat: Instant::now(), state: PeerHandshakeState::Initial, peer_node_id: None}
     }
 
     /// Setup a heartbeat protocol with the connected peer.

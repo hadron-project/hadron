@@ -30,6 +30,7 @@ use actix_web::{
 use actix_web_actors::ws;
 use awc::ws::Message;
 use log::{debug, error};
+use uuid::Uuid;
 
 use crate::{
     config::Config,
@@ -56,6 +57,7 @@ pub(self) const PEER_HB_THRESHOLD: Duration = Duration::from_secs(10);
 #[derive(Clone)]
 pub(self) struct ServerState {
     pub parent: Addr<Connections>,
+    pub node_id: String,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -76,9 +78,9 @@ struct WsToPeerState {
 ///
 /// See the README.md in this directory for additional information on actor responsibilities.
 pub struct Connections {
+    node_id: String,
     discovery: Addr<Discovery>,
     config: Arc<Config>,
-    has_successful_start: bool,
     server: Option<Server>,
     socketaddr_to_peer: HashMap<SocketAddr, WsToPeerState>,
 }
@@ -86,11 +88,10 @@ pub struct Connections {
 impl Connections {
     /// Create a new instance.
     pub fn new(discovery: Addr<Discovery>, config: Arc<Config>) -> Self {
-        let has_successful_start = false;
         Self{
+            node_id: Uuid::new_v4().to_string(), // TODO: this should come from startup, from the DB layer.
             discovery,
             config,
-            has_successful_start,
             server: None,
             socketaddr_to_peer: HashMap::new(),
         }
@@ -98,7 +99,7 @@ impl Connections {
 
     /// Build a new network server instance for use by this system.
     pub fn build_server(&self, ctx: &Context<Self>) -> Result<Server, ()> {
-        let data = ServerState{parent: ctx.address()};
+        let data = ServerState{parent: ctx.address(), node_id: self.node_id.clone()};
         let server = HttpServer::new(move || {
             App::new().data(data.clone())
                 // This endpoint is used for internal client communication.
@@ -119,7 +120,7 @@ impl Connections {
     /// Handler for opening new peer WebSocket connections.
     fn handle_peer_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
         debug!("Handling a new peer connection request.");
-        ws::start(WsFromPeer::new(data.parent.clone()), &req, stream)
+        ws::start(WsFromPeer::new(data.parent.clone(), data.node_id.clone()), &req, stream)
     }
 }
 
@@ -129,9 +130,14 @@ impl Actor for Connections {
     /// Logic for starting this actor.
     fn started(&mut self, ctx: &mut Self::Context) {
         // Build the network server.
-        if let Ok(addr) = self.build_server(&ctx) {
-            self.server = Some(addr);
-            self.has_successful_start = true;
+        match self.build_server(&ctx) {
+            Ok(addr) => self.server = Some(addr),
+            Err(_) => {
+                // In an errored case, the system will have already been instructed to stop,
+                // so here we just stop this actor and return.
+                ctx.stop();
+                return
+            }
         }
 
         // Subscribe to the discovery system's changesets. This happens only once when the system
@@ -173,7 +179,7 @@ impl Handler<ObservedPeersChangeset> for Connections {
         // Spawn new outbound connections to peers.
         tospawn.into_iter().for_each(|socketaddr| {
             debug!("Spawning a new outbound peer connection to '{}'.", &socketaddr);
-            let addr = WsToPeer::new(ctx.address(), socketaddr).start();
+            let addr = WsToPeer::new(ctx.address(), self.node_id.clone(), socketaddr).start();
             let discovery_state = DiscoveryState::Observed;
             self.socketaddr_to_peer.insert(socketaddr, WsToPeerState{addr, discovery_state});
         });
@@ -261,6 +267,19 @@ impl Handler<ClosingPeerConnection> for Connections {
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // OutboundMessage ///////////////////////////////////////////////////////////////////////////////
 
-/// A wrapper type for outbound WebSocket messages.
+/// A wrapper type for outbound messages destined for a specific peer.
+///
+/// The parent connections actor will receive messages from other higher-level actors to have
+/// messages sent to specific destinations by Node ID. This same message instance will then be
+/// forwarded to a specific child actor responsible for the target socket.
+///
+/// TODO: this should be renamed to `OutboundRequest` and should match the protocol defined in
+/// `docs/internals/networking.md`. WsToPeer & WsFromPeer need to implement message handlers for
+/// this message type as well, as they are responsible for actually flushing the message to the socket.
+///
+/// TODO: update this to wrap the internal API request frame enum & a node ID. Other higher-level
+/// actors will send specific variants to the connections actor along with a target node ID, and
+/// the connections actor will send it to the child actor responsible for the target socket. The
+/// child actor will then wrap the frame in a Request API frame along with any needed metadata.
 #[derive(Message)]
 pub(self) struct OutboundMessage(pub Message);
