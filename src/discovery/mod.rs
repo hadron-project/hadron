@@ -98,6 +98,7 @@ impl Handler<DnsAddrs> for Discovery {
     /// Handle messages coming from the DNS discovery backend.
     fn handle(&mut self, new_addrs: DnsAddrs, _: &mut Self::Context) -> Self::Result {
         // Update our internally observed set of peers, which produces a changeset.
+        // TODO: update changesets to include snapshots for reconciliation.
         let changeset_opt = self.observed_peers.update_from_discovery_cycle(new_addrs.0);
 
         // Pump this changeset out to any registered subscribers.

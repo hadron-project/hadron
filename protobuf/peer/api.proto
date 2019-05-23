@@ -1,0 +1,41 @@
+syntax = "proto3";
+package api;
+
+import "handshake.proto";
+
+// Metadata related to an API frame.
+message Meta {
+  // The ID of this request or response frame.
+  string id = 1;
+  // The deadline for this request in milliseconds since the epoch.
+  int64 deadline = 2;
+}
+
+// An API frame.
+message Frame {
+  Meta meta = 1;
+  oneof payload {
+    Request request = 2;
+    Response response = 3;
+    Disconnect disconnect = 4;
+  }
+}
+
+// A request from a peer node.
+message Request {
+  oneof segment {
+    handshake.Handshake handshake = 1;
+  }
+}
+
+// A response to an earlier sent request.
+message Response {
+  oneof segment {
+    handshake.Handshake handshake = 1;
+  }
+}
+
+// A disconnect variant.
+enum Disconnect {
+  ConnectionInvalid = 0;
+}

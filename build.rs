@@ -3,22 +3,22 @@ use prost_build;
 fn main() {
     // Compile internal API protobuf code.
     let _ = prost_build::Config::new()
-        .out_dir("src/api/internal")
+        .out_dir("src/proto/peer")
         .compile_protos(&[
-            "protobuf/internal/api.proto",
-            "protobuf/internal/handshake.proto",
+            "protobuf/peer/api.proto",
+            "protobuf/peer/handshake.proto",
         ], &[
-            "protobuf/internal",
+            "protobuf/peer",
         ])
         .map_err(|err| panic!("Failed to compile internal protobuf code. {}", err));
 
     // Compile public API protobuf code.
     let _ = prost_build::Config::new()
-        .out_dir("src/api/public")
+        .out_dir("src/proto/client")
         .compile_protos(&[
-            "protobuf/public/api.proto",
+            "protobuf/client/api.proto",
         ], &[
-            "protobuf/public",
+            "protobuf/client",
         ])
         .map_err(|err| panic!("Failed to compile protobuf code. {}", err));
 }

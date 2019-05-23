@@ -18,7 +18,7 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::Arc,
-    time::{Duration},
+    time::Duration,
 };
 
 use actix::prelude::*;
@@ -28,11 +28,12 @@ use actix_web::{
     web,
 };
 use actix_web_actors::ws;
-use awc::ws::Message;
+use futures::future::{ok as fut_ok, err as fut_err};
 use log::{debug, error};
 use uuid::Uuid;
 
 use crate::{
+    proto::{peer},
     config::Config,
     connections::{
         from_peer::WsFromPeer,
@@ -49,6 +50,12 @@ pub(self) const PEER_HB_INTERVAL: Duration = Duration::from_secs(2);
 /// The amount of time which is allowed to elapse between successful heartbeats before a
 /// connection is reckoned as being dead between peer nodes.
 pub(self) const PEER_HB_THRESHOLD: Duration = Duration::from_secs(10);
+
+/// The amount of time which is allowed to elapse between a handshake request/response cycle.
+pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// A peer node's ID.
+pub type NodeId = String;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // ServerState ///////////////////////////////////////////////////////////////////////////////////
@@ -72,6 +79,17 @@ struct WsToPeerState {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
+// PeerAddr //////////////////////////////////////////////////////////////////////////////////////
+
+/// A wrapper around the two possible peer connection actor types.
+///
+/// TODO: peer connections need to register themselves.
+enum PeerAddr {
+    ToPeer(Addr<WsToPeer>),
+    FromPeer(Addr<WsFromPeer>),
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
 // Connections ///////////////////////////////////////////////////////////////////////////////////
 
 /// An actor responsible for handling all network activity throughout the system.
@@ -83,17 +101,19 @@ pub struct Connections {
     config: Arc<Config>,
     server: Option<Server>,
     socketaddr_to_peer: HashMap<SocketAddr, WsToPeerState>,
+    connected_peers: HashMap<NodeId, PeerAddr>,
 }
 
 impl Connections {
     /// Create a new instance.
-    pub fn new(discovery: Addr<Discovery>, config: Arc<Config>) -> Self {
+    pub fn new(discovery: Addr<Discovery>, node_id: String, config: Arc<Config>) -> Self {
         Self{
-            node_id: Uuid::new_v4().to_string(), // TODO: this should come from startup, from the DB layer.
+            node_id,
             discovery,
             config,
             server: None,
             socketaddr_to_peer: HashMap::new(),
+            connected_peers: HashMap::new(),
         }
     }
 
@@ -207,32 +227,13 @@ impl Handler<ObservedPeersChangeset> for Connections {
 /// has been successfully established. If the handshake protcol fails, the connection will be
 /// droped.
 ///
-/// ### Initial
-/// - Send node ID, node state, routing info, and discovered peers to receiver.
-/// - Receiver checks to ensure it doesn't already have a connection with the sender.
-///     - If a connection already exists with sender, a disconnect frame will be sent to sender,
-///       and the connection will be closed.
-///     - Else, the receiver will update its internal state with the received data and then send
-///       the equivalent payload over to the sender as a response.
-/// - Sender receives equivalent payload, and performs same check with same conditions.
+/// [See the Railgun peer handshake docs](docs/internals/peer-connection-management.md#railgun-peer-handshake)
+/// for more details on exactly how the protocol works, and thus how it is to be implemented here.
 ///
-/// ### Confirmation
-/// - If everything is still in order, a confirmation frame is sent to receiver.
-/// - Reciever will attempt to register the connection as live with its `Connections` actor.
-///     - If the operation fails because another connection was already open with the same node,
-///       then a disconnect frame will be sent back to the sender and the connection will be
-///       dropped. Sender will drop connection upon disconnect frame receipt.
-///     - If the connection is successfully registered, then the equivalent confirmation frame is
-///       sent back to the sender.
-/// - Sender receives confirmation frame from receiver and performs same operations.
-///
-/// Once the above steps have been finished, the handshake will be complete and the connection
-/// will be available for general use.
+/// Once the handshake is finished, the connection will be available for general use.
 pub(self) enum PeerHandshakeState {
     /// The initial phase of the handshake protocol.
     Initial,
-    /// The confirmation phase of the handshake protocol.
-    Confirmation,
     /// The finished state of the handshake protocol.
     Done,
 }
@@ -251,35 +252,141 @@ pub(self) struct ClosingPeerConnection(pub PeerConnectionIdentifier);
 /// first, and the connection can only be identified by the NodeID accurately, which will only be
 /// available after a successful Railgun protocol handshake.
 pub enum PeerConnectionIdentifier {
-    SocketAddr(SocketAddr),
+    /// This variant is used by `WsFromPeer` connections which do not have the SocketAddr of the peer.
     NodeId(String),
+    /// This variant is used by `WsToPeer` connections which only have the SocketAddr of the peer before the handshake is complete.
+    SocketAddr(SocketAddr),
+    /// This variant is used by `WsToPeer` connections after a successful handshake as both data elements will be available.
+    SocketAddrAndId(SocketAddr, NodeId),
 }
 
 impl Handler<ClosingPeerConnection> for Connections {
     type Result = ();
 
     /// Handle messages from peer connections indicating that the peer connection is closing.
-    fn handle(&mut self, _msg: ClosingPeerConnection, _ctx: &mut Self::Context) {
-        // TODO: remove peer socket addr from connections table.
+    fn handle(&mut self, msg: ClosingPeerConnection, _ctx: &mut Self::Context) {
+        match msg.0 {
+            PeerConnectionIdentifier::NodeId(id) => {
+                self.connected_peers.remove(&id);
+            }
+            PeerConnectionIdentifier::SocketAddr(addr) => {
+                self.socketaddr_to_peer.remove(&addr);
+            }
+            PeerConnectionIdentifier::SocketAddrAndId(addr, id) => {
+                self.connected_peers.remove(&id);
+                self.socketaddr_to_peer.remove(&addr);
+            }
+        }
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// OutboundMessage ///////////////////////////////////////////////////////////////////////////////
+// PeerConnectionLive ////////////////////////////////////////////////////////////////////////////
 
-/// A wrapper type for outbound messages destined for a specific peer.
+// TODO: get this wired up with child actors and handle here.
+
+pub(self) struct PeerConnectionLive {
+    /// The ID of the peer with which the connection is now live.
+    peer_id: NodeId,
+
+    /// Routing info coming from the newly connected peer.
+    routing_info: String,
+
+    /// The address of the actor which is responsible for the new connection.
+    addr: PeerAddr,
+}
+
+impl Message for PeerConnectionLive {
+    type Result = Result<(), peer::api::Disconnect>;
+}
+
+impl Handler<PeerConnectionLive> for Connections {
+    type Result = Result<(), peer::api::Disconnect>;
+
+    /// Handle messages from child actors indicating that their connections are now live.
+    ///
+    /// This routine is responsible for a few things:
+    ///
+    /// - checking to ensure that the newly connected peer doesn't already have a connection. If
+    /// it does, it will respond to the caller with an error indicating that such is the case.
+    /// - update this actor's internal state to map the peer's node ID to the actor's address for
+    /// message routing.
+    /// - propagate the routing info up to the core RG actor for high-level control.
+    fn handle(&mut self, msg: PeerConnectionLive, _ctx: &mut Self::Context) -> Self::Result {
+        // If a connection already exists to the target peer, then this connection is invalid.
+        if self.connected_peers.contains_key(&msg.peer_id) {
+            debug!("Connection with peer {} already established.", &msg.peer_id);
+            return Err(peer::api::Disconnect::ConnectionInvalid);
+        }
+
+        // Update routing table with new information.
+        debug!("Connection with peer {} now live.", &msg.peer_id);
+        self.connected_peers.insert(msg.peer_id, msg.addr);
+        for peer in self.connected_peers.keys() {
+            debug!("Is connected to: {}", peer);
+        }
+
+        // Propagate new routing info.
+        // TODO: impl this.
+
+        Ok(())
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// OutboundPeerRequest ///////////////////////////////////////////////////////////////////////////
+
+/// A wrapper type for outbound requests destined for a specific peer.
 ///
 /// The parent connections actor will receive messages from other higher-level actors to have
 /// messages sent to specific destinations by Node ID. This same message instance will then be
 /// forwarded to a specific child actor responsible for the target socket.
-///
-/// TODO: this should be renamed to `OutboundRequest` and should match the protocol defined in
-/// `docs/internals/networking.md`. WsToPeer & WsFromPeer need to implement message handlers for
-/// this message type as well, as they are responsible for actually flushing the message to the socket.
-///
-/// TODO: update this to wrap the internal API request frame enum & a node ID. Other higher-level
-/// actors will send specific variants to the connections actor along with a target node ID, and
-/// the connections actor will send it to the child actor responsible for the target socket. The
-/// child actor will then wrap the frame in a Request API frame along with any needed metadata.
+pub struct OutboundPeerRequest {
+    pub request: peer::api::Request,
+    pub target_node: NodeId,
+    pub timeout: Duration,
+}
+
+impl actix::Message for OutboundPeerRequest {
+    type Result = Result<peer::api::Response, ()>;
+}
+
+impl Handler<OutboundPeerRequest> for Connections {
+    type Result = ResponseFuture<peer::api::Response, ()>;
+
+    /// Handle requests to send outbound messages to a connected peer.
+    fn handle(&mut self, _msg: OutboundPeerRequest, _ctx: &mut Self::Context) -> Self::Result {
+        // TODO: this needs to be finished up. The request needs to be routed over to the
+        // appropriate child actor based on the target node ID.
+        Box::new(futures::future::ok(
+            peer::api::Response{segment: None}
+        ))
+    }
+}
+
+// TODO: probably something like this.
+// #[derive(Message)]
+// pub(self) struct OutboundPeerResponse {
+//     pub frame: PeerFrame,
+//     pub target_node: String,
+// }
+
+// TODO: probably something like this.
+// #[derive(Message)]
+// pub(self) struct OutboundClientResponse {
+//     pub frame: ClientFrame,
+//     pub target_client: String,
+// }
+
+/// A message type wrapping an inbound peer API request along with its metadata.
 #[derive(Message)]
-pub(self) struct OutboundMessage(pub Message);
+pub struct InboundPeerRequest(peer::api::Request, peer::api::Meta);
+
+impl Handler<InboundPeerRequest> for Connections {
+    type Result = ();
+
+    /// Handle inbound peer API requests.
+    fn handle(&mut self, _msg: InboundPeerRequest, _ctx: &mut Self::Context) {
+        // TODO: handle sending this request over to the RG actor for high-level handling.
+    }
+}

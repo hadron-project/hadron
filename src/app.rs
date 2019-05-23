@@ -4,6 +4,7 @@ use std::{
 
 use actix::prelude::*;
 use log::{info};
+use uuid;
 
 use crate::{
     config::Config,
@@ -33,7 +34,9 @@ impl App {
         let discovery_addr = Discovery::start_in_arbiter(&discovery_arb, move |_| Discovery::new(DiscoveryBackend::Dns, discovery_cfg));
 
         // Boot the connections actor. Its network server will operate on dedicated threads.
-        let _conns_addr = Connections::new(discovery_addr.clone(), config.clone()).start();
+        let node_id = uuid::Uuid::new_v4().to_string(); // TODO: this should come from the DB layer.
+        info!("Node ID is: {}", &node_id); // TODO: rm this.
+        let _conns_addr = Connections::new(discovery_addr.clone(), node_id, config.clone()).start();
 
         info!("Railgun is firing on port '{}'.", config.port);
         let _ = sys.run(); // This blocks. Actix automatically handles unix signals for termination & graceful shutdown.
