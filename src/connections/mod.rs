@@ -28,9 +28,8 @@ use actix_web::{
     web,
 };
 use actix_web_actors::ws;
-use futures::future::{ok as fut_ok, err as fut_err};
+use futures::future::err as fut_err;
 use log::{debug, error};
-use uuid::Uuid;
 
 use crate::{
     proto::{peer},
@@ -101,7 +100,7 @@ pub struct Connections {
     config: Arc<Config>,
     server: Option<Server>,
     socketaddr_to_peer: HashMap<SocketAddr, WsToPeerState>,
-    connected_peers: HashMap<NodeId, PeerAddr>,
+    routing_table: HashMap<NodeId, PeerAddr>,
 }
 
 impl Connections {
@@ -113,7 +112,7 @@ impl Connections {
             config,
             server: None,
             socketaddr_to_peer: HashMap::new(),
-            connected_peers: HashMap::new(),
+            routing_table: HashMap::new(),
         }
     }
 
@@ -124,8 +123,7 @@ impl Connections {
             App::new().data(data.clone())
                 // This endpoint is used for internal client communication.
                 .service(web::resource("/internal/").to(Self::handle_peer_connection))
-                // .service(web::resource("").to(Self::handle_client_connection))
-                // TODO: setup a catchall handler.
+                // .service(web::resource("").to(Self::handle_client_connection)) // TODO: client interface. See #6.
         })
         .bind(format!("0.0.0.0:{}", &self.config.port))
         .map_err(|err| {
@@ -267,13 +265,13 @@ impl Handler<ClosingPeerConnection> for Connections {
     fn handle(&mut self, msg: ClosingPeerConnection, _ctx: &mut Self::Context) {
         match msg.0 {
             PeerConnectionIdentifier::NodeId(id) => {
-                self.connected_peers.remove(&id);
+                self.routing_table.remove(&id);
             }
             PeerConnectionIdentifier::SocketAddr(addr) => {
                 self.socketaddr_to_peer.remove(&addr);
             }
             PeerConnectionIdentifier::SocketAddrAndId(addr, id) => {
-                self.connected_peers.remove(&id);
+                self.routing_table.remove(&id);
                 self.socketaddr_to_peer.remove(&addr);
             }
         }
@@ -305,24 +303,24 @@ impl Handler<PeerConnectionLive> for Connections {
 
     /// Handle messages from child actors indicating that their connections are now live.
     ///
-    /// This routine is responsible for a few things:
+    /// This routine is responsible for a checking to ensure that the newly connected peer doesn't
+    /// already have a connection. If it does, it will respond to the caller with an error
+    /// indicating that such is the case.
     ///
-    /// - checking to ensure that the newly connected peer doesn't already have a connection. If
-    /// it does, it will respond to the caller with an error indicating that such is the case.
-    /// - update this actor's internal state to map the peer's node ID to the actor's address for
-    /// message routing.
-    /// - propagate the routing info up to the core RG actor for high-level control.
+    /// It will also update this actor's internal state to map the peer's node ID to the actor's
+    /// address for message routing, and will propagate the routing of the newly connected peer
+    /// to the core RG actor for high-level controls.
     fn handle(&mut self, msg: PeerConnectionLive, _ctx: &mut Self::Context) -> Self::Result {
         // If a connection already exists to the target peer, then this connection is invalid.
-        if self.connected_peers.contains_key(&msg.peer_id) {
+        if self.routing_table.contains_key(&msg.peer_id) {
             debug!("Connection with peer {} already established.", &msg.peer_id);
             return Err(peer::api::Disconnect::ConnectionInvalid);
         }
 
         // Update routing table with new information.
         debug!("Connection with peer {} now live.", &msg.peer_id);
-        self.connected_peers.insert(msg.peer_id, msg.addr);
-        for peer in self.connected_peers.keys() {
+        self.routing_table.insert(msg.peer_id, msg.addr);
+        for peer in self.routing_table.keys() {
             debug!("Is connected to: {}", peer);
         }
 
@@ -355,12 +353,25 @@ impl Handler<OutboundPeerRequest> for Connections {
     type Result = ResponseFuture<peer::api::Response, ()>;
 
     /// Handle requests to send outbound messages to a connected peer.
-    fn handle(&mut self, _msg: OutboundPeerRequest, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: this needs to be finished up. The request needs to be routed over to the
-        // appropriate child actor based on the target node ID.
-        Box::new(futures::future::ok(
-            peer::api::Response{segment: None}
-        ))
+    fn handle(&mut self, msg: OutboundPeerRequest, _ctx: &mut Self::Context) -> Self::Result {
+        // Get a reference to actor which is holding the connection to the target node.
+        let addr = match self.routing_table.get(&msg.target_node) {
+            None => {
+                error!("Attempted to send an outbound peer request to a peer which is not registered in the connections routing table.");
+                return Box::new(fut_err(()));
+            }
+            Some(addr) => addr,
+        };
+
+        // Send the outbound request to the target node.
+        match addr {
+            PeerAddr::FromPeer(iaddr) => Box::new(iaddr.send(msg)
+                .map_err(|_| ())
+                .and_then(|res| res)),
+            PeerAddr::ToPeer(iaddr) => Box::new(iaddr.send(msg)
+                .map_err(|_| ())
+                .and_then(|res| res)),
+        }
     }
 }
 

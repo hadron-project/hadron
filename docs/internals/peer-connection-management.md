@@ -1,13 +1,13 @@
 peer connection management
 ==========================
-This document describes the lifecycle of network connections between Railgun cluster peers.
+This document describes the lifecycle of network connections between peer nodes within a Railgun cluster.
 
 #### discovery
 The first phase of the lifecycle is discovery.
 
-When a node IP is first picked up from the discovery system, it will be sent over to the connections actor to establish a connection with the discovered peer. Peers which were once in the observed set of discovered peers, but which are no longer appearing in discovery probes, will be sent over to the connections actor so that action can be taken to remove them if needed. The changeset payload will also include a snapshot of all currently observed socket addresses for reconciliation.
+When a node IP is first picked up from the discovery system, it will be sent over to the connections actor to establish a connection with the discovered peer. Peers which were once in the observed set of discovered peers, but which are no longer appearing in discovery probes, will be sent over to the connections actor so that action can be taken to remove them if needed.
 
-Reconciliation in this context means that a peer socket address was observed and connected to, but it was determined that the connected peer was already connected to based on the peer's node ID. When the original connection to that peer is dropped, and the original socket address no longer observed, the connection which was dropped as a duplicate will need to be recreated. This is done using the discovery snapshot.
+At this point in time, the Railgun networking system does not attempt to accommodate potential discovery misconfigurations. If a node within the cluster is given two IPs, and the discovery system detects both, one of them will be dropped due to peers already having a connection to the same node and peer nodes will not attempt to connect to the second IP again. The proper way to change the IP of a node is to bring the node down, change its IP, and then bring it back online.
 
 #### baseline connection
 Newly discovered members will be immediately connected to as long as the connections actor determines that there is no live connection to the same target IP. This will typically only happen when:

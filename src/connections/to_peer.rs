@@ -587,9 +587,7 @@ impl Handler<OutboundPeerRequest> for WsToPeer {
         // Return a future to the caller which will receive the response when it comes back from
         // the peer, else it will timeout.
         Box::new(rx
-            .map_err(|err| {
-                error!("Error from OutboundPeerRequest receiver. {}", err);
-            })
+            .map_err(|err| error!("Error from OutboundPeerRequest receiver. {}", err))
             .and_then(|res| match res {
                 Ok(response) => Ok(response),
                 Err(_) => Err(()),
