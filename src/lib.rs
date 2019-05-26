@@ -1,6 +1,8 @@
 mod app;
+mod common;
 mod config;
 mod connections;
+mod db;
 mod discovery;
 mod proto;
 

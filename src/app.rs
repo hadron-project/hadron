@@ -3,12 +3,13 @@ use std::{
 };
 
 use actix::prelude::*;
-use log::{info};
+use log::{error, info};
 use uuid;
 
 use crate::{
     config::Config,
     connections::{Connections},
+    db::Database,
     discovery::{Discovery, DiscoveryBackend},
 };
 
@@ -42,7 +43,15 @@ impl App {
         info!("Booting the Railgun application.");
 
         // The address of self for spawned child actors to communicate back to this actor.
-        let _app_addr = ctx.address();
+        let app = ctx.address();
+
+        // Boot the database system.
+        let db = Database::new(app.clone(), &*config).unwrap_or_else(|err| {
+            error!("Error initializing the system database. {}", err);
+            std::process::exit(1);
+        });
+        let nodeid = db.node_id().clone();
+        let _dbaddr = db.start();
 
         // Boot the configured discovery system on a new dedicated thread.
         // NOTE: currently we only support DNS discovery, so its selection is hard-coded.
@@ -50,10 +59,8 @@ impl App {
         let discovery_addr = Discovery::start_in_arbiter(&discovery_arb, move |_| Discovery::new(DiscoveryBackend::Dns, discovery_cfg));
 
         // Boot the connections actor. Its network server will operate on dedicated threads.
-        let node_id = uuid::Uuid::new_v4().to_string(); // TODO: this should come from the DB layer.
-        info!("Node ID is: {}", &node_id); // TODO: rm this.
         // TODO: connections actor needs to take addr of this actor for propagating inbound network frames.
-        let _conns_addr = Connections::new(discovery_addr.clone(), node_id, config.clone()).start();
+        let _conns_addr = Connections::new(discovery_addr.clone(), nodeid, config.clone()).start();
 
         info!("Railgun is firing on 0.0.0.0:{}!", &config.port);
         App

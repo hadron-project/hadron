@@ -33,6 +33,7 @@ use log::{debug, error};
 
 use crate::{
     proto::{peer},
+    common::NodeId,
     config::Config,
     connections::{
         from_peer::WsFromPeer,
@@ -52,9 +53,6 @@ pub(self) const PEER_HB_THRESHOLD: Duration = Duration::from_secs(10);
 
 /// The amount of time which is allowed to elapse between a handshake request/response cycle.
 pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// A peer node's ID.
-pub type NodeId = String;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // ServerState ///////////////////////////////////////////////////////////////////////////////////
