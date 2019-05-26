@@ -63,7 +63,7 @@ The second wildcard is `>` which will match one or more hierachy tokens, and can
 --------------------------------------------------------------------------------------------------
 
 ## cap
-In respect to CAP theorem, this system prioritizes *Availability* and *Partition Tolerance*. This works perfectly for this type of system as persistent streams are immutable. So consistency is purely a matter whether the replica node has the most recent additions to the stream. There is no MVCC to be concerned about, no atomic updating concerns or the like as transactions are not currently on the roadmap and don't really apply to a system like this, especially considering the [persistent stream unique id checking feature](#persistent-stream-unique-id-checking).
+In respect to CAP theorem, this system prioritizes *Availability* and *Partition Tolerance*. This works perfectly for this type of system as persistent streams are immutable. So consistency is purely a matter of whether the replica node has the most recent additions to the stream. There is no MVCC to be concerned about, no atomic updating concerns or the like as transactions are not currently on the roadmap and don't really apply to a system like this, especially considering the [persistent stream unique id checking feature](#persistent-stream-unique-id-checking).
 
 ## clustering
 - Clustering is natively supported. Cluster roles are dynamic.
@@ -107,10 +107,10 @@ Data replication for a persistent stream is influenced by the creation of the st
 
 The cluster master is responsible for the placement of stream replicas and nominating which nodes will replicate which streams. The algorith which will be used for making this decsion will quite likely just be based on the message count of the streams. Streams with larger numbers of messages will be spread out evenly as a simple heuristic for placement.
 
-Read only servers will replicate all data of all streams, but typically replication confirmation from these nodes will not be required during write operations.
+Read-only servers will replicate all data of all streams, but typically replication confirmation from these nodes will not be required during write operations.
 
 #### stream sharding
-For now, configurable stream replicas seems to be sufficient. Let's stay tentative on this and see what sort of usecases emerge.
+For now, configurable stream replicas seems to be sufficient. Let's stay tentative on this and see what sort of usecases emerge. The primary value add of something like this would be the ability to increase write throughput. Perhaps using something like CRDTs we would be able to consistently merge the stream shards at a particular time offset. More exploration is needed at this point.
 
 ### discovery
 Discovery is what allows members to automatically join a cluster by way of network communication. This is often referred to as, cluster formation, peer discovery, auto clustering. A Railgun cluster can be configured to check credentials of peers during cluster formation.
@@ -118,10 +118,10 @@ Discovery is what allows members to automatically join a cluster by way of netwo
 Currently only DNS based peer discovery is implemented in this system. However, Railgun has been designed so that new discovery backends can be easily added in the future as needed.
 
 ### networking
-- Railgun client <-> server communication takes place over WebSockets, which allows for multiplexed communication channels by default.
-- Clients may use a single pipe for consumption as well as publication.
-- Server <-> server clustering communication takes place over WebSockets as well.
-- Will probably use protobuf as the framing protocol, maybe capnproto. This is still TBD. TODO: get this nailed down.
+- Railgun client to server communication takes place over WebSockets, which allows for multiplexed communication channels by default.
+- Clients may use a single socket for consumption as well as publication.
+- Server to server cluster communication takes place over WebSockets as well.
+- Protocol buffers are used for all Railgun communication.
 - Nodes within a cluster may forward commands between each other as needed.
 
 ### ack & nack
