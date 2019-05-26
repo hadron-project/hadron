@@ -7,4 +7,5 @@ mod proto;
 // Public exports for binaries.
 pub use crate::{
     app::App,
+    config::Config,
 };
