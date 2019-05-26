@@ -1,0 +1,8 @@
+syntax = "proto3";
+package handshake;
+
+// A handshake frame holding all data needed for a successful handshake between peers.
+message Handshake {
+  string node_id = 1;
+  string routing_info = 2;
+}

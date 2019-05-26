@@ -4,6 +4,7 @@
 //! node and sent to a cluster peer.
 
 use std::{
+    collections::HashMap,
     net::SocketAddr,
     time::{Duration, Instant},
 };
@@ -16,20 +17,22 @@ use actix_web::client::Client;
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use futures::{
     prelude::*,
-    sync::mpsc,
+    sync::{mpsc, oneshot},
 };
 use awc::{
-    error::{WsClientError, WsProtocolError},
-    ws::{Codec, Frame, Message},
+    error::{WsProtocolError},
+    ws::{self, Frame, Message},
 };
 use log::{debug, error, warn};
+use prost;
 
 use crate::{
     connections::{
-        PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
-        ClosingPeerConnection, Connections, OutboundMessage,
-        PeerConnectionIdentifier, PeerHandshakeState,
+        PEER_HB_INTERVAL, PEER_HB_THRESHOLD, PEER_HANDSHAKE_TIMEOUT, NodeId,
+        ClosingPeerConnection, Connections, InboundPeerRequest, OutboundPeerRequest,
+        PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
     },
+    proto::peer::{api, handshake},
 };
 
 /// A type alias for the Sink type for outbound messages to the connected peer.
@@ -79,11 +82,11 @@ struct StateConnected {
     /// The current outbound sink for sending data to the connected peer.
     outbound: SinkWrite<WsSink>,
 
-    /// The current inbound stream of data from the connected peer.
-    inbound: SpawnHandle,
-
     /// The handshake state of the connection.
     handshake: PeerHandshakeState,
+
+    /// A map of all pending requests.
+    requests_map: HashMap<String, (oneshot::Sender<Result<api::Response, ()>>, SpawnHandle)>,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -100,6 +103,12 @@ struct StateConnected {
 /// The Railgun heartbeat protcol for cluster peer connections is such that only
 /// the receiving end of the connection will send pings. That is not this end.
 pub(super) struct WsToPeer {
+    /// The ID of this node.
+    node_id: NodeId,
+
+    /// The node ID of the connected peer.
+    peer_id: Option<NodeId>,
+
     /// Address of the parent connections actor.
     parent: Addr<Connections>,
 
@@ -115,8 +124,10 @@ pub(super) struct WsToPeer {
 
 impl WsToPeer {
     /// Create a new instance.
-    pub fn new(parent: Addr<Connections>, target: SocketAddr) -> Self {
+    pub fn new(parent: Addr<Connections>, node_id: String, target: SocketAddr) -> Self {
         Self{
+            node_id,
+            peer_id: None,
             parent,
             target,
             discovery_state: DiscoveryState::Observed,
@@ -133,9 +144,95 @@ impl WsToPeer {
     }
 
     /// Perform the Railgun peer handshake protocol with the connected peer.
-    fn handshake(&mut self, _ctx: &mut Context<Self>) {
-        // TODO: begin the handshake protocol. This will only happen once per connection at the
-        // very beginning in order to establish properly structured communications.
+    fn handshake(&mut self, ctx: &mut Context<Self>) {
+        // Get a handle to the current handshake state.
+        let hs_state = match &mut self.connection {
+            ConnectionState::Connected(conn_state) => &mut conn_state.handshake,
+            _ => return,
+        };
+
+        // Create a frame for the next state of the handshake.
+        use PeerHandshakeState::*;
+        let request = match hs_state {
+            // TODO: finish up the routing info pattern. See the peer connection management doc.
+            Initial => api::Request{segment: Some(api::request::Segment::Handshake(
+                handshake::Handshake{node_id: self.node_id.clone(), routing_info: String::with_capacity(0)}
+            ))},
+            Done => return,
+        };
+
+        // Spawn the outbound request.
+        let f = ctx.address().send(OutboundPeerRequest{
+            request,
+            target_node: String::with_capacity(0),
+            timeout: PEER_HANDSHAKE_TIMEOUT,
+        });
+        let af = actix::fut::wrap_future::<_, Self>(f)
+            .map(|res, actor, innerctx| actor.handshake_response(res, innerctx))
+            .map_err(|err, actor, ctx| {
+                error!("Error during peer handshake. {}", err);
+                actor.handshake(ctx);
+            });
+        ctx.spawn(af);
+    }
+
+    /// Handle a handshake response.
+    fn handshake_response(&mut self, res: Result<api::Response, ()>, ctx: &mut Context<Self>) {
+        // Get a handle to the current handshake state.
+        let state = match &mut self.connection {
+            ConnectionState::Connected(state) => state,
+            _ => return,
+        };
+
+        // Extract inner response and handle any errors.
+        let response = match res {
+            Ok(response) => response,
+            Err(err) => {
+                error!("Error during peer handshake. {:?}", err);
+                return self.handshake(ctx);
+            }
+        };
+
+        // Extract handshake response segment, else handle errors.
+        let hs = match response.segment {
+            Some(api::response::Segment::Handshake(hs)) => hs,
+            // Some(other) => { // NOTE: enable this once we have more options.
+            //     debug!("Invalid frame received from handshake request. {:?}", other);
+            //     self.handshake(ctx);
+            // }
+            None => return self.handshake(ctx),
+        };
+
+        // If the connection is being made with self due to initial discovery probe, then drop the connection.
+        if hs.node_id == self.node_id {
+            return ctx.stop();
+        }
+
+        // If this connection already has a peer ID and has reconnected but the IDs no
+        // longer match, then we need to drop this connection, as it means that the
+        // node at the target IP has changed.
+        if self.peer_id.is_some() && self.peer_id.as_ref() != Some(&hs.node_id) {
+            return ctx.stop();
+        }
+
+        // Update handshake state & propagate routing info to parent.
+        state.handshake = PeerHandshakeState::Done;
+        self.peer_id = Some(hs.node_id.clone());
+
+        // Propagate handshake info to parent connections actor.
+        // TODO: finish up the routing info pattern. See the peer connection management doc.
+        let f = self.parent.send(PeerConnectionLive{peer_id: hs.node_id, routing_info: hs.routing_info, addr: PeerAddr::ToPeer(ctx.address())});
+        let af = actix::fut::wrap_future(f)
+            // NOTE: would only get hit on a timeout or closed. Neither will be hit.
+            .map_err(|_, _, _| ())
+            .map(|res, _, ictx: &mut Context<Self>| match res {
+                Ok(()) => (),
+                Err(disconnect) => {
+                    debug!("Peer connection needs disconnect: {}. Closing.", disconnect as i32);
+                    ictx.stop();
+                }
+            });
+        ctx.spawn(af);
     }
 
     /// Healthcheck the connection on a regular interval.
@@ -195,10 +292,11 @@ impl WsToPeer {
         // Shut down this actor if the target peer is no longer being observed by the discovery system.
         if self.discovery_state == DiscoveryState::Disappeared {
             self.connection = ConnectionState::Closing;
-            // TODO: update this to use NodeID when available.
-            self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddr(self.target.clone())));
-            ctx.stop();
-            return;
+            match &self.peer_id {
+                Some(nodeid) => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddrAndId(self.target.clone(), nodeid.clone()))),
+                None => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddr(self.target.clone()))),
+            };
+            return ctx.stop();
         }
 
         // Ensure we are in a reconnecting state.
@@ -219,6 +317,28 @@ impl WsToPeer {
         backoffcfg.retry = Some(ctx.run_later(next_retry, |inneract, innerctx| {
             inneract.new_connection(innerctx);
         }));
+    }
+
+    /// Route a request over to the parent connections actor for handling.
+    fn route_request(&mut self, req: api::Request, meta: api::Meta, _: &mut Context<Self>) {
+        self.parent.do_send(InboundPeerRequest(req, meta));
+    }
+
+    /// Route a response payload received from the socket to its matching request future.
+    fn route_response(&mut self, res: api::Response, meta: api::Meta, ctx: &mut Context<Self>) {
+        let state = match &mut self.connection {
+            ConnectionState::Connected(state) => state,
+            _ => return,
+        };
+
+        // Extract components from request map, send the future's value & cancel its timeout.
+        match state.requests_map.remove(&meta.id) {
+            None => (),
+            Some((tx, timeouthandle)) => {
+                let _ = tx.send(Ok(res));
+                ctx.cancel_future(timeouthandle);
+            }
+        }
     }
 
     /// Write an outbound message to the connected peer.
@@ -314,12 +434,13 @@ impl Handler<NewConnection> for WsToPeer {
 
     /// Handler for when a new connection has been successfully open to the target peer.
     fn handle(&mut self, msg: NewConnection, ctx: &mut Self::Context) {
+        ctx.add_stream(msg.stream);
         self.connection = ConnectionState::Connected(StateConnected{
             heartbeat: Instant::now(),
             heartbeat_handle: None,
-            inbound: ctx.add_stream(msg.stream),
             outbound: SinkWrite::new(msg.sink, ctx),
             handshake: PeerHandshakeState::Initial,
+            requests_map: HashMap::new(),
         });
 
         // Start the connection healthcheck protocol & initialize the peer handshake.
@@ -335,12 +456,43 @@ impl StreamHandler<Frame, WsProtocolError> for WsToPeer {
         match msg {
             Ping(data) => {
                 // We've received a ping as part of the heartbeat system. Respond with a pong.
+                if let ConnectionState::Connected(state) = &mut self.connection {
+                    state.heartbeat = Instant::now();
+                }
                 self.write_outbound_message(ctx, Message::Pong(data));
             }
-            Pong(_data) => warn!("Protocol error. Unexpectedly received a pong frame from connected peer."),
-            Text(_data_opt) => warn!("Protocol error. Unexpectedly received a text frame from connected peer."),
-            Binary(_data_opt) => debug!("Binary data received."), // TODO: handle inbound frames.
-            Close(_reason) => debug!("Connection closing message received."),
+            Pong(_) => warn!("Protocol error. Unexpectedly received a pong frame from connected peer."),
+            Text(_) => warn!("Protocol error. Unexpectedly received a text frame from connected peer."),
+            Binary(None) => warn!("Empty binary payload received from connected peer."),
+            Binary(Some(data)) => {
+                // Decode the received frame.
+                debug!("Binary data received.");
+                use prost::Message;
+                let frame = match api::Frame::decode(data) {
+                    Ok(frame) => frame,
+                    Err(err) => {
+                        error!("Error decoding binary frame from peer connection. {}", err);
+                        return;
+                    }
+                };
+
+                // If the frame is a response frame, route it through to its matching request.
+                match frame.payload {
+                    Some(api::frame::Payload::Response(res)) => self.route_response(res, frame.meta.unwrap_or_default(), ctx),
+                    Some(api::frame::Payload::Request(req)) => self.route_request(req, frame.meta.unwrap_or_default(), ctx),
+                    Some(api::frame::Payload::Disconnect(reason)) => {
+                        debug!("Received peer disconnect frame {}. Closing.", reason);
+                        self.connection = ConnectionState::Closing;
+                        match &self.peer_id {
+                            Some(nodeid) => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddrAndId(self.target.clone(), nodeid.clone()))),
+                            None => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddr(self.target.clone()))),
+                        };
+                        return ctx.stop();
+                    }
+                    None => (),
+                }
+            }
+            Close(reason) => debug!("Connection close message received. {:?}", reason),
         }
     }
 
@@ -370,11 +522,76 @@ impl WriteHandler<WsProtocolError> for WsToPeer {
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // OutboundMessage ///////////////////////////////////////////////////////////////////////////////
 
+/// A wrapper type for outbound messages.
+///
+/// This is typically used once one of the connection specific child actors is ready to send a
+/// finalized binary WebSocket message over its connection.
+#[derive(Message)]
+pub(self) struct OutboundMessage(pub Message);
+
 impl Handler<OutboundMessage> for WsToPeer {
     type Result = ();
 
     /// Handle requests to send outbound messages to the connected peer.
     fn handle(&mut self, msg: OutboundMessage, ctx: &mut Self::Context) {
         self.write_outbound_message(ctx, msg.0);
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// OutboundPeerRequest ///////////////////////////////////////////////////////////////////////////
+
+impl Handler<OutboundPeerRequest> for WsToPeer {
+    type Result = ResponseFuture<api::Response, ()>;
+
+    /// Handle requests to send outbound messages to the connected peer.
+    fn handle(&mut self, msg: OutboundPeerRequest, ctx: &mut Self::Context) -> Self::Result {
+        let state = match &mut self.connection {
+            ConnectionState::Connected(state) => state,
+            _ => return Box::new(futures::future::err(())),
+        };
+
+        // Build the outbound request frame.
+        let requestid = uuid::Uuid::new_v4().to_string();
+        let deadline = (chrono::Utc::now() + chrono::Duration::seconds(msg.timeout.as_secs() as i64)).timestamp_millis();
+        let frame = api::Frame{
+            meta: Some(api::Meta{id: requestid.clone(), deadline}),
+            payload: Some(api::frame::Payload::Request(msg.request)),
+        };
+
+        // Spawn the request's timeout handler & retain the spawnhandle.
+        let closed_requestid = requestid.clone();
+        let timeout = ctx.run_later(msg.timeout, move |closed_self, _closed_ctx| {
+            let state = match &mut closed_self.connection {
+                ConnectionState::Connected(state) => state,
+                _ => return,
+            };
+            match state.requests_map.remove(&closed_requestid) {
+                Some((_, _)) => debug!("Request '{}' timedout.", &closed_requestid),
+                None => (),
+            }
+        });
+
+        // Create the request/response channel & add components to request map.
+        let (tx, rx) = oneshot::channel();
+        state.requests_map.insert(requestid, (tx, timeout));
+
+        // Serialize the request data and write it over the outbound socket.
+        use prost::Message;
+        let mut buf = bytes::BytesMut::with_capacity(frame.encoded_len());
+        let _ = frame.encode(&mut buf).map_err(|err| {
+            error!("Failed to serialize protobuf frame. {}", err);
+        });
+        self.write_outbound_message(ctx, ws::Message::Binary(buf.into()));
+
+        // Return a future to the caller which will receive the response when it comes back from
+        // the peer, else it will timeout.
+        Box::new(rx
+            .map_err(|err| error!("Error from OutboundPeerRequest receiver. {}", err))
+            .and_then(|res| match res {
+                Ok(response) => Ok(response),
+                Err(_) => Err(()),
+            })
+        )
     }
 }
