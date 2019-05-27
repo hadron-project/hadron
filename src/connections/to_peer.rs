@@ -293,8 +293,8 @@ impl WsToPeer {
         if self.discovery_state == DiscoveryState::Disappeared {
             self.connection = ConnectionState::Closing;
             match &self.peer_id {
-                Some(nodeid) => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddrAndId(self.target.clone(), nodeid.clone()))),
-                None => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddr(self.target.clone()))),
+                Some(nodeid) => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddrAndId(self.target, nodeid.clone()))),
+                None => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddr(self.target))),
             };
             return ctx.stop();
         }
@@ -484,10 +484,10 @@ impl StreamHandler<Frame, WsProtocolError> for WsToPeer {
                         debug!("Received peer disconnect frame {}. Closing.", reason);
                         self.connection = ConnectionState::Closing;
                         match &self.peer_id {
-                            Some(nodeid) => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddrAndId(self.target.clone(), nodeid.clone()))),
-                            None => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddr(self.target.clone()))),
+                            Some(nodeid) => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddrAndId(self.target, nodeid.clone()))),
+                            None => self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::SocketAddr(self.target))),
                         };
-                        return ctx.stop();
+                        ctx.stop()
                     }
                     None => (),
                 }
@@ -566,9 +566,8 @@ impl Handler<OutboundPeerRequest> for WsToPeer {
                 ConnectionState::Connected(state) => state,
                 _ => return,
             };
-            match state.requests_map.remove(&closed_requestid) {
-                Some((_, _)) => debug!("Request '{}' timedout.", &closed_requestid),
-                None => (),
+            if let Some((_, _)) = state.requests_map.remove(&closed_requestid) {
+                debug!("Request '{}' timedout.", &closed_requestid);
             }
         });
 

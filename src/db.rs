@@ -19,8 +19,10 @@ const NODE_ID_KEY: &str = "id";
 ///
 /// This actor is responsible for handling all runtime interfacing with the database.
 pub struct Database {
+    #[allow(dead_code)]
     app: Addr<App>,
     id: NodeId,
+    #[allow(dead_code)]
     db: sled::Db,
 }
 

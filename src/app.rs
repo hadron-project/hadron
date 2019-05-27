@@ -4,7 +4,6 @@ use std::{
 
 use actix::prelude::*;
 use log::{error, info};
-use uuid;
 
 use crate::{
     config::Config,

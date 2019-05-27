@@ -286,6 +286,7 @@ pub(self) struct PeerConnectionLive {
     peer_id: NodeId,
 
     /// Routing info coming from the newly connected peer.
+    #[allow(dead_code)]
     routing_info: String,
 
     /// The address of the actor which is responsible for the new connection.

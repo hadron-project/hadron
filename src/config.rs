@@ -25,6 +25,7 @@ impl Config {
     /// Currently this routing just parses the runtime environment and builds the application
     /// config from that. In the future, this may take into account an optional config file as
     /// well.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         match envy::prefixed("RG_").from_env() {
             Err(err) => {

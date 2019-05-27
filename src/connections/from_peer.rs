@@ -233,7 +233,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsFromPeer {
                         if let Some(id) = self.peer_id.as_ref() {
                             self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::NodeId(id.to_string())));
                         }
-                        return ctx.stop();
+                        ctx.stop()
                     }
                     None => (),
                 }
@@ -261,9 +261,8 @@ impl Handler<OutboundPeerRequest> for WsFromPeer {
         // Spawn the request's timeout handler & retain the spawnhandle.
         let closed_requestid = requestid.clone();
         let timeout = ctx.run_later(msg.timeout, move |closed_self, _closed_ctx| {
-            match closed_self.requests_map.remove(&closed_requestid) {
-                Some((_, _)) => debug!("Request '{}' timedout.", &closed_requestid),
-                None => (),
+            if let Some((_, _)) = closed_self.requests_map.remove(&closed_requestid) {
+                debug!("Request '{}' timedout.", &closed_requestid);
             }
         });
 
