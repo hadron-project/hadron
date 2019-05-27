@@ -39,5 +39,20 @@ spec:
             - name: RG_PORT
               value: {{.Values.statefulSet.pod.port | quote}}
             - name: RG_DISCOVERY_DNS_NAME
-              # The "*." prefix works with ClusterIP services as well as Headless services.
+              # NOTE: the "*." prefix works with ClusterIP services as well as Headless services.
               value: "*.railgun"
+            - name: RG_DB_PATH
+              value: {{.Values.statefulSet.db.path}}
+          volumeMounts:
+            - name: data
+              mountPath: {{.Values.statefulSet.db.path}}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+{{toYaml .Values.statefulSet.db.accessModes | indent 10}}
+        storageClassName: {{.Values.statefulSet.db.storageClassName | quote}}
+        resources:
+          requests:
+            storage: {{.Values.statefulSet.db.volumeSize}}
