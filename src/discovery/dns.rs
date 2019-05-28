@@ -77,25 +77,22 @@ impl Actor for DnsDiscovery {
                 // Perform a new DNS lookup on each interval.
                 .and_then(move |_| -> Box<dyn Future<Item=Option<LookupIp>, Error=ResolveError>> {
                     let is_active = *has_active_query.borrow();
-                    match is_active {
-                        false => {
-                            debug!("Starting new DNS peer discovery request.");
-                            *has_active_query.borrow_mut() = true;
-                            let (inner_rc0, inner_rc1) = (has_active_query.clone(), has_active_query.clone());
-                            Box::new(resolver.lookup_ip(config.discovery_dns_name.as_str())
-                                .map(move |lookup_res| {
-                                    *inner_rc0.borrow_mut() = false;
-                                    Some(lookup_res)
-                                })
-                                .map_err(move |err| {
-                                    *inner_rc1.borrow_mut() = false;
-                                    err
-                                }))
-                        }
-                        true => {
-                            debug!("DNS discovery interval hit, but request is already in flight. Skipping.");
-                            Box::new(futures::future::ok(None))
-                        }
+                    if is_active {
+                        debug!("Starting new DNS peer discovery request.");
+                        *has_active_query.borrow_mut() = true;
+                        let (inner_rc0, inner_rc1) = (has_active_query.clone(), has_active_query.clone());
+                        Box::new(resolver.lookup_ip(config.discovery_dns_name.as_str())
+                            .map(move |lookup_res| {
+                                *inner_rc0.borrow_mut() = false;
+                                Some(lookup_res)
+                            })
+                            .map_err(move |err| {
+                                *inner_rc1.borrow_mut() = false;
+                                err
+                            }))
+                    } else {
+                        debug!("DNS discovery interval hit, but request is already in flight. Skipping.");
+                        Box::new(futures::future::ok(None))
                     }
                 }),
             ctx,

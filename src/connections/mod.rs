@@ -33,6 +33,7 @@ use log::{debug, error};
 
 use crate::{
     proto::{peer},
+    common::NodeId,
     config::Config,
     connections::{
         from_peer::WsFromPeer,
@@ -52,9 +53,6 @@ pub(self) const PEER_HB_THRESHOLD: Duration = Duration::from_secs(10);
 
 /// The amount of time which is allowed to elapse between a handshake request/response cycle.
 pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// A peer node's ID.
-pub type NodeId = String;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // ServerState ///////////////////////////////////////////////////////////////////////////////////
@@ -288,6 +286,7 @@ pub(self) struct PeerConnectionLive {
     peer_id: NodeId,
 
     /// Routing info coming from the newly connected peer.
+    #[allow(dead_code)]
     routing_info: String,
 
     /// The address of the actor which is responsible for the new connection.
@@ -309,7 +308,7 @@ impl Handler<PeerConnectionLive> for Connections {
     ///
     /// It will also update this actor's internal state to map the peer's node ID to the actor's
     /// address for message routing, and will propagate the routing of the newly connected peer
-    /// to the core RG actor for high-level controls.
+    /// to the App actor for high-level controls.
     fn handle(&mut self, msg: PeerConnectionLive, _ctx: &mut Self::Context) -> Self::Result {
         // If a connection already exists to the target peer, then this connection is invalid.
         if self.routing_table.contains_key(&msg.peer_id) {
@@ -398,6 +397,6 @@ impl Handler<InboundPeerRequest> for Connections {
 
     /// Handle inbound peer API requests.
     fn handle(&mut self, _msg: InboundPeerRequest, _ctx: &mut Self::Context) {
-        // TODO: handle sending this request over to the RG actor for high-level handling.
+        // TODO: handle sending this request over to the App actor for high-level handling.
     }
 }

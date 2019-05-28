@@ -31,7 +31,7 @@ impl ObservedSet {
         let new_peers: Vec<_> = newaddrs.into_iter()
             .inspect(|new| debug!("Adding peer at {:?} to observed set of peers.", &new))
             .map(|new| {
-                self.0.insert(new.clone());
+                self.0.insert(new);
                 new
             })
             .collect();
@@ -45,7 +45,7 @@ impl ObservedSet {
                 elem
             }).collect();
 
-        if new_peers.len() > 0 || purged_peers.len() > 0 {
+        if !new_peers.is_empty() || !purged_peers.is_empty() {
             Some(ObservedPeersChangeset{new_peers, purged_peers})
         } else {
             None

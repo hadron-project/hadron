@@ -1,5 +1,5 @@
 use crate::proto::peer::{
-    api::{Disconnect, Frame, frame, Meta, Request, request, Response, response},
+    api::{Disconnect, Frame, frame, Meta},
 };
 
 impl Frame {
