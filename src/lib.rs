@@ -2,6 +2,7 @@ mod app;
 mod common;
 mod config;
 mod connections;
+mod consensus;
 mod db;
 mod discovery;
 mod proto;

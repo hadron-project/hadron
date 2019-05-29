@@ -1,3 +1,24 @@
+//! A module encapsulating all logic for interfacing with the data storage system.
+//!
+//! The primary actor of this module is the `Database` actor. It handles various types of messages
+//! corresponding to the various events which should cause data to be written to or read from the
+//! database.
+//!
+//! There are two primary pathways into interfacing with the database:
+//!
+//! - Client events. A client request to begin reading a stream or a request to write data to a
+//! stream. This always pertains to persistent streams. Ephemeral messaging does not touch the
+//! database.
+//! - Cluster consensus. The `Consensus` actor within the system will inevitibly write data to the
+//! database. This data is treated much the same way that a persistent stream is treated. Every
+//! record gets a monotonically increasing `u64` ID.
+//!
+//! It is important to note that, at this point, Railgun does not maintain a WAL of all data write
+//! operations for persistent streams. This would be completely redundant and there is only one
+//! type of operation supported on a stream: write the blob of data in the payload. So if a node
+//! is behind and needs to catch up, reconstructing the events is as simple as reading the latest
+//! events and writing them to the data store for the target stream.
+
 use actix::prelude::*;
 use log::{info};
 use sled;

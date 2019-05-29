@@ -40,7 +40,7 @@ use crate::{
         to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer},
     },
     discovery::{
-        Discovery, ObservedPeersChangeset, SubscribeToDiscoveryChangesets,
+        Discovery, ObservedPeersChangeset,
     },
 };
 
@@ -94,23 +94,34 @@ enum PeerAddr {
 /// See the README.md in this directory for additional information on actor responsibilities.
 pub struct Connections {
     node_id: String,
-    discovery: Addr<Discovery>,
     config: Arc<Config>,
     server: Option<Server>,
     socketaddr_to_peer: HashMap<SocketAddr, WsToPeerState>,
     routing_table: HashMap<NodeId, PeerAddr>,
+    _discovery: Addr<Discovery>,
 }
 
 impl Connections {
     /// Create a new instance.
-    pub fn new(discovery: Addr<Discovery>, node_id: String, config: Arc<Config>) -> Self {
+    ///
+    /// This is expected to be called from within this actors `App::create` method which provides
+    /// the context, and thus the address, of this actor. This is needed for spawning other actors
+    /// and setting up proper communication channels.
+    pub fn new(ctx: &mut Context<Self>, node_id: String, config: Arc<Config>) -> Self {
+
+        // Boot the configured discovery system on a new dedicated thread.
+        let (recipient, innercfg) = (ctx.address().recipient(), config.clone());
+        let _discovery = Discovery::create(|innerctx|
+            Discovery::new(innerctx, recipient, innercfg)
+        );
+
         Self{
             node_id,
-            discovery,
             config,
             server: None,
             socketaddr_to_peer: HashMap::new(),
             routing_table: HashMap::new(),
+            _discovery,
         }
     }
 
@@ -155,10 +166,6 @@ impl Actor for Connections {
                 return
             }
         }
-
-        // Subscribe to the discovery system's changesets. This happens only once when the system
-        // is booted. This should never fail.
-        self.discovery.do_send(SubscribeToDiscoveryChangesets(ctx.address().recipient()));
     }
 }
 

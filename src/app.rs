@@ -9,7 +9,6 @@ use crate::{
     config::Config,
     connections::{Connections},
     db::Database,
-    discovery::{Discovery, DiscoveryBackend},
 };
 
 /// The central Railgun actor.
@@ -52,14 +51,11 @@ impl App {
         let nodeid = db.node_id().clone();
         let _dbaddr = db.start();
 
-        // Boot the configured discovery system on a new dedicated thread.
-        // NOTE: currently we only support DNS discovery, so its selection is hard-coded.
-        let (discovery_arb, discovery_cfg) = (Arbiter::new(), config.clone());
-        let discovery_addr = Discovery::start_in_arbiter(&discovery_arb, move |_| Discovery::new(DiscoveryBackend::Dns, discovery_cfg));
-
-        // Boot the connections actor. Its network server will operate on dedicated threads.
-        // TODO: connections actor needs to take addr of this actor for propagating inbound network frames.
-        let _conns_addr = Connections::new(discovery_addr.clone(), nodeid, config.clone()).start();
+        // Boot the connections actor on a dedicated thread. The network server will serve using
+        // a didicated threadpool.
+        // TODO: app actor needs to take addr of this actor for propagating inbound network frames.
+        let (conns_arb, conns_cfg, conns_node_id) = (Arbiter::new(), config.clone(), nodeid.clone());
+        let _conns_addr = Connections::start_in_arbiter(&conns_arb, |ctx| Connections::new(ctx, conns_node_id, conns_cfg));
 
         info!("Railgun is firing on 0.0.0.0:{}!", &config.port);
         App
