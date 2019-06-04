@@ -2,21 +2,24 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Meta {
     /// The ID of this request or response frame.
-    #[prost(string, tag="1")]
+    #[prost(string, required, tag="1")]
     pub id: std::string::String,
     /// The deadline for this request in milliseconds since the epoch.
-    #[prost(int64, tag="2")]
+    #[prost(int64, required, tag="2")]
     pub deadline: i64,
 }
 /// An API frame.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Frame {
+    /// The metadata of the frame.
     #[prost(message, optional, tag="1")]
     pub meta: ::std::option::Option<Meta>,
+    /// The payload of data for this frame.
     #[prost(oneof="frame::Payload", tags="2, 3, 4")]
     pub payload: ::std::option::Option<frame::Payload>,
 }
 pub mod frame {
+    /// The payload of data for this frame.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Payload {
         #[prost(message, tag="2")]

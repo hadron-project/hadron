@@ -1,6 +1,4 @@
-use std::{
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use actix::prelude::*;
 use log::{error, info};
@@ -8,6 +6,7 @@ use log::{error, info};
 use crate::{
     config::Config,
     connections::{Connections},
+    consensus::Consensus,
     db::Database,
 };
 
@@ -48,14 +47,29 @@ impl App {
             error!("Error initializing the system database. {}", err);
             std::process::exit(1);
         });
-        let nodeid = db.node_id().clone();
+        let nodeid = db.node_id();
+
+        // Create a Raft storage instance for use by the consensus actor.
+        let raft_storage = db.raft_storage().unwrap_or_else(|err| {
+            error!("Error creating raft storage. {}", err);
+            std::process::exit(1);
+        });
         let _dbaddr = db.start();
 
         // Boot the connections actor on a dedicated thread. The network server will serve using
         // a didicated threadpool.
-        // TODO: app actor needs to take addr of this actor for propagating inbound network frames.
-        let (conns_arb, conns_cfg, conns_node_id) = (Arbiter::new(), config.clone(), nodeid.clone());
-        let _conns_addr = Connections::start_in_arbiter(&conns_arb, |ctx| Connections::new(ctx, conns_node_id, conns_cfg));
+        let (conns_arb, conns_cfg, conns_app, conns_nodeid) = (Arbiter::new(), config.clone(), app.clone(), nodeid.clone());
+        let _conns_addr = Connections::start_in_arbiter(&conns_arb, move |conns_ctx| {
+            Connections::new(conns_ctx, conns_app, conns_nodeid, conns_cfg)
+        });
+
+        // Boot the consensus actor on a dedicated thread.
+        let cns_arb = Arbiter::new();
+        let cns = Consensus::new(app.clone(), nodeid, raft_storage, config.clone()).unwrap_or_else(|err| {
+            error!("Error initializing the consensus system. {}", err);
+            std::process::exit(1);
+        });
+        let _cns_addr = Consensus::start_in_arbiter(&cns_arb, move |_| cns);
 
         info!("Railgun is firing on 0.0.0.0:{}!", &config.port);
         App
@@ -65,3 +79,5 @@ impl App {
 impl Actor for App {
     type Context = Context<Self>;
 }
+
+// TODO: setup handler for inbound network frames from connections actor.

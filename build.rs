@@ -1,7 +1,17 @@
 use prost_build;
 
 fn main() {
-    // Compile internal API protobuf code.
+    // Compile storage protobuf code.
+    let _ = prost_build::Config::new()
+        .out_dir("src/proto/storage")
+        .compile_protos(&[
+            "protobuf/storage/raft.proto",
+        ], &[
+            "protobuf/storage",
+        ])
+        .map_err(|err| panic!("Failed to compile storage protobuf code. {}", err));
+
+    // Compile peer communications protobuf code.
     let _ = prost_build::Config::new()
         .out_dir("src/proto/peer")
         .compile_protos(&[
@@ -10,9 +20,9 @@ fn main() {
         ], &[
             "protobuf/peer",
         ])
-        .map_err(|err| panic!("Failed to compile internal protobuf code. {}", err));
+        .map_err(|err| panic!("Failed to compile peer protobuf code. {}", err));
 
-    // Compile public API protobuf code.
+    // Compile client communications protobuf code.
     let _ = prost_build::Config::new()
         .out_dir("src/proto/client")
         .compile_protos(&[
@@ -20,5 +30,5 @@ fn main() {
         ], &[
             "protobuf/client",
         ])
-        .map_err(|err| panic!("Failed to compile protobuf code. {}", err));
+        .map_err(|err| panic!("Failed to compile client protobuf code. {}", err));
 }

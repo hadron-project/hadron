@@ -103,9 +103,11 @@ This applies primarily to persistent streams. This section introduces the term `
 - Within the DB, each stream receives a top-level keyspace based on the name. Stream names must be simple, matching the character set `[-_A-Za-z0-9.]+`.
 - The stream's concrete data is stored under the keyspace as follows `/streams/{streamName}/data/{id}`. This allows for easily watching a keyspace for consumer operations.
 - The stream's consumer offsets are stored under the keyspace as follows `/streams/{streamName}/offsets/{consumerId}`. This allows for easily updating the offsets of consumers by consumer ID.
+- The stream's metadata is stored under `/streams/{streamName}/metadata`. This allows for easily updating the first and last indices of a stream along with any other pertinent metadata. This is held under a single key.
 - This system does not use oplogs as there is only one type of operation which can be applied to persistent streams. Replication is synchronous to all other writers nodes.
 - The node's ID is stored under `/node/id`.
-- The cluster's membership, node state, and writer delegates are stored in the database under `/cluster/metadata/`. Each change gets an ID just as a standard persistent stream. This data is synchronously replicated to all writer nodes. Reader nodes receive the data at the same time, but the operation will be considered complete after writer nodes are synced.
+- The cluster's membership, node state, and writer delegates are stored in the database under `/cluster/metadata`. Each change gets an ID just as a standard persistent stream. This data is synchronously replicated to all writer nodes. Reader nodes receive the data at the same time, but the operation will be considered complete after writer nodes are synced.
+- The Raft log for the cluster is held under `/cluster/raft/data/` and its metadata is held under `/cluster/raft/metadata`.
 
 ### data replication and sharding
 Data replication and sharding for a persistent stream is influenced by the creation of the stream. When a stream is created, it may be created with a configurable number of data replicas, and sharding may be enabled or disabled, it will be disabled by default.

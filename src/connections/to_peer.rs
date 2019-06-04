@@ -124,7 +124,7 @@ pub(super) struct WsToPeer {
 
 impl WsToPeer {
     /// Create a new instance.
-    pub fn new(parent: Addr<Connections>, node_id: String, target: SocketAddr) -> Self {
+    pub fn new(parent: Addr<Connections>, node_id: NodeId, target: SocketAddr) -> Self {
         Self{
             node_id,
             peer_id: None,
@@ -156,7 +156,7 @@ impl WsToPeer {
         let request = match hs_state {
             // TODO: finish up the routing info pattern. See the peer connection management doc.
             Initial => api::Request{segment: Some(api::request::Segment::Handshake(
-                handshake::Handshake{node_id: self.node_id.clone(), routing_info: String::with_capacity(0)}
+                handshake::Handshake{node_id: self.node_id, routing_info: String::with_capacity(0)}
             ))},
             Done => return,
         };
@@ -164,7 +164,7 @@ impl WsToPeer {
         // Spawn the outbound request.
         let f = ctx.address().send(OutboundPeerRequest{
             request,
-            target_node: String::with_capacity(0),
+            target_node: 0, // NOTE: this is not used in this case.
             timeout: PEER_HANDSHAKE_TIMEOUT,
         });
         let af = actix::fut::wrap_future::<_, Self>(f)

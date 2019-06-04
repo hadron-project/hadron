@@ -32,6 +32,7 @@ use futures::future::err as fut_err;
 use log::{debug, error};
 
 use crate::{
+    app,
     proto::{peer},
     common::NodeId,
     config::Config,
@@ -61,7 +62,7 @@ pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Clone)]
 pub(self) struct ServerState {
     pub parent: Addr<Connections>,
-    pub node_id: String,
+    pub node_id: NodeId,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -93,7 +94,8 @@ enum PeerAddr {
 ///
 /// See the README.md in this directory for additional information on actor responsibilities.
 pub struct Connections {
-    node_id: String,
+    app: Addr<app::App>,
+    node_id: NodeId,
     config: Arc<Config>,
     server: Option<Server>,
     socketaddr_to_peer: HashMap<SocketAddr, WsToPeerState>,
@@ -107,7 +109,7 @@ impl Connections {
     /// This is expected to be called from within this actors `App::create` method which provides
     /// the context, and thus the address, of this actor. This is needed for spawning other actors
     /// and setting up proper communication channels.
-    pub fn new(ctx: &mut Context<Self>, node_id: String, config: Arc<Config>) -> Self {
+    pub fn new(ctx: &mut Context<Self>, app: Addr<app::App>, node_id: NodeId, config: Arc<Config>) -> Self {
 
         // Boot the configured discovery system on a new dedicated thread.
         let (recipient, innercfg) = (ctx.address().recipient(), config.clone());
@@ -116,6 +118,7 @@ impl Connections {
         );
 
         Self{
+            app,
             node_id,
             config,
             server: None,
@@ -127,7 +130,7 @@ impl Connections {
 
     /// Build a new network server instance for use by this system.
     pub fn build_server(&self, ctx: &Context<Self>) -> Result<Server, ()> {
-        let data = ServerState{parent: ctx.address(), node_id: self.node_id.clone()};
+        let data = ServerState{parent: ctx.address(), node_id: self.node_id};
         let server = HttpServer::new(move || {
             App::new().data(data.clone())
                 // This endpoint is used for internal client communication.
@@ -147,7 +150,7 @@ impl Connections {
     /// Handler for opening new peer WebSocket connections.
     fn handle_peer_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
         debug!("Handling a new peer connection request.");
-        ws::start(WsFromPeer::new(data.parent.clone(), data.node_id.clone()), &req, stream)
+        ws::start(WsFromPeer::new(data.parent.clone(), data.node_id), &req, stream)
     }
 }
 
@@ -202,7 +205,7 @@ impl Handler<ObservedPeersChangeset> for Connections {
         // Spawn new outbound connections to peers.
         tospawn.into_iter().for_each(|socketaddr| {
             debug!("Spawning a new outbound peer connection to '{}'.", &socketaddr);
-            let addr = WsToPeer::new(ctx.address(), self.node_id.clone(), socketaddr).start();
+            let addr = WsToPeer::new(ctx.address(), self.node_id, socketaddr).start();
             let discovery_state = DiscoveryState::Observed;
             self.socketaddr_to_peer.insert(socketaddr, WsToPeerState{addr, discovery_state});
         });
@@ -256,7 +259,7 @@ pub(self) struct ClosingPeerConnection(pub PeerConnectionIdentifier);
 /// available after a successful Railgun protocol handshake.
 pub enum PeerConnectionIdentifier {
     /// This variant is used by `WsFromPeer` connections which do not have the SocketAddr of the peer.
-    NodeId(String),
+    NodeId(NodeId),
     /// This variant is used by `WsToPeer` connections which only have the SocketAddr of the peer before the handshake is complete.
     SocketAddr(SocketAddr),
     /// This variant is used by `WsToPeer` connections after a successful handshake as both data elements will be available.

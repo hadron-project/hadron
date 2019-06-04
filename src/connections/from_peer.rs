@@ -17,6 +17,7 @@ use futures::{
 use log::{debug, error, info, warn};
 
 use crate::{
+    common::NodeId,
     connections::{
         PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
         ClosingPeerConnection, Connections, OutboundPeerRequest,
@@ -41,7 +42,7 @@ use crate::{
 /// the receiving end of the connection will send pings. That is this end.
 pub(super) struct WsFromPeer {
     /// The ID of this node.
-    node_id: String,
+    node_id: NodeId,
 
     /// Address of the parent connections actor.
     parent: Addr<Connections>,
@@ -56,7 +57,7 @@ pub(super) struct WsFromPeer {
     /// The NodeID of the connected peer.
     ///
     /// This will only be available after a successful handshake.
-    peer_id: Option<String>,
+    peer_id: Option<NodeId>,
 
     /// A map of all pending requests.
     requests_map: HashMap<String, (oneshot::Sender<Result<peer::api::Response, ()>>, SpawnHandle)>,
@@ -64,7 +65,7 @@ pub(super) struct WsFromPeer {
 
 impl WsFromPeer {
     /// Create a new instance.
-    pub fn new(parent: Addr<Connections>, node_id: String) -> Self {
+    pub fn new(parent: Addr<Connections>, node_id: NodeId) -> Self {
         Self{
             node_id,
             parent,
@@ -105,7 +106,7 @@ impl WsFromPeer {
 
         // Update handshake state & peer ID.
         self.state = PeerHandshakeState::Done;
-        self.peer_id = Some(hs.node_id.clone());
+        self.peer_id = Some(hs.node_id);
 
         // Propagate handshake info to parent connections actor. If disconnect is needed, send
         // disconnect frame over to peer so that it will not attempt to reconnect.
@@ -128,7 +129,7 @@ impl WsFromPeer {
         // Respond to the caller with a handshake frame.
         // TODO: finish up the routing info pattern. See the peer connection management doc.
         use prost::Message;
-        let hs_out = peer::handshake::Handshake{node_id: self.node_id.clone(), routing_info: String::with_capacity(0)};
+        let hs_out = peer::handshake::Handshake{node_id: self.node_id, routing_info: String::with_capacity(0)};
         let frame = peer::api::Frame{meta: Some(meta), payload: Some(peer::api::frame::Payload::Response(peer::api::Response{
             segment: Some(peer::api::response::Segment::Handshake(hs_out)),
         }))};
@@ -146,8 +147,8 @@ impl WsFromPeer {
             // Check client heartbeats.
             if Instant::now().duration_since(act.heartbeat) > PEER_HB_THRESHOLD {
                 info!("Peer connection appears to be dead, disconnecting.");
-                if let Some(id) = act.peer_id.as_ref() {
-                    act.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::NodeId(id.to_string())));
+                if let Some(id) = act.peer_id {
+                    act.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::NodeId(id)));
                 }
                 ctx.stop();
             } else {
@@ -211,8 +212,6 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsFromPeer {
             }
             ws::Message::Text(_) => warn!("Protocol error. Unexpectedly received a text frame from connected peer."),
             ws::Message::Binary(data) => {
-
-
                 // Decode the received frame.
                 debug!("Binary data received.");
                 use prost::Message;
@@ -230,8 +229,8 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsFromPeer {
                     Some(peer::api::frame::Payload::Request(req)) => self.route_request(req, frame.meta.unwrap_or_default(), ctx),
                     Some(peer::api::frame::Payload::Disconnect(reason)) => {
                         debug!("Received peer disconnect frame {}. Closing.", reason);
-                        if let Some(id) = self.peer_id.as_ref() {
-                            self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::NodeId(id.to_string())));
+                        if let Some(id) = self.peer_id {
+                            self.parent.do_send(ClosingPeerConnection(PeerConnectionIdentifier::NodeId(id)));
                         }
                         ctx.stop()
                     }
