@@ -4,7 +4,7 @@ use envy;
 use log::error;
 use serde::{Deserialize};
 
-use crate::db::Database;
+use crate::db;
 
 /// Runtime configuration for Railgun.
 #[derive(Clone, Debug, Deserialize)]
@@ -17,7 +17,7 @@ pub struct Config {
     pub discovery_backend: DiscoveryBackend,
 
     /// The path to the database on disk.
-    #[serde(default="Database::default_db_path")]
+    #[serde(default="db::default_db_path")]
     pub db_path: String,
 }
 

@@ -18,6 +18,11 @@
 //! type of operation supported on a stream: write the blob of data in the payload. So if a node
 //! is behind and needs to catch up, reconstructing the events is as simple as reading the latest
 //! events and writing them to the data store for the target stream.
+//!
+//! However, it is just as important to note that stream writer delegate nomination adheres to
+//! Raft's election safety protocol to ensure only a node with all data ever known to the stream
+//! may be nominated. Additionally, the stream replication protocol adheres to Raft's data
+//! replication safety protocol as well, to ensure that there is no data loss.
 
 use std::{
     collections::hash_map::DefaultHasher,
@@ -37,33 +42,42 @@ use crate::{
     proto::storage::raft::ClusterState,
 };
 
-/// The default DB path to use for the data store.
-const DEFAULT_DB_PATH: &str = "/var/lib/railgun/data";
-
 /// The database path to the rust log.
-const RAFT_LOG_PATH: &str = "/cluster/raft/data/";
+const CLUSTER_RAFT_LOG_PATH: &str = "/cluster/raft/data/";
 
 /// The key under which the Raft log's metadata is kept.
-const RAFT_METADATA_KEY: &str = "/cluster/raft/metadata";
+const CLUSTER_RAFT_METADATA_KEY: &str = "/cluster/raft/metadata";
+
+/// The default DB path to use for the data store.
+const DEFAULT_DB_PATH: &str = "/var/lib/railgun/data";
 
 /// The key used for storing the node ID of the current node.
 const NODE_ID_KEY: &str = "id";
 
-/// The database actor.
+/// The DB path prefix for all streams.
+const STREAMS_PATH_PREFIX: &str = "/streams/";
+
+/// The defalt DB path to use.
+pub fn default_db_path() -> String {
+    DEFAULT_DB_PATH.to_string()
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// RaftStorage ///////////////////////////////////////////////////////////////////////////////////
+
+/// A type used to implement storage for the cluster's Raft.
 ///
-/// This actor is responsible for handling all runtime interfacing with the database.
-pub struct Database {
+/// This is only used for the cluster Raft. Other streams will use the `Database` interface for
+/// their data storage.
+pub struct RaftStorage {
     _app: Addr<App>,
     id: NodeId,
     db: sled::Db,
+    log: Arc<sled::Tree>,
 }
 
-impl Actor for Database {
-    type Context = Context<Self>;
-}
-
-impl Database {
-    /// Initialize the system database.
+impl RaftStorage {
+    /// Create a new instance.
     ///
     /// This will initialize the data store, and will ensure that the database has a node ID.
     pub fn new(app: Addr<App>, config: &Config) -> Result<Self, sled::Error> {
@@ -82,14 +96,15 @@ impl Database {
                 id
             }
         };
+        let log = db.open_tree(CLUSTER_RAFT_LOG_PATH)?;
 
         info!("Node ID is {}", &id);
-        Ok(Database{_app: app, id, db})
+        Ok(Self{_app: app, id, db, log})
     }
 
-    /// The defalt DB path to use.
-    pub fn default_db_path() -> String {
-        DEFAULT_DB_PATH.to_string()
+    /// Get a cloned copy of the DB handle.
+    pub fn db(&self) -> sled::Db {
+        self.db.clone()
     }
 
     /// This node's ID.
@@ -97,35 +112,18 @@ impl Database {
         self.id
     }
 
-    /// Create a Raft data storage instance for use by the consensus actor.
-    pub fn raft_storage(&self) -> sled::Result<RaftStorage> {
-        let log = self.db.open_tree(RAFT_LOG_PATH)?;
-        Ok(RaftStorage{log, db: self.db.clone()})
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// RaftStorage ///////////////////////////////////////////////////////////////////////////////////
-
-/// A type used to implement the Raft storage interface.
-pub struct RaftStorage {
-    log: Arc<sled::Tree>,
-    db: sled::Db,
-}
-
-impl RaftStorage {
-    /// Get the cluster state from disk, else default.
-    pub fn get_cluster_state(&self) -> sled::Result<ClusterState> {
-        let state = self.db.get(RAFT_METADATA_KEY)?
-            .map(|data| {
+    /// Get the cluster state from disk.
+    pub fn get_cluster_state(&self) -> Result<ClusterState, String> {
+        match self.db.get(CLUSTER_RAFT_METADATA_KEY).map_err(|err| err.to_string())? {
+            None => Ok(ClusterState::default()),
+            Some(data) => {
                 use prost::Message;
-                ClusterState::decode(&*data).unwrap_or_else(|err| {
-                    error!("Failed to read cluster state from disk. Data may be corrupt. {}", err);
-                    ClusterState::default()
+                ClusterState::decode(&*data).map_err(|err| {
+                    error!("Failed to read cluster state from disk. Data may be corrupt. {}", &err);
+                    err.to_string()
                 })
-            }).unwrap_or_default();
-
-        Ok(state)
+            }
+        }
     }
 }
 
@@ -174,3 +172,30 @@ impl RaftStorage {
 //         Ok(())
 //     }
 // }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// StreamStorage /////////////////////////////////////////////////////////////////////////////////
+
+/// Synchronous database interface for storing stream data on disk.
+///
+/// This type is responsible for providing a consistent interface for data storage regardless of
+/// the actual data storage engine being used.
+///
+/// NOTE: currently only Sled is being used. As new storage engines are added, feature flags
+/// should be used to configure which storage engine to use and which code to compile.
+#[derive(Clone)]
+pub struct StreamStorage {
+    _app: Addr<App>,
+    db: sled::Db,
+}
+
+impl Actor for StreamStorage {
+    type Context = SyncContext<Self>;
+}
+
+impl StreamStorage {
+    /// Create a new instance.
+    pub fn new(app: Addr<App>, db: sled::Db) -> Self {
+        Self{_app: app, db}
+    }
+}

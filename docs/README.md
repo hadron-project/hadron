@@ -20,13 +20,13 @@ Messages published to a persistent stream are durable. The durability may be con
 
 - Persistent stream messages have no concept of “topics”. The stream itself can be named hierarchically, but wildcards can not be applied to streams for consumption. Stream names must conform to the pattern: `[-_A-Za-z0-9.]+`.
 - Provides **at least once delivery semantics** by default, or **exactly once delivery semantics** if writing to a stream with [unique id checking](#persistent-stream-unique-id-checking) enabled.
-- Stream replication can be configured when the stream is created. By default, the stream will be replicated to 3 peer writer nodes, but the number of replicas can be any non-zero unsigned 8-bit integer.
+- Stream data is replicated accross the entire cluster and guarantees strict linearizability.
 - Messages must be ack’ed. Messages may be nack’ed to indicate that redelivery is needed. Redelivery may be immediate or may have a delay applied to the message (for the consumer group only). Automatic redelivery takes place when consumer dies and can not ack or nack message. Redelivery delays are tied directly to the lifetime of consumers and their durability. See the [consumer section](#consumers) for more details.
-- Support for optional message ID uniqueness. If a stream is configured with message uniquness, all messages will have their IDs checked against the indexed IDs for that stream. Duplicate IDs will be rejected. This provides a builtin mechanism for deduplication.
+- Support for optional message ID uniqueness. If a stream is configured with message uniquness, all messages will have their IDs checked against the indexed IDs for that stream. Duplicate IDs will be rejected. This provides a builtin mechanism for deduplication and exactly-once semantics.
 - Consumers may consume from streams independently, or as groups. With persistent offset tracking or ephemeral offsets. Server will track offset of consumers automatically. See the [consumers section](#consumers) for more details.
-- Group consumers will simply have messages load balanced across group members as messages arrive. Group membership is based purely off of a simple string ID provided when a consumer first connects. The writer delegate is responsible for load balancing decisions.
-- Consumers will receive all messages without any message level discrimination. Consumers may specify start points: start, end, or specific offset. If consumer already has a tracked offset, then start or end starting points will be ignored. Server keeps track of location of consumer by ID and offset.
-- Stream should be `ensured` first to ensure that it exists with the expected configuration.
+- Group consumers will simply have messages load balanced across group members as messages arrive. Group membership is based purely off of a simple string ID provided when a consumer first connects. A stream's [writer delegate](#writing-data) is responsible for load balancing decisions.
+- Consumers will receive all messages without any message level discrimination. Consumers may specify start points: start, end, or specific offset. If consumer already has a tracked offset based on its consumer ID, then any specified starting point will be ignored. Railgun keeps track of the location of a consumer by ID and offset.
+- Streams should be `ensured` first to ensure that it exists with the expected configuration.
 
 ## ephemeral messaging
 The entire cluster acts as an AMQP-style exchange. Topics are used for consumer matching. Messages are never preserved, they are either immediately routed to matching consumers, or the message is dropped if there are no matching consumers. Consumer group load balancing decisions are made by the source node which received the message needing to be load balanced. Consumer group information is synchronously replicated to all writer nodes (described below) when the consumer group is formed and as members join and leave the group, but this information is only held in memory.
@@ -66,64 +66,52 @@ The second wildcard is `>` which will match one or more hierachy tokens, and can
 
 --------------------------------------------------------------------------------------------------
 
-## cap
-In respect to CAP theorem, this system prioritizes *Availability* and *Partition Tolerance*. This works perfectly for this type of system as persistent streams are immutable. So consistency is purely a matter of whether the replica node has the most recent additions to the stream. There is no MVCC to be concerned about, no atomic updating concerns or the like as transactions are not currently on the roadmap and don't really apply to a system like this, especially considering the [persistent stream unique id checking feature](#persistent-stream-unique-id-checking).
+### cap
+In respect to CAP theorem, this system prioritizes *Consistency* and *Partition Tolerance*. This works perfectly for this type of system as persistent streams are immutable and strict linearizability is required.
 
-## clustering
-- Clustering is natively supported. Cluster roles are dynamic.
-- Raft is used for cluster consensus.
-- Nodes may function in a few different roles: `master`, `writer`, `reader`. Nodes are master eligible (`writer`) by default, but can be configured to be read-only (`reader`) so that they can not become the cluster master.
-- Dead cluster members may be pruned after some period of time based on cluster configuration.
+### clustering
+Clustering is natively supported via the Raft protocol. All nodes participate in the cluster's Raft. This guarantees consistency and safety for the cluster's data. Dead cluster members will be pruned after some period of time based on cluster configuration, as long as the cluster leader determines that it is safe to do so. This is also known as self-healing, auto-recovery &c.
 
 ### discovery
-When a node first comes online, the discovery system will be booted to monitor for peers. The raft protocol is used to establish a cluster master. Once a master has been elected, all other nodes will treat it as the source of truth for selecting stream writer delegates.
+Discovery is what allows members to automatically join a cluster by way of network communication. This is often referred to as cluster formation, peer discovery, auto clustering &c. A Railgun cluster can be configured to check credentials of peers during cluster formation.
+
+Currently only DNS based peer discovery is implemented in this system. However, Railgun has been designed so that new discovery backends can be easily added in the future as needed.
+
+When a node first comes online, the discovery system will be booted to monitor for peers. When new peers are discovered, the Raft leader will propose a new cluster configuration to add the peer. This allows for dynamic cluster growth. When a cluster member goes down, the nodes responsibilities will be moved; then, when it is safe to do so, and when the configured threshold has passed, dead cluster members will be removed to ensure that the cluster can dynamically downsize as well.
 
 ### node lifecycle
-Nodes may be in a few differnt states during their lifecycle.
-- `syncing`: a node has come online for the first time or after some period of time, and it needs to sync with the most recent state of the system.
-- `active`: a node is live and active. Replicating data, potentially operating as a writer delegate and potentially operating as the master.
-
-##### syncing
-A node always initially comes online in the syncing state. When a node is syncing, it will still participate in the cluster consensus protocol. Overview of the syncing lifecycle:
-- The node will request cluster metadata from the master to determine if it is considered new to the cluster.
-- If the node is new to the cluster, the master will determine the streams which it should replicate, and will then propose this as part of the cluster state. Once the new node receives this information, it will begin requesting snapshots and the like from the various stream writer delegates.
-- Once the new node has come up to speed on all of the streams which it needs to replicate, it will notify the master that it is ready to enter the active state. Once it receives confirmation of the state change, it will update itself internally.
-
-##### active
-Once a node is active, it will participate in all standard lifecycle events of the cluster, and if the node is a writer node, it will be eligible for master election.
+Nodes may be in a few differnt states during their lifecycle. These states directly correspond to the Raft protocol's membership states.
+- `learner`: the node is new to the cluster or it was previously removed via cluster self-repair. A node will stay in this state until it is caught up to the cluster's Raft log.
+- `voter`: a node is live and active. Replicating data, potentially operating as a writer delegate and potentially operating as the cluster's Raft leader.
 
 ### writing data
-This applies primarily to persistent streams. This section introduces the term `writer delegate`. A writer delegate is a node, which must at least be a writer, which is responsible for handling all write operations on a stream.
-- When a stream is first created, the cluster master will elect a writer node to act as the writer delegate for the new stream.
-- The cluster master will ensure that there is always a live writer delegate for every stream. A single node may function as the writer delegate for multiple streams.
-- The master will broadcast a writer delegate removal to all nodes (and wait for all writers to respond) before broadcasting the new writer delegate for a stream. This should typically be faster than a standard cluster election process if raft were being used instead of writer delegates.
+This applies primarily to persistent streams. This section introduces the term `writer delegate`. A writer delegate is a node, which must be in the `voter` lifecycle phase, which is responsible for handling all write operations on a stream.
+
+- When a stream is first created, the cluster Raft leader will elect a writer node to act as the writer delegate for the new stream. The writer delegate selection protocol adhere to Raft's `Election restriction` rules per §5.4.1 of the Raft specification. This ensures that only a node with the latest data will be selected as a writer delegate.
+- Writer delegate information is replicated in the cluster Raft. Each new delegation per stream will have its term incremented to mimic Raft's leader election term protocol.
+- The cluster Raft leader will ensure that there is always a live writer delegate for every stream. A single node may function as the writer delegate for multiple streams.
+- The algorithm used for writer delegate selection is based on a few simple weights. Nodes with fewer write delegations will be given priority. The write load of the active streams will also be taken into account. Stream write load averages are sent from writer delegates to all other members of the cluster during replication and are only held in memory.
+- The cluster Raft leader will broadcast a writer delegate removal to all nodes, will wait for the current delegate to respond, and will wait for a majority of writers to respond, before broadcasting the new writer delegate for a stream. This should typically be faster than a standard cluster election process if raft were being used instead of writer delegates.
 - When a new stream is created, it will get an initial ID starting point for the stream. As data replication events are broadcast, the payload will also include the ID used for the message so that IDs will always be monotinically increasing, which guarantees strict ordering within the database. If a writer delegate goes down and a new writer delegate is elected, it will be able to begin generating new IDs for the target stream seamlessly.
 
 ##### data organization
 - Within the DB, each stream receives a top-level keyspace based on the name. Stream names must be simple, matching the character set `[-_A-Za-z0-9.]+`.
-- The stream's concrete data is stored under the keyspace as follows `/streams/{streamName}/data/{id}`. This allows for easily watching a keyspace for consumer operations.
+- The stream's concrete data is stored under the keyspace as follows `/streams/{streamName}/data/`. This allows for easily watching a keyspace for consumer operations.
 - The stream's consumer offsets are stored under the keyspace as follows `/streams/{streamName}/offsets/{consumerId}`. This allows for easily updating the offsets of consumers by consumer ID.
 - The stream's metadata is stored under `/streams/{streamName}/metadata`. This allows for easily updating the first and last indices of a stream along with any other pertinent metadata. This is held under a single key.
-- This system does not use oplogs as there is only one type of operation which can be applied to persistent streams. Replication is synchronous to all other writers nodes.
 - The node's ID is stored under `/node/id`.
-- The cluster's membership, node state, and writer delegates are stored in the database under `/cluster/metadata`. Each change gets an ID just as a standard persistent stream. This data is synchronously replicated to all writer nodes. Reader nodes receive the data at the same time, but the operation will be considered complete after writer nodes are synced.
-- The Raft log for the cluster is held under `/cluster/raft/data/` and its metadata is held under `/cluster/raft/metadata`.
+- The Raft log for the cluster is held under `/cluster/raft/data/` and its metadata is held under `/cluster/raft/metadata` as a single value.
 
 ### data replication and sharding
-Data replication and sharding for a persistent stream is influenced by the creation of the stream. When a stream is created, it may be created with a configurable number of data replicas, and sharding may be enabled or disabled, it will be disabled by default.
+NOTE: this is still in planning phase.
 
-When sharding is disabled, all data for the stream will be replicated to the full number of replicas specified at stream creation. Write acknowledgement can still be configured per write, determining the number of replicas which must acknowledge the write before receiving a success response.
+Stream data will always be replicated to all members of the cluster. When a stream is created, it may be created with data sharding enabled or disabled, it will be disabled by default. When sharding is disabled, all data for the stream will be replicated to all members of the cluster.
 
-When sharding is enabled, the cluster master will carve up the stream into a stable series of chunks starting from the original record on the stream. Once the stream has reached a certain size, a shard will be designated with the start and stop indices of the shard specified. The cluster master will then begin sending messages to the shard replica nodes to have them balance out the data shards. The most recent data on the stream will remain unsharded until there is a sufficient amount of data to create a new shard. The most recent data on the stream will remain replicated on all stream replica nodes until it is designated for sharding.
+When sharding is enabled, the cluster Raft leader will carve up the stream into a stable series of chunks starting from the original record on the stream. Once the stream has reached a certain size, a shard will be designated with the start and stop indices of the shard specified. The cluster Raft leader will then begin sending messages to the shard replica nodes to have them balance out the data shards. The most recent data on the stream will remain unsharded until there is a sufficient amount of data to create a new shard. The most recent data on the stream will remain replicated on all stream replica nodes until it is designated for sharding.
 
-The cluster master is responsible for the placement of stream replicas and nominating which nodes will replicate which streams. The algorith which will be used for making this decsion will quite likely just be based on stream size. Larger streams will be spread out evenly as a simple heuristic for placement.
+The cluster Raft leader is responsible for the placement of stream replicas and nominating which nodes will replicate which streams. The algorith which will be used for making this decsion will quite likely just be based on stream size. Larger streams will be spread out evenly as a simple heuristic for placement.
 
-Read-only servers will replicate all data of all streams, but typically replication confirmation from these nodes will not be required during write operations.
-
-### discovery
-Discovery is what allows members to automatically join a cluster by way of network communication. This is often referred to as, cluster formation, peer discovery, auto clustering. A Railgun cluster can be configured to check credentials of peers during cluster formation.
-
-Currently only DNS based peer discovery is implemented in this system. However, Railgun has been designed so that new discovery backends can be easily added in the future as needed.
+Replication groups always consist of three nodes. Nodes can be configured with a replication group tag. Nodes with the same tag will form replication groups. Logically, operators should use these tags when provisioning a cluster to have replication groups across different AZs and the like.
 
 ### networking
 - Railgun client to server communication takes place over WebSockets, which allows for multiplexed communication channels by default.

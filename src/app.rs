@@ -7,7 +7,7 @@ use crate::{
     config::Config,
     connections::{Connections},
     consensus::Consensus,
-    db::Database,
+    db::{RaftStorage, StreamStorage},
 };
 
 /// The central Railgun actor.
@@ -42,19 +42,16 @@ impl App {
         // The address of self for spawned child actors to communicate back to this actor.
         let app = ctx.address();
 
-        // Boot the database system.
-        let db = Database::new(app.clone(), &*config).unwrap_or_else(|err| {
+        // Instantiate the Raft storage system.
+        let raftstore = RaftStorage::new(app.clone(), &*config).unwrap_or_else(|err| {
             error!("Error initializing the system database. {}", err);
             std::process::exit(1);
         });
-        let nodeid = db.node_id();
+        let nodeid = raftstore.node_id();
 
-        // Create a Raft storage instance for use by the consensus actor.
-        let raft_storage = db.raft_storage().unwrap_or_else(|err| {
-            error!("Error creating raft storage. {}", err);
-            std::process::exit(1);
-        });
-        let _dbaddr = db.start();
+        // Create the StreamStorage actor for handling data persistance for streams.
+        let streamstore = StreamStorage::new(app.clone(), raftstore.db());
+        let ssaddr = SyncArbiter::start(3, move || streamstore.clone()); // TODO: probably use `num_cores` crate.
 
         // Boot the connections actor on a dedicated thread. The network server will serve using
         // a didicated threadpool.
@@ -64,8 +61,8 @@ impl App {
         });
 
         // Boot the consensus actor on a dedicated thread.
-        let cns_arb = Arbiter::new();
-        let cns = Consensus::new(app.clone(), nodeid, raft_storage, config.clone()).unwrap_or_else(|err| {
+        let (cns_arb, streams_arb) = (Arbiter::new(), Arbiter::new());
+        let cns = Consensus::new(app.clone(), nodeid, raftstore, streams_arb, ssaddr, config.clone()).unwrap_or_else(|err| {
             error!("Error initializing the consensus system. {}", err);
             std::process::exit(1);
         });
