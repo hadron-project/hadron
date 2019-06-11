@@ -7,8 +7,9 @@ version = "0.1.0"
 [dependencies]
 actix = "0.8"
 actix-codec = "0.1"
-actix-web = "1.0.0-rc"
-actix-web-actors = "1.0.0-rc"
+actix-raft = "0.2"
+actix-web = "1.0"
+actix-web-actors = "1.0"
 awc = "0.2"
 backoff = "0.1"
 bytes = "0.4"
@@ -18,11 +19,10 @@ envy = "0.4"
 futures = "0.1"
 log = "0.4"
 prost = "0.5"
-raft = "0.5"
 serde = { version="1", features=["derive"] }
-sled = "0.23"
+sled = "0.26"
 tokio-timer = "0.2"
-trust-dns-resolver = "0.11"
+trust-dns-resolver = "0.12"
 uuid = { version="0.7", default-features=false, features=["v4"] }
 
 [build-dependencies]

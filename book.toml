@@ -1,0 +1,11 @@
+[book]
+authors = ["Anthony Dodd <Dodd.AnthonyJosiah@gmail.com>"]
+language = "en"
+multilingual = false
+src = "guide/src"
+title = "Railgun — A distributed streaming and messaging platform written in Rust"
+description = "The Railgun user guide."
+
+[build]
+build-dir = "guide/book"
+create-missing = false

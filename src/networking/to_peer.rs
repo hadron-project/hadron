@@ -27,9 +27,9 @@ use log::{debug, error, warn};
 use prost;
 
 use crate::{
-    connections::{
+    networking::{
         PEER_HB_INTERVAL, PEER_HB_THRESHOLD, PEER_HANDSHAKE_TIMEOUT, NodeId,
-        ClosingPeerConnection, Connections, InboundPeerRequest, OutboundPeerRequest,
+        ClosingPeerConnection, Network, InboundPeerRequest, OutboundPeerRequest,
         PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
     },
     proto::peer::{api, handshake},
@@ -109,8 +109,8 @@ pub(super) struct WsToPeer {
     /// The node ID of the connected peer.
     peer_id: Option<NodeId>,
 
-    /// Address of the parent connections actor.
-    parent: Addr<Connections>,
+    /// Address of the parent `Network` actor.
+    parent: Addr<Network>,
 
     /// The socket address of the peer which this actor is to connect with.
     target: SocketAddr,
@@ -124,7 +124,7 @@ pub(super) struct WsToPeer {
 
 impl WsToPeer {
     /// Create a new instance.
-    pub fn new(parent: Addr<Connections>, node_id: NodeId, target: SocketAddr) -> Self {
+    pub fn new(parent: Addr<Network>, node_id: NodeId, target: SocketAddr) -> Self {
         Self{
             node_id,
             peer_id: None,
@@ -219,7 +219,7 @@ impl WsToPeer {
         state.handshake = PeerHandshakeState::Done;
         self.peer_id = Some(hs.node_id.clone());
 
-        // Propagate handshake info to parent connections actor.
+        // Propagate handshake info to parent `Network` actor.
         // TODO: finish up the routing info pattern. See the peer connection management doc.
         let f = self.parent.send(PeerConnectionLive{peer_id: hs.node_id, routing_info: hs.routing_info, addr: PeerAddr::ToPeer(ctx.address())});
         let af = actix::fut::wrap_future(f)
@@ -319,7 +319,7 @@ impl WsToPeer {
         }));
     }
 
-    /// Route a request over to the parent connections actor for handling.
+    /// Route a request over to the parent `Network` actor for handling.
     fn route_request(&mut self, req: api::Request, meta: api::Meta, _: &mut Context<Self>) {
         self.parent.do_send(InboundPeerRequest(req, meta));
     }
@@ -553,9 +553,9 @@ impl Handler<OutboundPeerRequest> for WsToPeer {
 
         // Build the outbound request frame.
         let requestid = uuid::Uuid::new_v4().to_string();
-        let deadline = (chrono::Utc::now() + chrono::Duration::seconds(msg.timeout.as_secs() as i64)).timestamp_millis();
+        // let deadline = (chrono::Utc::now() + chrono::Duration::seconds(msg.timeout.as_secs() as i64)).timestamp_millis();
         let frame = api::Frame{
-            meta: Some(api::Meta{id: requestid.clone(), deadline}),
+            meta: Some(api::Meta{id: requestid.clone()}),
             payload: Some(api::frame::Payload::Request(msg.request)),
         };
 

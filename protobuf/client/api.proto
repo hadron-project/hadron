@@ -1,2 +1,72 @@
 syntax = "proto3";
 package api;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// ClientRequest & ClientResponse ////////////////////////////////////////////////////////////////
+
+// A client request frame.
+//
+// Client requests come in a few different forms:
+// - Connnect: a request to establish a client connection.
+// - Disconnect: a request sent to disconnect the client from the server.
+// - PubEphemeral: a request to publish an ephemeral message.
+// - PubRpc: a request to publish an RPC message.
+// - PubStream: a request to publish a message to a durable stream.
+// - SubEphemeral: a request to subscribe to an ephemeral messaging exchange.
+// - SubRpc: a request to subscribe as a handler of an RPC endpoint.
+// - SubStream: a request to subscribe as a stream consumer.
+// - UnsubStream: unsubscribe from a stream.
+// - AckStream: a request to ack a stream message. Ack'ing a stream message may also be
+// accompanied by a set of messages to be published to other streams. See the guide for more
+// details on how this works in the Durable Streams chapter.
+message ClientRequest {
+  ClientRequestMeta meta = 1;
+  oneof payload {
+    ConnectRequest connect = 2;
+  }
+}
+
+message ClientResponse {
+  oneof payload {
+    ConnectResponse connect = 1;
+  }
+}
+
+message ClientRequestMeta {}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// ConnectRequest & Connect Response /////////////////////////////////////////////////////////////
+
+// A request to connect to the cluster.
+message ConnectRequest {
+  // The optional ID of the connection.
+  //
+  // Normally the server will generate connection IDs, but during reconnect scenarios, a
+  // connection ID from a previously lost connection may be supplied.
+  string id = 1;
+  // The rate at which the client would like heartbeats to be sent from the server, in seconds.
+  uint32 hb_rate = 2;
+  // The number of heartbeats which can be consecutively missed before being considered dead.
+  uint32 hb_max_missed = 3;
+}
+
+// A response to a connection request.
+message ConnectResponse {
+  // The ID assigned to this connection by the server.
+  string id = 1;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Errors ////////////////////////////////////////////////////////////////////////////////////////
+
+// An error which has taken place as the result of a client request.
+message ClientError {
+  string message = 1;
+  ErrorCode code = 2;
+}
+
+// An enumeration of all error codes which may come from the system.
+enum ErrorCode {
+  // An internal error.
+  INTERNAL = 0;
+}

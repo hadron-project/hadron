@@ -1,4 +1,4 @@
-syntax = "proto2";
+syntax = "proto3";
 package api;
 
 import "handshake.proto";
@@ -6,15 +6,13 @@ import "handshake.proto";
 // Metadata related to an API frame.
 message Meta {
   // The ID of this request or response frame.
-  required string id = 1;
-  // The deadline for this request in milliseconds since the epoch.
-  required int64 deadline = 2;
+  string id = 1;
 }
 
 // An API frame.
 message Frame {
   // The metadata of the frame.
-  optional Meta meta = 1;
+  Meta meta = 1;
   // The payload of data for this frame.
   oneof payload {
     Request request = 2;

@@ -17,10 +17,10 @@ use futures::{
 use log::{debug, error, info, warn};
 
 use crate::{
-    common::NodeId,
-    connections::{
+    NodeId,
+    networking::{
         PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
-        ClosingPeerConnection, Connections, OutboundPeerRequest,
+        ClosingPeerConnection, Network, OutboundPeerRequest,
         PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
     },
     proto::{peer},
@@ -44,8 +44,8 @@ pub(super) struct WsFromPeer {
     /// The ID of this node.
     node_id: NodeId,
 
-    /// Address of the parent connections actor.
-    parent: Addr<Connections>,
+    /// Address of the parent `Network` actor.
+    parent: Addr<Network>,
 
     /// The last successful heartbeat on this socket. Will reckon the peer as being dead after
     /// `PEER_HB_THRESHOLD` has been exceeded since last successful heartbeat.
@@ -65,7 +65,7 @@ pub(super) struct WsFromPeer {
 
 impl WsFromPeer {
     /// Create a new instance.
-    pub fn new(parent: Addr<Connections>, node_id: NodeId) -> Self {
+    pub fn new(parent: Addr<Network>, node_id: NodeId) -> Self {
         Self{
             node_id,
             parent,
@@ -90,7 +90,7 @@ impl WsFromPeer {
     /// Handle peer handshake protocol.
     ///
     /// A handshake frame has been received. Update the peer ID based on the given information,
-    /// propagate all of this information to the parent connections actor, and then response to
+    /// propagate all of this information to the parent `Network` actor, and then response to
     /// the caller with a handshake frame as well.
     fn handshake(&mut self, hs: peer::handshake::Handshake, meta: peer::api::Meta, ctx: &mut ws::WebsocketContext<Self>) {
         // If the connection is being made with self due to initial discovery probe, then respond
@@ -108,7 +108,7 @@ impl WsFromPeer {
         self.state = PeerHandshakeState::Done;
         self.peer_id = Some(hs.node_id);
 
-        // Propagate handshake info to parent connections actor. If disconnect is needed, send
+        // Propagate handshake info to parent `Network` actor. If disconnect is needed, send
         // disconnect frame over to peer so that it will not attempt to reconnect.
         let f = self.parent.send(PeerConnectionLive{peer_id: hs.node_id, routing_info: hs.routing_info, addr: PeerAddr::FromPeer(ctx.address())});
         let af = actix::fut::wrap_future(f)
@@ -140,7 +140,7 @@ impl WsFromPeer {
 
     /// Setup a heartbeat protocol with the connected peer.
     ///
-    /// NOTE WELL: the Railgun heartbeat protcol for cluster peer connections is such that only
+    /// NOTE WELL: the Railgun heartbeat protcol for cluster peer `Network` is such that only
     /// the receiving end of the connection will send pings.
     fn heartbeat(&self, ctx: &mut ws::WebsocketContext<Self>) {
         ctx.run_interval(PEER_HB_INTERVAL, |act, ctx| {
@@ -157,7 +157,7 @@ impl WsFromPeer {
         });
     }
 
-    /// Route a request over to the parent connections actor for handling.
+    /// Route a request over to the parent `Network` actor for handling.
     fn route_request(&mut self, req: peer::api::Request, meta: peer::api::Meta, ctx: &mut ws::WebsocketContext<Self>) {
         // Handshakes will only ever be initiated by a `WsToPeer` actor (not this one), so we need
         // to check for and handle handshake requests here.
@@ -251,9 +251,9 @@ impl Handler<OutboundPeerRequest> for WsFromPeer {
     fn handle(&mut self, msg: OutboundPeerRequest, ctx: &mut ws::WebsocketContext<Self>) -> Self::Result {
         // Build the outbound request frame.
         let requestid = uuid::Uuid::new_v4().to_string();
-        let deadline = (chrono::Utc::now() + chrono::Duration::seconds(msg.timeout.as_secs() as i64)).timestamp_millis();
+        // let deadline = (chrono::Utc::now() + chrono::Duration::seconds(msg.timeout.as_secs() as i64)).timestamp_millis();
         let frame = peer::api::Frame{
-            meta: Some(peer::api::Meta{id: requestid.clone(), deadline}),
+            meta: Some(peer::api::Meta{id: requestid.clone()}),
             payload: Some(peer::api::frame::Payload::Request(msg.request)),
         };
 

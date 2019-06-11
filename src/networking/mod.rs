@@ -1,17 +1,6 @@
-//! Peer discovery actor abstraction.
-//!
-//! This module provides an abstraction over the peer discovery system. The interface here is
-//! quite simple. All possible discovery actors implement the `Discovery` trait. Based on the
-//! runtime configuration for this system, the appropriate discovery actor will be created using
-//! this modules `new_discovery_instance` function. The returned object should be used for
-//! registering listener to observe peer discovery changes.
-//!
-//! The discovery actors are stream only actors. They do not expect any input from other actors in
-//! this system. Other actors which need to observe the stream of changes coming from this actor
-//! should subscribe to this actor.
-
 mod client;
 mod from_peer;
+mod raft;
 mod to_peer;
 
 use std::{
@@ -32,11 +21,11 @@ use futures::future::err as fut_err;
 use log::{debug, error};
 
 use crate::{
+    NodeId,
     app,
     proto::{peer},
-    common::NodeId,
     config::Config,
-    connections::{
+    networking::{
         from_peer::WsFromPeer,
         to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer},
     },
@@ -61,7 +50,7 @@ pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 /// A type used as a shared state context for all WebSocket actor instances.
 #[derive(Clone)]
 pub(self) struct ServerState {
-    pub parent: Addr<Connections>,
+    pub parent: Addr<Network>,
     pub node_id: NodeId,
 }
 
@@ -88,13 +77,13 @@ enum PeerAddr {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// Connections ///////////////////////////////////////////////////////////////////////////////////
+// Network ///////////////////////////////////////////////////////////////////////////////////////
 
 /// An actor responsible for handling all network activity throughout the system.
 ///
 /// See the README.md in this directory for additional information on actor responsibilities.
-pub struct Connections {
-    app: Addr<app::App>,
+pub struct Network {
+    _app: Addr<app::App>,
     node_id: NodeId,
     config: Arc<Config>,
     server: Option<Server>,
@@ -103,7 +92,7 @@ pub struct Connections {
     _discovery: Addr<Discovery>,
 }
 
-impl Connections {
+impl Network {
     /// Create a new instance.
     ///
     /// This is expected to be called from within this actors `App::create` method which provides
@@ -117,8 +106,8 @@ impl Connections {
             Discovery::new(innerctx, recipient, innercfg)
         );
 
-        Self{
-            app,
+        Network{
+            _app: app,
             node_id,
             config,
             server: None,
@@ -154,7 +143,7 @@ impl Connections {
     }
 }
 
-impl Actor for Connections {
+impl Actor for Network {
     type Context = Context<Self>;
 
     /// Logic for starting this actor.
@@ -172,7 +161,7 @@ impl Actor for Connections {
     }
 }
 
-impl Handler<ObservedPeersChangeset> for Connections {
+impl Handler<ObservedPeersChangeset> for Network {
     type Result = ();
 
     /// Handle changesets coming from the discovery system.
@@ -266,7 +255,7 @@ pub enum PeerConnectionIdentifier {
     SocketAddrAndId(SocketAddr, NodeId),
 }
 
-impl Handler<ClosingPeerConnection> for Connections {
+impl Handler<ClosingPeerConnection> for Network {
     type Result = ();
 
     /// Handle messages from peer connections indicating that the peer connection is closing.
@@ -307,7 +296,7 @@ impl Message for PeerConnectionLive {
     type Result = Result<(), peer::api::Disconnect>;
 }
 
-impl Handler<PeerConnectionLive> for Connections {
+impl Handler<PeerConnectionLive> for Network {
     type Result = Result<(), peer::api::Disconnect>;
 
     /// Handle messages from child actors indicating that their connections are now live.
@@ -345,7 +334,7 @@ impl Handler<PeerConnectionLive> for Connections {
 
 /// A wrapper type for outbound requests destined for a specific peer.
 ///
-/// The parent connections actor will receive messages from other higher-level actors to have
+/// The parent `Network` actor will receive messages from other higher-level actors to have
 /// messages sent to specific destinations by Node ID. This same message instance will then be
 /// forwarded to a specific child actor responsible for the target socket.
 pub struct OutboundPeerRequest {
@@ -358,7 +347,7 @@ impl actix::Message for OutboundPeerRequest {
     type Result = Result<peer::api::Response, ()>;
 }
 
-impl Handler<OutboundPeerRequest> for Connections {
+impl Handler<OutboundPeerRequest> for Network {
     type Result = ResponseFuture<peer::api::Response, ()>;
 
     /// Handle requests to send outbound messages to a connected peer.
@@ -402,7 +391,7 @@ impl Handler<OutboundPeerRequest> for Connections {
 #[derive(Message)]
 pub struct InboundPeerRequest(peer::api::Request, peer::api::Meta);
 
-impl Handler<InboundPeerRequest> for Connections {
+impl Handler<InboundPeerRequest> for Network {
     type Result = ();
 
     /// Handle inbound peer API requests.

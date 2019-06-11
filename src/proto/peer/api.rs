@@ -2,11 +2,8 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Meta {
     /// The ID of this request or response frame.
-    #[prost(string, required, tag="1")]
+    #[prost(string, tag="1")]
     pub id: std::string::String,
-    /// The deadline for this request in milliseconds since the epoch.
-    #[prost(int64, required, tag="2")]
-    pub deadline: i64,
 }
 /// An API frame.
 #[derive(Clone, PartialEq, ::prost::Message)]
