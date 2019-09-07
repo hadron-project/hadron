@@ -10,4 +10,13 @@ RPC messaging is a service-oriented request/response system, akin to traditional
 - Keeping RPC messaging as a distinct feature in Railgun offers more avenues for innovation and optimization. Control flow is more explicit, and the code which needs to be written on both ends of the RPC workflow can remain more clear and concise.
 - RPC responses do not need to be immediately returned, and the data of an RPC request may be passed along to other Railgun streams and pipelines before returning a response. This offers a great deal of flexibility for server-side workflows.
 
-Railgun's `Services` feature is built upon the RPC endpoints system, and offers very powerful patterns for streaming-first microservice architectures to be built within Railgun. See the [services chapter](https://railgun-rs.github.io/railgun/getting-started/services.html) for more details.
+Railgun's `Pipelines` feature is an extension to the RPC endpoints system, and offers very powerful patterns for streaming-first service-oriented architectures to be built within Railgun. See the [pipelines chapter](https://railgun-rs.github.io/railgun/getting-started/pipelines.html) for more details.
+
+### endpoint creation
+Endpoints are created in code via the client `EnsureRpcEndpoint` request. Publisher and subscriber clients should both ensure that an endpoint exists before attempting to use it.
+
+### endpoint deletion
+RPC endpoints can only be deleted via the `rgctl` CLI.
+
+### consumers
+RPC endpoints offer consumer patterns similar to the ephemeral messaging system, except do not include wildcards.

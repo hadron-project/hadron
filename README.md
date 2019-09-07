@@ -2,9 +2,9 @@ railgun
 =======
 A distributed streaming and messaging platform written in Rust.
 
-Railgun is built around three core primitives: ephemeral messaging, RPC messaging & durable streams.
+Railgun is built around three core primitives: ephemeral messaging, RPC messaging & durable streams. Ephemeral messaging offers topic based publish/subscribe patterns with wildcards, fanout, load balancing queue groups, and more. RPC messaging offers request/response patterns for service-oriented architectures. Durable streams offer configurable durability, robust consumer patterns and also offer opt-in unique ID validation on messages for server enforced "exactly once" semantics.
 
-Ephemeral messaging is topic based and supports all of the standard patterns such as pub/sub, fanout, queueing, consumer group load balancing and the like. RPC messaging offers request/response patterns for microservice architectures. Durable streams offer configurable durability, robust consumer patterns and also offer opt-in unique ID validation on messages for server enforced "exactly once" semantics. Railgun also features a few novel paradigms in this space, including pipelines and services. Railgun is secure by default with namespaces, users and roles for secure deployments.
+Railgun builds upon these core primitives to offer piplines. Pipelines are pre-defined multi-stage data workflows, structured in terms of a graph. Pipelines provide transactional guarantees over ack'ing a stages work and the delivery of the next stages data. With Pipelines, Railgun provides a platform with greater guarantees, and reduced error handling for building streaming-first service-oriented architectures.
 
 Older AMQP style systems were great, but fall short of Kafka-like streaming capabilities, specifically message persistence. Kafka-like systems lack ephemeral & RPC messaging. More recent blends of the technologies, like Nats, offer a nice combination, but lack many of the core features needed from both domains. Railgun offers the best of all of these paradigms, adds new paradigms for more powerful architectures, and is shipped as a single binary, written in Rust, with blazing speed and safety.
 

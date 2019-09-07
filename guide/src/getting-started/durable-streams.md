@@ -13,7 +13,16 @@ Durable streams are append-only, immutable logs of data.
 - Streams should be `ensured` first to ensure that it exists with the expected configuration.
 
 ### unique id checking
-If a stream is configured to check message ID uniqueness, every message published to the stream must include an ID and it will have its ID checked. The overall protocol is quite simple for unique message ID checking. An index of all message IDs is held in memory for the stream. Before the message is written to the stream, the ID will be checked against the index to ensure it doesn't already exist. If the server detects that the message ID is a duplicate, it will respond to the client with a specific error code describing the issue.
+If a stream is configured to check message ID uniqueness, every message published to the stream must include an ID and it will have its ID checked. The overall protocol is quite simple for unique message ID checking. An index of all message IDs is held in memory for the stream. Before the message is written to the stream, the ID will be checked against the index to ensure it doesn't already exist. When the stream is created with ID checking enabled, it must specify a behavior for dealing with conflicts: `fail` or `succeed`. For the `fail` setting, the server will return an error. For the `succeed` setting, the server will return a success response without actually mutating the stream (essentially a no-op).
+
+### stream creation
+Streams are created in code via the client `EnsureStream` request. Publisher and subscriber clients should both ensure that a stream exists before attempting to use it. During the lifetime of a stream, some of its configuration parameters may need to be changed. To ensure that conflicts do not arise, a version number must be provided in the `EnsureStream` call. If a call is received which has an older version number, the call will succeed without any changes being made to the stream. If a newer version is received, the requested changes will be applied to the stream.
+
+- Changing a stream from a normal stream to a unique ID checking stream, or vice-versa, is considered and error. Such attempts will return errors.
+- A stream's durability settings may be changed any time.
+
+### stream deletion
+Streams can only be deleted via the `rgctl` CLI.
 
 ### consumers
 Durable streams support ephemeral and durable subscriptions, and both types of subscriptions may form groups. Subscription durability is purely a matter of whether the consumer's stream offsets are tracked.

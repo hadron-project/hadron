@@ -15,27 +15,93 @@ package api;
 // - SubEphemeral: a request to subscribe to an ephemeral messaging exchange.
 // - SubRpc: a request to subscribe as a handler of an RPC endpoint.
 // - SubStream: a request to subscribe as a stream consumer.
+// - SubPipeline: a request to subscribe to a stage of a pipeline (RPC endpoint or stream).
 // - UnsubStream: unsubscribe from a stream.
-// - AckStream: a request to ack a stream message. Ack'ing a stream message may also be
+// - UnsubPipeline: unsubscribe from a stage of a pipeline.
+// - EnsureRpcEndpoint: a request to ensure that the specified RPC endpoint exists.
+// - EnsureStream: a request to ensure that the specified stream exists with the given config.
+// - EnsurePipeline: a request to ensure that the specified pipeline exists with the
+// given structure and config.
+// - StreamAck: a request to ack a stream message. Ack'ing a stream message may also be
 // accompanied by a set of messages to be published to other streams. See the guide for more
 // details on how this works in the Durable Streams chapter.
+// - PipelineAck: a request to ack a message from a pipeline stage. This request must include
+// the payload of data which is to be written to downstream stages. Ack'ing the message & writing
+// its output to downstream stages is done transactionally. This request is used even if the stage
+// is an RPC endpoint stage, in which case only the data is written for the downstream stages.
 message ClientRequest {
   ClientRequestMeta meta = 1;
   oneof payload {
     ConnectRequest connect = 2;
+    DisconnectRequest disconnect = 3;
+
+    PubEphemeralRequest pub_ephemeral = 4;
+    PubRpcRequest pub_rpc = 5;
+    PubStreamRequest pub_stream = 6;
+
+    SubEphemeralRequest sub_ephemeral = 7;
+    SubRpcRequest sub_rpc = 8;
+    SubStreamRequest sub_stream = 9;
+    SubPipelineRequest sub_pipeline = 10;
+
+    UnsubStreamRequest unsub_stream = 11;
+    UnsubPipelineRequest unsub_pipeline = 12;
+
+    EnsureRpcEndpointRequest ensure_endpoint = 13;
+    EnsureStreamRequest ensure_stream = 14;
+    EnsurePipelineRequest ensure_pipeline = 15;
+
+    AckStreamRequest ack_stream = 16;
+    AckPipelineRequest ack_pipeline = 17;
   }
 }
 
 message ClientResponse {
+  ClientRequestMeta meta = 1;
   oneof payload {
-    ConnectResponse connect = 1;
+    ConnectResponse connect = 2;
+    DisconnectResponse disconnect = 3;
+
+    PubEphemeralResponse pub_ephemeral = 4;
+    PubRpcResponse pub_rpc = 5;
+    PubStreamResponse pub_stream = 6;
+
+    SubEphemeralResponse sub_ephemeral = 7;
+    SubRpcResponse sub_rpc = 8;
+    SubStreamResponse sub_stream = 9;
+    SubPipelineResponse sub_pipeline = 10;
+
+    UnsubStreamResponse unsub_stream = 11;
+    UnsubPipelineResponse unsub_pipeline = 12;
+
+    EnsureRpcEndpointResponse ensure_endpoint = 13;
+    EnsureStreamResponse ensure_stream = 14;
+    EnsurePipelineResponse ensure_pipeline = 15;
+
+    AckStreamResponse ack_stream = 16;
+    AckPipelineResponse ack_pipeline = 17;
   }
 }
 
 message ClientRequestMeta {}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// ConnectRequest & Connect Response /////////////////////////////////////////////////////////////
+// Errors ////////////////////////////////////////////////////////////////////////////////////////
+
+// An error which has taken place as the result of a client request.
+message ClientError {
+  string message = 1;
+  ErrorCode code = 2;
+}
+
+// An enumeration of all error codes which may come from the system.
+enum ErrorCode {
+  // An internal error.
+  INTERNAL = 0;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// ConnectRequest & ConnectResponse //////////////////////////////////////////////////////////////
 
 // A request to connect to the cluster.
 message ConnectRequest {
@@ -57,16 +123,136 @@ message ConnectResponse {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// Errors ////////////////////////////////////////////////////////////////////////////////////////
+// DisconnectRequest & DisconnectResponse ////////////////////////////////////////////////////////
 
-// An error which has taken place as the result of a client request.
-message ClientError {
-  string message = 1;
-  ErrorCode code = 2;
+message DisconnectRequest {
 }
 
-// An enumeration of all error codes which may come from the system.
-enum ErrorCode {
-  // An internal error.
-  INTERNAL = 0;
+message DisconnectResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// PubEphemeralRequest & PubEphemeralResponse ////////////////////////////////////////////////////
+
+message PubEphemeralRequest {
+}
+
+message PubEphemeralResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// PubRpcRequest & PubRpcResponse ////////////////////////////////////////////////////////////////
+
+message PubRpcRequest {
+}
+
+message PubRpcResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// PubStreamRequest & PubStreamResponse //////////////////////////////////////////////////////////
+
+message PubStreamRequest {
+}
+
+message PubStreamResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// SubEphemeralRequest & SubEphemeralResponse ////////////////////////////////////////////////////
+
+message SubEphemeralRequest {
+}
+
+message SubEphemeralResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// SubRpcRequest & SubRpcResponse ////////////////////////////////////////////////////////////////
+
+message SubRpcRequest {
+}
+
+message SubRpcResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// SubStreamRequest & SubStreamResponse //////////////////////////////////////////////////////////
+
+message SubStreamRequest {
+}
+
+message SubStreamResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// SubPipelineRequest & SubPipelineResponse //////////////////////////////////////////////////////
+
+message SubPipelineRequest {
+}
+
+message SubPipelineResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// UnsubStreamRequest & UnsubStreamResponse //////////////////////////////////////////////////////
+
+message UnsubStreamRequest {
+}
+
+message UnsubStreamResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// UnsubPipelineRequest & UnsubPipelineResponse //////////////////////////////////////////////////
+
+message UnsubPipelineRequest {
+}
+
+message UnsubPipelineResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// EnsureRpcEndpointRequest & EnsureRpcEndpointResponse //////////////////////////////////////////
+
+message EnsureRpcEndpointRequest {
+}
+
+message EnsureRpcEndpointResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// EnsureStreamRequest & EnsureStreamResponse ////////////////////////////////////////////////////
+
+message EnsureStreamRequest {
+}
+
+message EnsureStreamResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// EnsurePipelineRequest & EnsurePipelineResponse ////////////////////////////////////////////////
+
+message EnsurePipelineRequest {
+}
+
+message EnsurePipelineResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// AckStreamRequest & AckStreamResponse //////////////////////////////////////////////////////////
+
+message AckStreamRequest {
+}
+
+message AckStreamResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// AckPipelineRequest & AckPipelineResponse //////////////////////////////////////////////////////
+
+message AckPipelineRequest {
+}
+
+message AckPipelineResponse {
 }

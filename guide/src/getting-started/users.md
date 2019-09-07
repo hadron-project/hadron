@@ -6,6 +6,7 @@ Users are username + password entries which may be granted roles.
     - `root`: full control over the cluster & all namespaces.
     - `read`: may only read resources of the associated namespace.
     - `write`: same as `read`, but may also write to all resources of the associated namespace.
+    - `admin`: same as `write`, but may also create and delete any resources of the associated namespace. Other than the `root` role, this is the only other role allowed to use the `rgctl` CLI.
 - Railgun clusters are initialized with a configurable default user which will start with the `root` role.
 - A user's permissions are determined at connection time and are used throughout the lifetime of a connection. Changes to a user's permissions may cause a connection to terminate if the connection no longer has sufficient permissions after the update.
 - User management is performed via the `rgctl` CLI which ships with Railgun.

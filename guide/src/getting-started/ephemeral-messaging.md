@@ -10,6 +10,7 @@ Ephemeral messaging is topic based, with at-most once delivery semantics. This i
 - Consumer group information is synchronously replicated to all nodes when the consumer group is formed and as members join and leave the group, but this information is only held in memory.
 - Consumer group load balancing decisions are made by the node which received the message needing to be load balanced.
 - Messages will be delivered once to each consuming entity by default, where an entity is an individual consumer or group.
+- Ephemeral messaging exchanges are implicity created as part of a namespace. If a namespace exists, it has one and only one ephemeral messaging exchange.
 
 ### topics
 Railgun enforces that message topics adhere to the following pattern `[-_A-Za-z0-9.]*`. In English, this could be read as "all alpha-numeric characters, hyphen, underscore and period". Topics are case-sensitive and can not contain whitespace.
