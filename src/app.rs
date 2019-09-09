@@ -1,13 +1,18 @@
 use std::sync::Arc;
 
 use actix::prelude::*;
+use actix_raft::Raft;
 use log::{error, info};
 
 use crate::{
     config::Config,
     networking::{Network},
-    db::{Storage},
+    db::{AppData, Storage},
+    proto::client::api::ClientError,
 };
+
+/// This application's concrete Raft type.
+type AppRaft = Raft<AppData, ClientError, Network, Storage>;
 
 /// The central Railgun actor.
 ///
@@ -47,21 +52,23 @@ impl App {
             std::process::exit(1);
         });
         let nodeid = storage.node_id();
-        let _storageaddr = SyncArbiter::start(3, move || storage.clone()); // TODO: probably use `num_cores` crate.
+        let storage_addr = SyncArbiter::start(3, move || storage.clone()); // TODO: probably use `num_cores` crate.
 
         // Boot the network actor on a dedicated thread. Serves on dedicated threadpool.
         let (net_arb, net_cfg, net_app, net_nodeid) = (Arbiter::new(), config.clone(), app.clone(), nodeid.clone());
-        let _conns_addr = Network::start_in_arbiter(&net_arb, move |net_ctx| {
+        let net_addr = Network::start_in_arbiter(&net_arb, move |net_ctx| {
             Network::new(net_ctx, net_app, net_nodeid, net_cfg)
         });
+        let metrics_receiver = net_addr.clone().recipient();
 
-        // // Boot the consensus actor on a dedicated thread.
-        // let (cns_arb, streams_arb) = (Arbiter::new(), Arbiter::new());
-        // let cns = Consensus::new(app.clone(), nodeid, raftstore, cluster_state, streams_arb, ssaddr, config.clone()).unwrap_or_else(|err| {
-        //     error!("Error initializing the consensus system. {}", err);
-        //     std::process::exit(1);
-        // });
-        // let _cns_addr = Consensus::start_in_arbiter(&cns_arb, move |_| cns);
+        // Boot the consensus actor on a dedicated thread.
+        let raft_cfg = actix_raft::Config::build(config.snapshot_dir()).validate().unwrap_or_else(|err| {
+            error!("Error building Raft config. {}", err);
+            std::process::exit(1);
+        });
+        let raft_arb = Arbiter::new();
+        let raft = AppRaft::new(nodeid, raft_cfg, net_addr, storage_addr, metrics_receiver);
+        let _raft_addr = AppRaft::start_in_arbiter(&raft_arb, move |_| raft);
 
         info!("Railgun is firing on 0.0.0.0:{}!", &config.port);
         App

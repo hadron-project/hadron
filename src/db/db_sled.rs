@@ -114,7 +114,10 @@ impl Actor for SledStorage {
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Impl RaftStorage //////////////////////////////////////////////////////////////////////////////
 
-impl RaftStorage<AppData, ClientError, SyncContext<Self>> for SledStorage {}
+impl RaftStorage<AppData, ClientError> for SledStorage {
+    type Actor = Self;
+    type Context = SyncContext<Self>;
+}
 
 impl Handler<RgAppendLogEntry> for SledStorage {
     type Result = Result<(), ClientError>;

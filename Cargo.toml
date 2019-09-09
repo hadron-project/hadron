@@ -7,7 +7,7 @@ version = "0.1.0"
 [dependencies]
 actix = "0.8"
 actix-codec = "0.1"
-actix-raft = "0.2"
+actix-raft = { git="https://github.com/railgun-rs/actix-raft.git", branch="more-storage-trait" }
 actix-web = "1.0"
 actix-web-actors = "1.0"
 awc = "0.2"
@@ -25,6 +25,8 @@ sled = "0.26"
 tokio-timer = "0.2"
 trust-dns-resolver = "0.12"
 uuid = { version="0.7", default-features=false, features=["v4"] }
+
+pagecache = "=0.19.1"
 
 [build-dependencies]
 prost-build = "0.5"

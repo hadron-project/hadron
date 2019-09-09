@@ -14,10 +14,10 @@ use crate::{
 };
 
 /// The default path to use for data store.
-pub(self) const DEFAULT_DB_PATH: &str = "/var/lib/railgun/data";
+pub const DEFAULT_DB_PATH: &str = "/var/lib/railgun/data";
 
 /// The default path to use for data store.
-pub(self) const DEFAULT_SNAPSHOT_SUBDIR: &str = "/raft/snapshots";
+pub const DEFAULT_SNAPSHOT_SUBDIR: &str = "/raft/snapshots";
 
 /// The defalt DB path to use.
 pub fn default_db_path() -> String {

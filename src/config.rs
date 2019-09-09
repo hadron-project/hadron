@@ -1,4 +1,7 @@
-use std::process;
+use std::{
+    path,
+    process,
+};
 
 use envy;
 use log::error;
@@ -19,6 +22,10 @@ pub struct Config {
     /// The path to the database on disk.
     #[serde(default="db::default_db_path")]
     pub db_path: String,
+
+    /// The path to the configured snapshots dir.
+    #[serde(skip)]
+    snapshot_dir: Option<String>,
 }
 
 /// All available discovery backends currently implemented in this system.
@@ -40,7 +47,7 @@ impl Config {
     /// well.
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        match envy::prefixed("RG_").from_env() {
+        let mut config: Config = match envy::prefixed("RG_").from_env() {
             Err(err) => {
                 error!("{:?}", err);
                 process::exit(1);
@@ -50,6 +57,18 @@ impl Config {
                 println!("Config: {:?}", config);
                 config
             }
-        }
+        };
+        config.snapshot_dir = Some(config.build_snapshot_dir());
+        config
+    }
+
+    /// The path to the configured snapshots dir.
+    pub fn snapshot_dir(&self) -> String {
+        self.snapshot_dir.clone().unwrap_or_else(|| self.build_snapshot_dir())
+    }
+
+    fn build_snapshot_dir(&self) -> String {
+        path::PathBuf::from(self.db_path.clone()).join(db::DEFAULT_SNAPSHOT_SUBDIR)
+            .to_string_lossy().to_string()
     }
 }
