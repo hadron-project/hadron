@@ -25,14 +25,9 @@ Streams are created in code via the client `EnsureStream` request. Publisher and
 Streams can only be deleted via the `rgctl` CLI.
 
 ### consumers
-Durable streams support ephemeral and durable subscriptions, and both types of subscriptions may form groups. Subscription durability is purely a matter of whether the consumer's stream offsets are tracked.
+Streams support ephemeral and durable subscriptions, and both types of subscriptions may form groups. All stream consumers MUST specify a queue group name, and groups are formed when consumers share the same queue group name. Durable subscriptions will have their offsets persisted to disk and will be able to resume from their last recorded offset within a stream even if all consumers have gone offline. Subscriptions are made durable via a boolean value in the subscription request, and once a subscription is durable, it is always durable.
 
-- Ephemeral individual consumers will not have their offsets tracked.
-- Ephemeral group consumers will not have their offsets tracked, but load balancing will be used.
-- Durable individual consumers will have their offsets tracked.
-- Durable group consumers will have their offsets tracked, and load balancing will be used.
-
-Both ephemeral and durable consumer groups are created when multiple consumers present the same consumer ID for the same target stream. If no consumer ID is presented then the consumer can not be durable, and a random unique consumer ID will be generated for the subscription.
+Durable subscriptions which are no longer being used can be deleted via the `rgctl` CLI.
 
 ### ack & nack
 Messages being consumed from a stream must be ack'ed. When a subscription is created, the maximum number of in-flight unacknowledged messages is configurable (which will apply to the entire group, if part of a group consumer). This provides batch processing or serial processing as needed.

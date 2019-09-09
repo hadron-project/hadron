@@ -32,7 +32,7 @@ use crate::{
         ClosingPeerConnection, Network, InboundPeerRequest, OutboundPeerRequest,
         PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
     },
-    proto::peer::{api, handshake},
+    proto::peer::api,
 };
 
 /// A type alias for the Sink type for outbound messages to the connected peer.
@@ -156,7 +156,7 @@ impl WsToPeer {
         let request = match hs_state {
             // TODO: finish up the routing info pattern. See the peer connection management doc.
             Initial => api::Request{segment: Some(api::request::Segment::Handshake(
-                handshake::Handshake{node_id: self.node_id, routing_info: String::with_capacity(0)}
+                api::Handshake{node_id: self.node_id, routing_info: String::with_capacity(0)}
             ))},
             Done => return,
         };

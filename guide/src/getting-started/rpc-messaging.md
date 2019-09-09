@@ -19,4 +19,4 @@ Endpoints are created in code via the client `EnsureRpcEndpoint` request. Publis
 RPC endpoints can only be deleted via the `rgctl` CLI.
 
 ### consumers
-RPC endpoints offer consumer patterns similar to the ephemeral messaging system, except do not include wildcards.
+RPC endpoints offer consumer patterns similar to the ephemeral messaging system, except that wildcards are not allowed.

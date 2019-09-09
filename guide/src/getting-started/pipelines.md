@@ -34,3 +34,6 @@ Pipelines can only be deleted via the `rgctl` CLI.
 
 ### consumers
 Pipeline stages must each be individually subscribed to useing the pipelines subscription API. The pipelines subscription API is uniform for all stage types (RPC endpoints & streams), and allows consumers to think purely in terms of reciving an input and returning an output. Railgun will transactionally ack the message and deliver the output to all downstream stages with a connected edge.
+
+### example
+TODO: build an example covering a workflow which is common to most systems. Maybe password reset, sign-up or the like.

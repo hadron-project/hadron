@@ -1,5 +1,6 @@
 mod client;
 mod from_peer;
+mod metrics;
 mod raft;
 mod to_peer;
 

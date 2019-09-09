@@ -2,6 +2,17 @@
 
 mod db_sled;
 
+use actix_raft;
+
+use crate::{
+    proto::client::api::{
+        AckPipelineRequest, AckStreamRequest,
+        EnsurePipelineRequest, EnsureRpcEndpointRequest, EnsureStreamRequest,
+        PubStreamRequest, SubPipelineRequest, SubStreamRequest,
+        UnsubPipelineRequest, UnsubStreamRequest,
+    },
+};
+
 /// The default path to use for data store.
 pub(self) const DEFAULT_DB_PATH: &str = "/var/lib/railgun/data";
 
@@ -22,3 +33,20 @@ pub fn default_db_path() -> String {
 
 /// The configured storage backend.
 pub type Storage = db_sled::SledStorage;
+
+/// All data variants which are persisted via Raft.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum AppData {
+    PubStream(PubStreamRequest),
+    SubStream(SubStreamRequest),
+    SubPipeline(SubPipelineRequest),
+    UnsubStream(UnsubStreamRequest),
+    UnsubPipeline(UnsubPipelineRequest),
+    EnsureRpcEndpoint(EnsureRpcEndpointRequest),
+    EnsureStream(EnsureStreamRequest),
+    EnsurePipeline(EnsurePipelineRequest),
+    AckStream(AckStreamRequest),
+    AckPipeline(AckPipelineRequest),
+}
+
+impl actix_raft::AppData for AppData {}

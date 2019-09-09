@@ -38,13 +38,11 @@ The first wildcard is `*` which will match a single hierarchy token. If the volc
 The second wildcard is `>` which will match one or more hierachy tokens, and can only appear at the end of the topic. For example, `volcanoes.usa.>` will match `volcanoes.usa.atka` and `volcanoes.usa.kahoolawe.north`, while `volcanoes.usa.*` would only match `volcanoes.usa.atka` since it can’t match more than one hierarchy token.
 
 ### consumers
-Ephemeral messaging supports two types of consumers: individual and group consumers.
+Ephemeral message consumers specify a topic matcher and may optionally specify a queue group to begin consuming messages. Every consumer which is part of the same queue group will have messages load balanced across the group.
 
-- Individual consumers will operate in a standard pub/sub fashion where every subscriber will receive all messages which its topic pattern matches.
-- Group consumers will operate in a load balancing fashion, where only one member of the group will receive any specific message. Consumers outside of the group may still receive the message.
+TODO: move this to the developer docs:
 
 When a client connects to the cluster to begin consuming messages, its topic matching pattern along with other metadata is broadcast to all nodes in the cluster.
 - Each node maintains info on all connected clients throughout the cluster and will push messages to matching connected clients. This data is held in memory only.
 - When a node receives a publication, it will pump the message out to any peers which have an active consumer which matches the message's topic.
-- Ephemeral message consumers may form groups by specifying a group ID. When groups are formed, group membership metadata is broadcast to all nodes just like normal consumer connections.
-- When a node receives a publication which would match a consumer group, the node must choose a single client to send the message to for load-balancing.
+- When a node receives a publication which would match a consumer group, the node must choose a single client to send the message to for load balancing.

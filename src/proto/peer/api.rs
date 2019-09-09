@@ -37,7 +37,7 @@ pub mod request {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Segment {
         #[prost(message, tag="1")]
-        Handshake(super::super::handshake::Handshake),
+        Handshake(super::Handshake),
     }
 }
 /// A response to an earlier sent request.
@@ -50,8 +50,19 @@ pub mod response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Segment {
         #[prost(message, tag="1")]
-        Handshake(super::super::handshake::Handshake),
+        Handshake(super::Handshake),
     }
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Handshake /////////////////////////////////////////////////////////////////////////////////////
+
+/// A handshake frame holding all data needed for a successful handshake between peers.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Handshake {
+    #[prost(uint64, tag="1")]
+    pub node_id: u64,
+    #[prost(string, tag="2")]
+    pub routing_info: std::string::String,
 }
 /// A disconnect variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

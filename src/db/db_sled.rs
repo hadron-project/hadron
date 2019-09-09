@@ -8,7 +8,7 @@ use std::{
 
 use actix::prelude::*;
 use actix_raft::{
-    AppData, RaftStorage,
+    RaftStorage,
     messages::Entry,
     storage::{
         AppendLogEntry,
@@ -27,13 +27,13 @@ use actix_raft::{
     },
 };
 use log::{info};
-use serde::{Serialize, Deserialize};
 use sled;
 use uuid;
 
 use crate::{
     App, NodeId,
     config::Config,
+    db::{AppData},
     proto::client::api::{ClientError, ErrorCode},
 };
 
@@ -49,20 +49,15 @@ pub(self) const NODE_ID_KEY: &str = "id";
 /// The DB path prefix for all streams.
 pub(self) const STREAMS_PATH_PREFIX: &str = "/streams/";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ClientPayload(pub Vec<u8>);
-
-impl AppData for ClientPayload {}
-
-type RgEntry = Entry<ClientPayload>;
-type RgAppendLogEntry = AppendLogEntry<ClientPayload, ClientError>;
-type RgApplyToStateMachine = ApplyToStateMachine<ClientPayload, ClientError>;
+type RgEntry = Entry<AppData>;
+type RgAppendLogEntry = AppendLogEntry<AppData, ClientError>;
+type RgApplyToStateMachine = ApplyToStateMachine<AppData, ClientError>;
 type RgCreateSnapshot = CreateSnapshot<ClientError>;
 type RgGetCurrentSnapshot = GetCurrentSnapshot<ClientError>;
 type RgGetInitialState = GetInitialState<ClientError>;
-type RgGetLogEntries = GetLogEntries<ClientPayload, ClientError>;
+type RgGetLogEntries = GetLogEntries<AppData, ClientError>;
 type RgInstallSnapshot = InstallSnapshot<ClientError>;
-type RgReplicateLogEntries = ReplicateLogEntries<ClientPayload, ClientError>;
+type RgReplicateLogEntries = ReplicateLogEntries<AppData, ClientError>;
 type RgSaveHardState = SaveHardState<ClientError>;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -119,7 +114,7 @@ impl Actor for SledStorage {
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Impl RaftStorage //////////////////////////////////////////////////////////////////////////////
 
-impl RaftStorage<ClientPayload, ClientError, SyncContext<Self>> for SledStorage {}
+impl RaftStorage<AppData, ClientError, SyncContext<Self>> for SledStorage {}
 
 impl Handler<RgAppendLogEntry> for SledStorage {
     type Result = Result<(), ClientError>;
