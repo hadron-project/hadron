@@ -23,7 +23,7 @@ type AppRaft = Raft<AppData, ClientError, Network, Storage>;
 /// The networking layer (the `Network` actor) passes inbound network frames from peers and
 /// connected clients to this actor for decision making on how to handle the received frames.
 /// Some of the time the received frames will simply be passed off to one of the other actors,
-/// such as the Raft or Database actors.
+/// such as the Raft or storage actors.
 ///
 /// Though the `Network` actor will only pass inbound network frames to this actor, other actors
 /// have direct access to the `Network` actor and may directly send outbound network frames to
@@ -32,7 +32,11 @@ type AppRaft = Raft<AppData, ClientError, Network, Storage>;
 /// provides a uniform interface for handling high-level logic on network frame routing within
 /// this system, but gives actors direct access to the network stack for sending messages to peers
 /// and clients.
-pub struct App;
+pub struct App {
+    _storage: Addr<Storage>,
+    _network: Addr<Network>,
+    _raft: Addr<AppRaft>,
+}
 
 impl App {
     /// Create a new instance.
@@ -67,11 +71,15 @@ impl App {
             std::process::exit(1);
         });
         let raft_arb = Arbiter::new();
-        let raft = AppRaft::new(nodeid, raft_cfg, net_addr, storage_addr, metrics_receiver);
-        let _raft_addr = AppRaft::start_in_arbiter(&raft_arb, move |_| raft);
+        let raft = AppRaft::new(nodeid, raft_cfg, net_addr.clone(), storage_addr.clone(), metrics_receiver);
+        let raft_addr = AppRaft::start_in_arbiter(&raft_arb, move |_| raft);
 
-        info!("Railgun is firing on 0.0.0.0:{}!", &config.port);
-        App
+        info!("Railgun is firing on all interfaces on port {}!", &config.port);
+        App{
+            _storage: storage_addr,
+            _network: net_addr,
+            _raft: raft_addr,
+        }
     }
 }
 

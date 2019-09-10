@@ -27,6 +27,7 @@ use crate::{
     proto::{peer},
     config::Config,
     networking::{
+        client::WsClient,
         from_peer::WsFromPeer,
         to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer},
     },
@@ -53,6 +54,7 @@ pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 pub(self) struct ServerState {
     pub parent: Addr<Network>,
     pub node_id: NodeId,
+    pub config: Arc<Config>,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -120,12 +122,12 @@ impl Network {
 
     /// Build a new network server instance for use by this system.
     pub fn build_server(&self, ctx: &Context<Self>) -> Result<Server, ()> {
-        let data = ServerState{parent: ctx.address(), node_id: self.node_id};
+        let data = ServerState{parent: ctx.address(), node_id: self.node_id, config: self.config.clone()};
         let server = HttpServer::new(move || {
             App::new().data(data.clone())
                 // This endpoint is used for internal client communication.
                 .service(web::resource("/internal/").to(Self::handle_peer_connection))
-                // .service(web::resource("").to(Self::handle_client_connection)) // TODO: client interface. See #6.
+                .service(web::resource("").to(Self::handle_client_connection))
         })
         .bind(format!("0.0.0.0:{}", &self.config.port))
         .map_err(|err| {
@@ -141,6 +143,11 @@ impl Network {
     fn handle_peer_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
         debug!("Handling a new peer connection request.");
         ws::start(WsFromPeer::new(data.parent.clone(), data.node_id), &req, stream)
+    }
+
+    fn handle_client_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
+        debug!("Handling a new client connection request.");
+        ws::start(WsClient::new(data.parent.clone(), data.node_id, data.config.client_death_threshold()), &req, stream)
     }
 }
 
