@@ -41,9 +41,9 @@ pub struct Config {
     // Client Config /////////////////////////////////////////////////////////
 
     /// The threshold in seconds of not receiving a heartbeat from a client, after which it is reckoned to be dead.
-    #[serde(default="Config::default_client_death_threshold")]
-    client_death_threshold: u8,
-    _client_death_threshold: Option<Duration>,
+    #[serde(default="Config::default_client_liveness_threshold")]
+    client_liveness_threshold: u8,
+    _client_liveness_threshold: Option<Duration>,
 }
 
 /// All available discovery backends currently implemented in this system.
@@ -77,7 +77,7 @@ impl Config {
             }
         };
         config.snapshot_dir = Some(Config::build_snapshot_dir(config.db_path.clone()));
-        config._client_death_threshold = Some(Duration::from_secs(config.client_death_threshold as u64));
+        config._client_liveness_threshold = Some(Duration::from_secs(config.client_liveness_threshold as u64));
         config
     }
 
@@ -86,8 +86,8 @@ impl Config {
         self.snapshot_dir.clone().unwrap_or_else(|| Config::build_snapshot_dir(self.db_path.clone()))
     }
 
-    pub fn client_death_threshold(&self) -> Duration {
-        self._client_death_threshold.unwrap_or_else(|| Duration::from_secs(self.client_death_threshold as u64))
+    pub fn client_liveness_threshold(&self) -> Duration {
+        self._client_liveness_threshold.unwrap_or_else(|| Duration::from_secs(self.client_liveness_threshold as u64))
     }
 }
 
@@ -96,7 +96,7 @@ impl Config {
         path::PathBuf::from(db_path).join(db::DEFAULT_SNAPSHOT_SUBDIR).to_string_lossy().to_string()
     }
 
-    fn default_client_death_threshold() -> u8 {
+    fn default_client_liveness_threshold() -> u8 {
         5
     }
 }

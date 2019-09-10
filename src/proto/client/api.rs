@@ -1,5 +1,5 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// ClientRequest & ClientResponse ////////////////////////////////////////////////////////////////
+// ClientToServer & ClientFromServer /////////////////////////////////////////////////////////////
 
 /// A client request frame.
 ///
@@ -28,13 +28,13 @@
 /// is an RPC endpoint stage, in which case only the data is written for the downstream stages.
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
-pub struct ClientRequest {
+pub struct ClientFrame {
     #[prost(message, optional, tag="1")]
-    pub meta: ::std::option::Option<ClientRequestMeta>,
-    #[prost(oneof="client_request::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
-    pub payload: ::std::option::Option<client_request::Payload>,
+    pub meta: ::std::option::Option<FrameMeta>,
+    #[prost(oneof="client_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
+    pub payload: ::std::option::Option<client_frame::Payload>,
 }
-pub mod client_request {
+pub mod client_frame {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     #[derive(Serialize, Deserialize)]
     pub enum Payload {
@@ -74,13 +74,13 @@ pub mod client_request {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
-pub struct ClientResponse {
+pub struct ServerFrame {
     #[prost(message, optional, tag="1")]
-    pub meta: ::std::option::Option<ClientRequestMeta>,
-    #[prost(oneof="client_response::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
-    pub payload: ::std::option::Option<client_response::Payload>,
+    pub meta: ::std::option::Option<FrameMeta>,
+    #[prost(oneof="server_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
+    pub payload: ::std::option::Option<server_frame::Payload>,
 }
-pub mod client_response {
+pub mod server_frame {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     #[derive(Serialize, Deserialize)]
     pub enum Payload {
@@ -120,7 +120,14 @@ pub mod client_response {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
-pub struct ClientRequestMeta {
+pub struct FrameMeta {
+    /// The ID of the associated request.
+    ///
+    /// This is used to establish request/response semantics over the bi-directional stream. These
+    /// IDs should have strong uniqueness guarantees. Clients are encouraged to use UUID4s, which is
+    /// what the server uses for server side initiated frames sent to clients.
+    #[prost(string, tag="1")]
+    pub id: std::string::String,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Errors ////////////////////////////////////////////////////////////////////////////////////////
@@ -147,12 +154,9 @@ pub struct ConnectRequest {
     /// connection ID from a previously lost connection may be supplied.
     #[prost(string, tag="1")]
     pub id: std::string::String,
-    /// The rate at which the client would like heartbeats to be sent from the server, in seconds.
-    #[prost(uint32, tag="2")]
-    pub hb_rate: u32,
-    /// The number of heartbeats which can be consecutively missed before being considered dead.
+    /// The configured liveness threshold for this client connection.
     #[prost(uint32, tag="3")]
-    pub hb_max_missed: u32,
+    pub liveness_threshold: u32,
 }
 /// A response to a connection request.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -334,4 +338,6 @@ pub struct AckPipelineResponse {
 pub enum ErrorCode {
     /// An internal error.
     Internal = 0,
+    /// The server needs the client to perform the connection handshake before proceeding.
+    HandshakeRequired = 1,
 }

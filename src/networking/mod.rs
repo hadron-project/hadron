@@ -147,7 +147,7 @@ impl Network {
 
     fn handle_client_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
         debug!("Handling a new client connection request.");
-        ws::start(WsClient::new(data.parent.clone(), data.node_id, data.config.client_death_threshold()), &req, stream)
+        ws::start(WsClient::new(data.parent.clone(), data.node_id, data.config.client_liveness_threshold()), &req, stream)
     }
 }
 

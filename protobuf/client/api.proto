@@ -2,7 +2,7 @@ syntax = "proto3";
 package api;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// ClientRequest & ClientResponse ////////////////////////////////////////////////////////////////
+// ClientToServer & ClientFromServer /////////////////////////////////////////////////////////////
 
 // A client request frame.
 //
@@ -29,8 +29,8 @@ package api;
 // the payload of data which is to be written to downstream stages. Ack'ing the message & writing
 // its output to downstream stages is done transactionally. This request is used even if the stage
 // is an RPC endpoint stage, in which case only the data is written for the downstream stages.
-message ClientRequest {
-  ClientRequestMeta meta = 1;
+message ClientFrame {
+  FrameMeta meta = 1;
   oneof payload {
     ConnectRequest connect = 2;
     DisconnectRequest disconnect = 3;
@@ -56,8 +56,8 @@ message ClientRequest {
   }
 }
 
-message ClientResponse {
-  ClientRequestMeta meta = 1;
+message ServerFrame {
+  FrameMeta meta = 1;
   oneof payload {
     ConnectResponse connect = 2;
     DisconnectResponse disconnect = 3;
@@ -83,7 +83,14 @@ message ClientResponse {
   }
 }
 
-message ClientRequestMeta {}
+message FrameMeta {
+  // The ID of the associated request.
+  //
+  // This is used to establish request/response semantics over the bi-directional stream. These
+  // IDs should have strong uniqueness guarantees. Clients are encouraged to use UUID4s, which is
+  // what the server uses for server side initiated frames sent to clients.
+  string id = 1;
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Errors ////////////////////////////////////////////////////////////////////////////////////////
@@ -98,6 +105,8 @@ message ClientError {
 enum ErrorCode {
   // An internal error.
   INTERNAL = 0;
+  // The server needs the client to perform the connection handshake before proceeding.
+  HANDSHAKE_REQUIRED = 1;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -110,10 +119,8 @@ message ConnectRequest {
   // Normally the server will generate connection IDs, but during reconnect scenarios, a
   // connection ID from a previously lost connection may be supplied.
   string id = 1;
-  // The rate at which the client would like heartbeats to be sent from the server, in seconds.
-  uint32 hb_rate = 2;
-  // The number of heartbeats which can be consecutively missed before being considered dead.
-  uint32 hb_max_missed = 3;
+  // The configured liveness threshold for this client connection.
+  uint32 liveness_threshold = 3;
 }
 
 // A response to a connection request.
