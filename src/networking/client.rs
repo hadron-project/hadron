@@ -11,7 +11,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use actix::*;
+use actix::{
+    prelude::*,
+    dev::ToEnvelope,
+};
 use actix_web_actors::ws;
 use log::{debug, error, info, warn};
 use uuid;
@@ -19,28 +22,66 @@ use uuid;
 use crate::{
     NodeId,
     networking::{Network},
-    proto::client::api,
+    proto::client::api::{
+        self, ClientError,
+        client_frame::Payload as ClientPayload,
+        server_frame::Payload as ServerPayload,
+    },
 };
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// WsClientProvider //////////////////////////////////////////////////////////////////////////////
+
+/// The `WsClient` actor's provider interface.
+pub(super) trait WsClientProvider: 'static {
+    /// The type to use as the provider. Should just be `Self` of the implementing type.
+    type Actor: Actor<Context=Self::Context> + Handler<CheckTokenLiveness>;
+
+    /// The type to use as the storage actor's context. Should be `Context<Self>` or `SyncContext<Self>`.
+    type Context: ActorContext + ToEnvelope<Self::Actor, CheckTokenLiveness>;
+}
+
+/// Check if the given token is still valid based on its ID.
+pub(super) struct CheckTokenLiveness(pub String);
+
+impl Message for CheckTokenLiveness {
+    type Result = Result<(), ()>;
+}
+
+impl WsClientProvider for Network {
+    type Actor = Self;
+    type Context = Context<Self>;
+}
+
+impl Handler<CheckTokenLiveness> for Network {
+    type Result = ResponseActFuture<Self, (), ()>;
+
+    fn handle(&mut self, _msg: CheckTokenLiveness, _ctx: &mut Context<Self>) -> Self::Result {
+        // TODO: need to finish this up.
+        Box::new(fut::ok(()))
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// ClientState ///////////////////////////////////////////////////////////////////////////////////
 
 enum ClientState {
     Initial,
     Active(ClientStateActive),
 }
 
-struct ClientStateActive {
-
-}
+struct ClientStateActive; // TODO: add permissions cache here.
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // WsClient //////////////////////////////////////////////////////////////////////////////////////
 
 /// An actor responsible for handling inbound WebSocket connections from clients.
-pub(super) struct WsClient {
+pub(super) struct WsClient<P: WsClientProvider> {
     /// The ID of this node.
     node_id: NodeId,
 
-    /// Address of the parent `Network` actor.
-    parent: Addr<Network>,
+    /// The address of the provider.
+    provider: Addr<P::Actor>,
 
     /// The ID assigned to this connection.
     connection_id: String,
@@ -65,11 +106,11 @@ pub(super) struct WsClient {
     // stream_outbound: HashMap<String, (oneshot::Sender<Result<api::Response, ()>>, SpawnHandle)>, // TODO: update type.
 }
 
-impl WsClient {
+impl<P: WsClientProvider> WsClient<P> {
     /// Create a new instance.
-    pub fn new(parent: Addr<Network>, node_id: NodeId, liveness_threshold: Duration) -> Self {
+    pub fn new(provider: Addr<P::Actor>, node_id: NodeId, liveness_threshold: Duration) -> Self {
         Self{
-            node_id, parent,
+            node_id, provider,
             connection_id: uuid::Uuid::new_v4().to_string(),
             heartbeat: Instant::now(),
             heartbeat_handle: None,
@@ -89,42 +130,38 @@ impl WsClient {
     //     ctx.stop();
     // }
 
-    // /// Handle peer handshake protocol.
-    // ///
-    // /// A handshake frame has been received. Update the peer ID based on the given information,
-    // /// propagate all of this information to the parent `Network` actor, and then response to
-    // /// the caller with a handshake frame as well.
-    // fn handshake(&mut self, hs: api::Handshake, meta: api::Meta, ctx: &mut ws::WebsocketContext<Self>) {
-    //     // If the connection is being made with self due to initial discovery probe, then respond
-    //     // over the socket with a disconnect frame indicating that such is the case.
-    //     if hs.node_id == self.node_id {
-    //         use prost::Message;
-    //         let frame = api::Frame::new_disconnect(api::Disconnect::ConnectionInvalid, meta);
-    //         let mut buf = bytes::BytesMut::with_capacity(frame.encoded_len());
-    //         let _ = frame.encode(&mut buf).map_err(|err| error!("Failed to encode protobuf frame. {}", err));
-    //         ctx.binary(buf);
-    //         return ctx.stop();
-    //     }
+    /// Handle client `ConnectRequest` frame.
+    ///
+    /// A handshake frame has been received. Update the peer ID based on the given information,
+    /// propagate all of this information to the parent `Network` actor, and then response to
+    /// the caller with a handshake frame as well.
+    fn handle_connect(&mut self, frame: api::ConnectRequest, meta: api::FrameMeta, ctx: &mut ws::WebsocketContext<Self>) {
+        // Issue a normal response if the connection is already active.
+        if let ClientState::Active(_) = &self.state {
+            warn!("Client {} sent a ConnectRequest even though the connection state is active.", self.connection_id);
+            return self.send_frame(ServerPayload::Connect(api::ConnectResponse{error: None, id: self.connection_id.clone()}), meta, ctx);
+        }
 
-    //     // Update handshake state & peer ID.
-    //     self.state = PeerHandshakeState::Done;
-    //     self.peer_id = Some(hs.node_id);
+        // Extract auth data and statically validate it.
+        // TODO: implement this. See #24.
+        if &frame.token != "" {
+            return self.send_frame(ServerPayload::Connect(api::ConnectResponse{
+                error: Some(ClientError::new_unauthorized()),
+                id: String::new(),
+            }), meta, ctx);
+        }
 
-    //     // Propagate handshake info to parent `Network` actor. If disconnect is needed, send
-    //     // disconnect frame over to peer so that it will not attempt to reconnect.
-    //     let f = self.parent.send(PeerConnectionLive{peer_id: hs.node_id, routing_info: hs.routing_info, addr: PeerAddr::FromPeer(ctx.address())});
-    //     let af = actix::fut::wrap_future(f)
-    //         .map_err(|_, _, _| ()) // NOTE: would only get hit on a timeout or closed. Neither will be hit.
-    //         .and_then(|res, iself: &mut Self, ictx: &mut ws::WebsocketContext<Self>| match res {
-    //             Ok(()) => actix::fut::ok(()),
-    //             Err(disconnect) => {
-    //                 iself.disconnect(disconnect, ictx);
-    //                 actix::fut::err(())
-    //             }
-    //         })
-    //         .map(move |_, iself, ictx| iself.handshake_response(meta, ictx));
-    //     ctx.spawn(af);
-    // }
+        // Call provider to ensure the client's token ID is still live.
+        let f = fut::wrap_future(self.provider.send(CheckTokenLiveness(String::new())))
+            .map_err(|_, _, _| ()).then(|res, _, _| fut::result(res))
+            .and_then(|_, _, _| fut::ok(()));
+
+        // TODO:
+        // - Register the client connection and its auth data with the provider.
+        // - Transition to active state.
+
+        ctx.spawn(f);
+    }
 
     // /// Handle sending a handshake response.
     // fn handshake_response(&mut self, meta: api::Meta, ctx: &mut ws::WebsocketContext<Self>) {
@@ -152,9 +189,13 @@ impl WsClient {
             }
         }));
     }
+
+    fn send_frame(&mut self, payload: ServerPayload, meta: api::FrameMeta, ctx: &mut ws::WebsocketContext<Self>) {
+
+    }
 }
 
-impl Actor for WsClient {
+impl<P: WsClientProvider> Actor for WsClient<P> {
     type Context = ws::WebsocketContext<Self>;
 
     /// Logic for starting this actor.
@@ -166,9 +207,9 @@ impl Actor for WsClient {
     }
 }
 
-impl StreamHandler<ws::Message, ws::ProtocolError> for WsClient {
+impl<P: WsClientProvider> StreamHandler<ws::Message, ws::ProtocolError> for WsClient<P> {
     /// Handle messages received over the WebSocket.
-    fn handle(&mut self, msg: ws::Message, _ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
         match msg {
             ws::Message::Nop => (),
             ws::Message::Close(reason) => debug!("Connection with client {} is closing. {:?}", self.connection_id, reason),
@@ -191,24 +232,24 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsClient {
                 };
 
                 // If the frame is a response frame, route it through to its matching request.
-                use api::client_frame::Payload;
+                let meta = frame.meta.unwrap_or_default();
                 match frame.payload {
-                    Some(Payload::Connect(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::Disconnect(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::PubEphemeral(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::PubRpc(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::PubStream(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::SubEphemeral(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::SubRpc(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::SubStream(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::SubPipeline(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::UnsubStream(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::UnsubPipeline(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::EnsureEndpoint(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::EnsureStream(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::EnsurePipeline(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::AckStream(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
-                    Some(Payload::AckPipeline(_payload)) => (), // self.handler(payload, frame.meta.unwrap_or_default(), ctx),
+                    Some(ClientPayload::Connect(payload)) => self.handle_connect(payload, meta, ctx),
+                    Some(ClientPayload::Disconnect(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::PubEphemeral(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::PubRpc(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::PubStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::SubEphemeral(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::SubRpc(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::SubStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::SubPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::UnsubStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::UnsubPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::EnsureEndpoint(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::EnsureStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::EnsurePipeline(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::AckStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientPayload::AckPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
                     None => {
                         warn!("Empty or unrecognized client frame payload received on connection {}.", self.connection_id);
                     }

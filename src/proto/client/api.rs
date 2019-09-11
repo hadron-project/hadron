@@ -154,6 +154,9 @@ pub struct ConnectRequest {
     /// connection ID from a previously lost connection may be supplied.
     #[prost(string, tag="1")]
     pub id: std::string::String,
+    /// The JWT credentials being used for this connection.
+    #[prost(string, tag="2")]
+    pub token: std::string::String,
     /// The configured liveness threshold for this client connection.
     #[prost(uint32, tag="3")]
     pub liveness_threshold: u32,
@@ -162,8 +165,11 @@ pub struct ConnectRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
 pub struct ConnectResponse {
+    /// An error associated with this response. If this field is populated, no other fields should be used.
+    #[prost(message, optional, tag="1")]
+    pub error: ::std::option::Option<ClientError>,
     /// The ID assigned to this connection by the server.
-    #[prost(string, tag="1")]
+    #[prost(string, tag="2")]
     pub id: std::string::String,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -340,4 +346,6 @@ pub enum ErrorCode {
     Internal = 0,
     /// The server needs the client to perform the connection handshake before proceeding.
     HandshakeRequired = 1,
+    /// The given credentials are invalid.
+    Unauthorized = 2,
 }

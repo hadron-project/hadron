@@ -107,6 +107,8 @@ enum ErrorCode {
   INTERNAL = 0;
   // The server needs the client to perform the connection handshake before proceeding.
   HANDSHAKE_REQUIRED = 1;
+  // The given credentials are invalid.
+  UNAUTHORIZED = 2;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -119,14 +121,18 @@ message ConnectRequest {
   // Normally the server will generate connection IDs, but during reconnect scenarios, a
   // connection ID from a previously lost connection may be supplied.
   string id = 1;
+  // The JWT credentials being used for this connection.
+  string token = 2;
   // The configured liveness threshold for this client connection.
   uint32 liveness_threshold = 3;
 }
 
 // A response to a connection request.
 message ConnectResponse {
+  // An error associated with this response. If this field is populated, no other fields should be used.
+  ClientError error = 1;
   // The ID assigned to this connection by the server.
-  string id = 1;
+  string id = 2;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

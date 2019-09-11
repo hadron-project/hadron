@@ -27,7 +27,6 @@ use crate::{
     proto::{peer},
     config::Config,
     networking::{
-        client::WsClient,
         from_peer::WsFromPeer,
         to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer},
     },
@@ -35,6 +34,8 @@ use crate::{
         Discovery, ObservedPeersChangeset,
     },
 };
+
+type WsClient = client::WsClient<Network>;
 
 /// The interval at which heartbeats are sent to peer nodes.
 pub(self) const PEER_HB_INTERVAL: Duration = Duration::from_secs(2);

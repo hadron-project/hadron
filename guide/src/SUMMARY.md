@@ -3,7 +3,7 @@ Railgun
 - [Overview](./overview.md)
 - [Getting Started](./getting-started.md)
     - [Namespaces](./getting-started/namespaces.md)
-    - [Users](./getting-started/users.md)
+    - [Users & Tokens](./getting-started/users-tokens.md)
     - [Ephemeral Messaging](./getting-started/ephemeral-messaging.md)
     - [RPC Messaging](./getting-started/rpc-messaging.md)
     - [Durable Streams](./getting-started/durable-streams.md)
