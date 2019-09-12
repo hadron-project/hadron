@@ -4,19 +4,19 @@ pub struct Meta {
     /// The ID of this request or response frame.
     #[prost(string, tag="1")]
     pub id: std::string::String,
-    /// The deadline for this request in milliseconds since the epoch.
-    #[prost(int64, tag="2")]
-    pub deadline: i64,
 }
 /// An API frame.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Frame {
+    /// The metadata of the frame.
     #[prost(message, optional, tag="1")]
     pub meta: ::std::option::Option<Meta>,
+    /// The payload of data for this frame.
     #[prost(oneof="frame::Payload", tags="2, 3, 4")]
     pub payload: ::std::option::Option<frame::Payload>,
 }
 pub mod frame {
+    /// The payload of data for this frame.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Payload {
         #[prost(message, tag="2")]
@@ -37,7 +37,7 @@ pub mod request {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Segment {
         #[prost(message, tag="1")]
-        Handshake(super::super::handshake::Handshake),
+        Handshake(super::Handshake),
     }
 }
 /// A response to an earlier sent request.
@@ -50,8 +50,19 @@ pub mod response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Segment {
         #[prost(message, tag="1")]
-        Handshake(super::super::handshake::Handshake),
+        Handshake(super::Handshake),
     }
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Handshake /////////////////////////////////////////////////////////////////////////////////////
+
+/// A handshake frame holding all data needed for a successful handshake between peers.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Handshake {
+    #[prost(uint64, tag="1")]
+    pub node_id: u64,
+    #[prost(string, tag="2")]
+    pub routing_info: std::string::String,
 }
 /// A disconnect variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

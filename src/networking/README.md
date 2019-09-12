@@ -1,8 +1,8 @@
-connections
-===========
-The connections actor is responsible for handling all network activity throughout the system.
+networking
+==========
+The `Network` actor is responsible for handling all network activity throughout the system.
 
-The responsibility of the connections actor is as follows:
+The responsibility of the `Network` actor is as follows:
 - Own and manage the network stack.
 - Defines and upholds the systems network APIs, including the public facing client API & the internal server API.
 - Initiate connections to discovered peers.

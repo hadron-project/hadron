@@ -2,29 +2,19 @@ railgun
 =======
 A distributed streaming and messaging platform written in Rust.
 
-The railgun platform offers ephemeral message passing and message routing patterns, request/response messaging, pub/sub and consumer group patterns, as well as persistent message streams with built-in deduplication capabilities for more powerful "exactly once" semantics.
+Railgun is built around three core primitives: ephemeral messaging, RPC messaging & durable streams. Ephemeral messaging offers topic based publish/subscribe patterns with wildcards, fanout, load balancing queue groups, and more. RPC messaging offers request/response patterns for service-oriented architectures. Durable streams offer configurable durability, robust consumer patterns and also offer opt-in unique ID validation on messages for server enforced "exactly once" semantics.
 
-Railgun is distributed as a single binary, and can be easily setup and deployed on bare metal servers, VMs and containers. Deploying a Railgun StatefulSet to a Kubernetes cluster using the official Helm chart is as simple as it gets.
+Railgun builds upon these core primitives to offer piplines. Pipelines are pre-defined multi-stage data workflows, structured in terms of a graph. Pipelines provide transactional guarantees over ack'ing a stages work and the delivery of the next stages data. With Pipelines, Railgun provides a platform with greater guarantees, and reduced error handling for building streaming-first service-oriented architectures.
 
-### docs
-- [Overview](./docs/README.md#overview)
-- [Persistent Streams](./docs/README.md#persistent-streams)
-- [Ephemeral Messaging](./docs/README.md#ephemeral-messaging)
-- [Clustering](./docs/README.md#clustering)
-- [Data Replication and Sharding](./docs/README.md#data-replication-and-sharding)
-- [Internals](./docs/internals/README.md)
-- [Operations](./docs/operations/README.md)
+Older AMQP style systems were great, but fall short of Kafka-like streaming capabilities, specifically message persistence. Kafka-like systems lack ephemeral & RPC messaging. More recent blends of the technologies, like Nats, offer a nice combination, but lack many of the core features needed from both domains. Railgun offers the best of all of these paradigms, adds new paradigms for more powerful architectures, and is shipped as a single binary, written in Rust, with blazing speed and safety.
+
+Railgun also features a very simple wire protocol based on protocol buffers. Protobuf has more and more become a universal serialization language for data interchange. This choice was made to reduce the barrier of entry for building Railgun client libraries in various languages.
+
+### getting started
+Head over to the [getting started](https://railgun-rs.github.io/railgun/getting-started.html) page to launch into all things Railgun. Check out the [client libraries](https://railgun-rs.github.io/railgun/client-libraries.html) page for details on the official client libraries maintained by the Railgun team.
 
 ### development
-Railgun is implemented in Rust. This system is built upon the [Actix](https://actix.rs) actor framework, which in turn is built upon the [Tokio](https://tokio.rs/) asynchronous runtime. Leveraging the actor pattern with message passing allows us to completely avoid locking in the Railgun application code, leverage Rust’s ownership system to its maximum potential, and the asynchrounous foundation keeps resource usage minimal while still providing very high throughput.
+Have a look at [DEVELOPMENT.md](https://gitlab.com/docql/railgun/blob/master/DEVELOPMENT.md) for more details on getting started with development.
 
-Railgun uses the Rust stable channel. Get started with development by [installing `rustup`](https://rustup.rs/) on your system. Once `rustup` has been successfully installed, execute `rustup component add clippy rustfmt`. The `clippy` and `rustfmt` components are used for consistent code style and formatting. Editor and IDE integrations are widely available for all of these tools.
-
-Building Railgun is as simple as `cargo build`, append `--release` for an optimized build.
-
-All testing and CI is built around the docker ecosystem. We're using [MicroK8s](https://microk8s.io/) for CI testing related to Kubernets, as well as [MiniKube](https://github.com/kubernetes/minikube) for local development and testing.
-
-----
-
-## LICENSE
+### LICENSE
 Unless otherwise noted, the Railgun source files are distributed under the Apache Version 2.0 license found in the LICENSE file.

@@ -27,6 +27,7 @@ use crate::{
 /// peers on a regular interval.
 pub struct DnsDiscovery {
     config: Arc<Config>,
+    discovery_dns_name: String,
     resolver: Rc<AsyncResolver>,
     query_stream_handle: Option<SpawnHandle>,
     has_active_query: Rc<RefCell<bool>>,
@@ -35,7 +36,7 @@ pub struct DnsDiscovery {
 
 impl DnsDiscovery {
     /// Create a new DNS peer discovery backend instance.
-    pub fn new(discovery: Addr<Discovery>, config: Arc<Config>) -> Self {
+    pub fn new(discovery: Addr<Discovery>, discovery_dns_name: String, config: Arc<Config>) -> Self {
         // Build the async resolver.
         let (resolvercfg, resolveropts) = read_system_conf()
             .unwrap_or_else(|err| panic!("Failed to read system DNS config. On *nix systems, ensure your resolv.conf is present and properly formed. {}", err));
@@ -44,6 +45,7 @@ impl DnsDiscovery {
 
         Self{
             config,
+            discovery_dns_name,
             resolver: Rc::new(resolver),
             query_stream_handle: None,
             has_active_query: Rc::new(RefCell::new(false)),
@@ -63,7 +65,7 @@ impl Actor for DnsDiscovery {
         debug!("Booting the DNS discovery backend.");
 
         // Clone a few containers for move into closures.
-        let config = self.config.clone();
+        let discovery_name = self.discovery_dns_name.clone();
         let has_active_query = self.has_active_query.clone();
         let resolver = self.resolver.clone();
 
@@ -81,7 +83,7 @@ impl Actor for DnsDiscovery {
                         debug!("Starting new DNS peer discovery request.");
                         *has_active_query.borrow_mut() = true;
                         let (inner_rc0, inner_rc1) = (has_active_query.clone(), has_active_query.clone());
-                        Box::new(resolver.lookup_ip(config.discovery_dns_name.as_str())
+                        Box::new(resolver.lookup_ip(discovery_name.as_str())
                             .map(move |lookup_res| {
                                 *inner_rc0.borrow_mut() = false;
                                 Some(lookup_res)

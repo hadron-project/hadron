@@ -1,19 +1,17 @@
 syntax = "proto3";
 package api;
 
-import "handshake.proto";
-
 // Metadata related to an API frame.
 message Meta {
   // The ID of this request or response frame.
   string id = 1;
-  // The deadline for this request in milliseconds since the epoch.
-  int64 deadline = 2;
 }
 
 // An API frame.
 message Frame {
+  // The metadata of the frame.
   Meta meta = 1;
+  // The payload of data for this frame.
   oneof payload {
     Request request = 2;
     Response response = 3;
@@ -24,18 +22,27 @@ message Frame {
 // A request from a peer node.
 message Request {
   oneof segment {
-    handshake.Handshake handshake = 1;
+    Handshake handshake = 1;
   }
 }
 
 // A response to an earlier sent request.
 message Response {
   oneof segment {
-    handshake.Handshake handshake = 1;
+    Handshake handshake = 1;
   }
 }
 
 // A disconnect variant.
 enum Disconnect {
   ConnectionInvalid = 0;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Handshake /////////////////////////////////////////////////////////////////////////////////////
+
+// A handshake frame holding all data needed for a successful handshake between peers.
+message Handshake {
+  uint64 node_id = 1;
+  string routing_info = 2;
 }

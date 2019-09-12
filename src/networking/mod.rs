@@ -1,17 +1,7 @@
-//! Peer discovery actor abstraction.
-//!
-//! This module provides an abstraction over the peer discovery system. The interface here is
-//! quite simple. All possible discovery actors implement the `Discovery` trait. Based on the
-//! runtime configuration for this system, the appropriate discovery actor will be created using
-//! this modules `new_discovery_instance` function. The returned object should be used for
-//! registering listener to observe peer discovery changes.
-//!
-//! The discovery actors are stream only actors. They do not expect any input from other actors in
-//! this system. Other actors which need to observe the stream of changes coming from this actor
-//! should subscribe to this actor.
-
 mod client;
 mod from_peer;
+mod metrics;
+mod raft;
 mod to_peer;
 
 use std::{
@@ -32,17 +22,20 @@ use futures::future::err as fut_err;
 use log::{debug, error};
 
 use crate::{
+    NodeId,
+    app,
     proto::{peer},
-    common::NodeId,
     config::Config,
-    connections::{
+    networking::{
         from_peer::WsFromPeer,
         to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer},
     },
     discovery::{
-        Discovery, ObservedPeersChangeset, SubscribeToDiscoveryChangesets,
+        Discovery, ObservedPeersChangeset,
     },
 };
+
+type WsClient = client::WsClient<Network>;
 
 /// The interval at which heartbeats are sent to peer nodes.
 pub(self) const PEER_HB_INTERVAL: Duration = Duration::from_secs(2);
@@ -60,8 +53,9 @@ pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 /// A type used as a shared state context for all WebSocket actor instances.
 #[derive(Clone)]
 pub(self) struct ServerState {
-    pub parent: Addr<Connections>,
-    pub node_id: String,
+    pub parent: Addr<Network>,
+    pub node_id: NodeId,
+    pub config: Arc<Config>,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -87,41 +81,54 @@ enum PeerAddr {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// Connections ///////////////////////////////////////////////////////////////////////////////////
+// Network ///////////////////////////////////////////////////////////////////////////////////////
 
 /// An actor responsible for handling all network activity throughout the system.
 ///
 /// See the README.md in this directory for additional information on actor responsibilities.
-pub struct Connections {
-    node_id: String,
-    discovery: Addr<Discovery>,
+pub struct Network {
+    _app: Addr<app::App>,
+    node_id: NodeId,
     config: Arc<Config>,
     server: Option<Server>,
     socketaddr_to_peer: HashMap<SocketAddr, WsToPeerState>,
     routing_table: HashMap<NodeId, PeerAddr>,
+    _discovery: Addr<Discovery>,
 }
 
-impl Connections {
+impl Network {
     /// Create a new instance.
-    pub fn new(discovery: Addr<Discovery>, node_id: String, config: Arc<Config>) -> Self {
-        Self{
+    ///
+    /// This is expected to be called from within this actors `App::create` method which provides
+    /// the context, and thus the address, of this actor. This is needed for spawning other actors
+    /// and setting up proper communication channels.
+    pub fn new(ctx: &mut Context<Self>, app: Addr<app::App>, node_id: NodeId, config: Arc<Config>) -> Self {
+
+        // Boot the configured discovery system on a new dedicated thread.
+        let (recipient, innercfg) = (ctx.address().recipient(), config.clone());
+        let _discovery = Discovery::create(|innerctx|
+            Discovery::new(innerctx, recipient, innercfg)
+        );
+
+        Network{
+            _app: app,
             node_id,
-            discovery,
             config,
             server: None,
             socketaddr_to_peer: HashMap::new(),
             routing_table: HashMap::new(),
+            _discovery,
         }
     }
 
     /// Build a new network server instance for use by this system.
     pub fn build_server(&self, ctx: &Context<Self>) -> Result<Server, ()> {
-        let data = ServerState{parent: ctx.address(), node_id: self.node_id.clone()};
+        let data = ServerState{parent: ctx.address(), node_id: self.node_id, config: self.config.clone()};
         let server = HttpServer::new(move || {
             App::new().data(data.clone())
                 // This endpoint is used for internal client communication.
                 .service(web::resource("/internal/").to(Self::handle_peer_connection))
-                // .service(web::resource("").to(Self::handle_client_connection)) // TODO: client interface. See #6.
+                .service(web::resource("").to(Self::handle_client_connection))
         })
         .bind(format!("0.0.0.0:{}", &self.config.port))
         .map_err(|err| {
@@ -136,11 +143,16 @@ impl Connections {
     /// Handler for opening new peer WebSocket connections.
     fn handle_peer_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
         debug!("Handling a new peer connection request.");
-        ws::start(WsFromPeer::new(data.parent.clone(), data.node_id.clone()), &req, stream)
+        ws::start(WsFromPeer::new(data.parent.clone(), data.node_id), &req, stream)
+    }
+
+    fn handle_client_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
+        debug!("Handling a new client connection request.");
+        ws::start(WsClient::new(data.parent.clone(), data.node_id, data.config.client_liveness_threshold()), &req, stream)
     }
 }
 
-impl Actor for Connections {
+impl Actor for Network {
     type Context = Context<Self>;
 
     /// Logic for starting this actor.
@@ -155,14 +167,10 @@ impl Actor for Connections {
                 return
             }
         }
-
-        // Subscribe to the discovery system's changesets. This happens only once when the system
-        // is booted. This should never fail.
-        self.discovery.do_send(SubscribeToDiscoveryChangesets(ctx.address().recipient()));
     }
 }
 
-impl Handler<ObservedPeersChangeset> for Connections {
+impl Handler<ObservedPeersChangeset> for Network {
     type Result = ();
 
     /// Handle changesets coming from the discovery system.
@@ -195,7 +203,7 @@ impl Handler<ObservedPeersChangeset> for Connections {
         // Spawn new outbound connections to peers.
         tospawn.into_iter().for_each(|socketaddr| {
             debug!("Spawning a new outbound peer connection to '{}'.", &socketaddr);
-            let addr = WsToPeer::new(ctx.address(), self.node_id.clone(), socketaddr).start();
+            let addr = WsToPeer::new(ctx.address(), self.node_id, socketaddr).start();
             let discovery_state = DiscoveryState::Observed;
             self.socketaddr_to_peer.insert(socketaddr, WsToPeerState{addr, discovery_state});
         });
@@ -249,14 +257,14 @@ pub(self) struct ClosingPeerConnection(pub PeerConnectionIdentifier);
 /// available after a successful Railgun protocol handshake.
 pub enum PeerConnectionIdentifier {
     /// This variant is used by `WsFromPeer` connections which do not have the SocketAddr of the peer.
-    NodeId(String),
+    NodeId(NodeId),
     /// This variant is used by `WsToPeer` connections which only have the SocketAddr of the peer before the handshake is complete.
     SocketAddr(SocketAddr),
     /// This variant is used by `WsToPeer` connections after a successful handshake as both data elements will be available.
     SocketAddrAndId(SocketAddr, NodeId),
 }
 
-impl Handler<ClosingPeerConnection> for Connections {
+impl Handler<ClosingPeerConnection> for Network {
     type Result = ();
 
     /// Handle messages from peer connections indicating that the peer connection is closing.
@@ -297,7 +305,7 @@ impl Message for PeerConnectionLive {
     type Result = Result<(), peer::api::Disconnect>;
 }
 
-impl Handler<PeerConnectionLive> for Connections {
+impl Handler<PeerConnectionLive> for Network {
     type Result = Result<(), peer::api::Disconnect>;
 
     /// Handle messages from child actors indicating that their connections are now live.
@@ -335,7 +343,7 @@ impl Handler<PeerConnectionLive> for Connections {
 
 /// A wrapper type for outbound requests destined for a specific peer.
 ///
-/// The parent connections actor will receive messages from other higher-level actors to have
+/// The parent `Network` actor will receive messages from other higher-level actors to have
 /// messages sent to specific destinations by Node ID. This same message instance will then be
 /// forwarded to a specific child actor responsible for the target socket.
 pub struct OutboundPeerRequest {
@@ -348,7 +356,7 @@ impl actix::Message for OutboundPeerRequest {
     type Result = Result<peer::api::Response, ()>;
 }
 
-impl Handler<OutboundPeerRequest> for Connections {
+impl Handler<OutboundPeerRequest> for Network {
     type Result = ResponseFuture<peer::api::Response, ()>;
 
     /// Handle requests to send outbound messages to a connected peer.
@@ -392,7 +400,7 @@ impl Handler<OutboundPeerRequest> for Connections {
 #[derive(Message)]
 pub struct InboundPeerRequest(peer::api::Request, peer::api::Meta);
 
-impl Handler<InboundPeerRequest> for Connections {
+impl Handler<InboundPeerRequest> for Network {
     type Result = ();
 
     /// Handle inbound peer API requests.

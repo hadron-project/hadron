@@ -19,10 +19,9 @@ use std::{
 
 use actix::prelude::*;
 use log::{error};
-use serde::Deserialize;
 
 use crate::{
-    config::Config,
+    config::{Config, DiscoveryBackend},
     discovery::{
         dns::DnsAddrs,
         observedset::{ObservedSet},
@@ -30,23 +29,10 @@ use crate::{
 };
 pub use observedset::ObservedPeersChangeset;
 
-/// All available discovery backends currently implemented in this system.
-#[derive(Clone, Debug, Deserialize)]
-pub enum DiscoveryBackend {
-    Dns,
-}
-
 /// An internal type used for tracking the addr of the configured discovery backend.
 enum DiscoveryBackendAddr {
     Dns(Addr<dns::DnsDiscovery>),
 }
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// Message Types /////////////////////////////////////////////////////////////////////////////////
-
-/// A message for subscribing to changesets coming from the discovery system.
-#[derive(Message)]
-pub struct SubscribeToDiscoveryChangesets(pub Recipient<ObservedPeersChangeset>);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Discovery Actor ///////////////////////////////////////////////////////////////////////////////
@@ -55,9 +41,6 @@ pub struct SubscribeToDiscoveryChangesets(pub Recipient<ObservedPeersChangeset>)
 ///
 /// See the README.md in this directory for additional information on actor responsibilities.
 pub struct Discovery {
-    backend: DiscoveryBackend,
-    backend_addr: Option<DiscoveryBackendAddr>, // Once the actor starts, this will be safe to unwrap.
-    config: Arc<Config>,
 
     /// The observed set of IP addresses corrently being tracked by this system.
     ///
@@ -67,29 +50,32 @@ pub struct Discovery {
     /// times.
     observed_peers: ObservedSet,
 
-    /// All registered subscribers to changeset events from this system.
-    subscribers: Vec<Recipient<ObservedPeersChangeset>>,
+    /// The configured recipient to receive changeset notifications.
+    out: Recipient<ObservedPeersChangeset>,
+
+    _config: Arc<Config>,
+    _backend_addr: DiscoveryBackendAddr,
 }
 
 impl Discovery {
     /// Create a new discovery instance configured to use the specified backend.
-    pub fn new(backend: DiscoveryBackend, config: Arc<Config>) -> Self {
+    pub fn new(ctx: &mut Context<Self>, out: Recipient<ObservedPeersChangeset>, config: Arc<Config>) -> Self {
         let observed_peers = ObservedSet::default();
-        Self{backend, backend_addr: None, config, observed_peers, subscribers: vec![]}
+        let _backend_addr = match &config.discovery_backend {
+            DiscoveryBackend::Dns{discovery_dns_name} => {
+                DiscoveryBackendAddr::Dns(dns::DnsDiscovery::new(
+                    ctx.address(),
+                    discovery_dns_name.clone(),
+                    config.clone(),
+                ).start())
+            }
+        };
+        Self{observed_peers, out, _config: config, _backend_addr}
     }
 }
 
 impl Actor for Discovery {
     type Context = Context<Self>;
-
-    /// Logic for starting this actor.
-    fn started(&mut self, ctx: &mut Self::Context) {
-        use DiscoveryBackend::*;
-        let backend_addr = match self.backend {
-            Dns => DiscoveryBackendAddr::Dns(dns::DnsDiscovery::new(ctx.address(), self.config.clone()).start()),
-        };
-        self.backend_addr = Some(backend_addr);
-    }
 }
 
 impl Handler<DnsAddrs> for Discovery {
@@ -102,19 +88,8 @@ impl Handler<DnsAddrs> for Discovery {
 
         // Pump this changeset out to any registered subscribers.
         if let Some(changeset) = changeset_opt {
-            self.subscribers.iter().for_each(|addr: &Recipient<ObservedPeersChangeset>| {
-                let _ = addr.do_send(changeset.clone())
-                    .map_err(|err| error!("Error delivering discovery changeset to subscriber. {}", err));
-            })
+            let _ = self.out.do_send(changeset.clone())
+                .map_err(|err| error!("Error delivering discovery changeset to subscriber. {}", err));
         }
-    }
-}
-
-impl Handler<SubscribeToDiscoveryChangesets> for Discovery {
-    type Result = ();
-
-    /// Handle requests to subscribe to discovery changesets.
-    fn handle(&mut self, subscriber: SubscribeToDiscoveryChangesets, _: &mut Self::Context) -> Self::Result {
-        self.subscribers.push(subscriber.0);
     }
 }

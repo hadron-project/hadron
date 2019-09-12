@@ -5,17 +5,19 @@ This document describes the lifecycle of network connections between peer nodes 
 #### discovery
 The first phase of the lifecycle is discovery.
 
-When a node IP is first picked up from the discovery system, it will be sent over to the connections actor to establish a connection with the discovered peer. Peers which were once in the observed set of discovered peers, but which are no longer appearing in discovery probes, will be sent over to the connections actor so that action can be taken to remove them if needed.
+When a node IP is first picked up from the discovery system, it will be sent over to the `Network` actor to establish a connection with the discovered peer. Peers which were once in the observed set of discovered peers, but which are no longer appearing in discovery probes, will be sent over to the `Network` actor so that action can be taken to remove them if needed.
 
 At this point in time, the Railgun networking system does not attempt to accommodate potential discovery misconfigurations. If a node within the cluster is given two IPs, and the discovery system detects both, one of them will be dropped due to peers already having a connection to the same node and peer nodes will not attempt to connect to the second IP again. The proper way to change the IP of a node is to bring the node down, change its IP, and then bring it back online.
 
 #### baseline connection
-Newly discovered members will be immediately connected to as long as the connections actor determines that there is no live connection to the same target IP. This will typically only happen when:
-- A peer is already connected to and is healthy.
+Newly discovered members will be immediately connected to as long as the `Network` actor determines that there is no live connection to the same target IP.
+
+Live connections to a discovered node may happen when:
+- A peer is already connected and is healthy.
 - The discovery system has an interrupt where the peer is no longer showing up.
 - The peer's connection is still live and healthy despite not showing up in the discovery system.
 - The peer's discovery entry shows up again at some point in the future, at which point the discovery system would see it as a new peer, and would then publish a changeset to the discovery subscribers.
-- The connections actor picks up the alleged new peer, but then sees that it already has an open connection to it.
+- The `Network` actor picks up the alleged new peer, but then sees that it already has an open connection to it.
 
 Once it is determined that a peer should be connected to, a WebSocket connection will be established between the peers for baseline communication. If the initial connection fails, it will execute the [reconnect protocol](#reconnect) described below. The peer which initiated the connection will then immediately launch into the Railgun peer handshake protocol.
 
