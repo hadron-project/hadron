@@ -16,11 +16,13 @@ use actix::{
     dev::ToEnvelope,
 };
 use actix_web_actors::ws;
+use bytes;
 use log::{debug, error, info, warn};
 use uuid;
 
 use crate::{
     NodeId,
+    auth::{Claims, ClaimsV1},
     networking::{Network},
     proto::client::api::{
         self, ClientError,
@@ -35,17 +37,17 @@ use crate::{
 /// The `WsClient` actor's provider interface.
 pub(super) trait WsClientProvider: 'static {
     /// The type to use as the provider. Should just be `Self` of the implementing type.
-    type Actor: Actor<Context=Self::Context> + Handler<CheckTokenLiveness>;
+    type Actor: Actor<Context=Self::Context> + Handler<VerifyToken>;
 
     /// The type to use as the storage actor's context. Should be `Context<Self>` or `SyncContext<Self>`.
-    type Context: ActorContext + ToEnvelope<Self::Actor, CheckTokenLiveness>;
+    type Context: ActorContext + ToEnvelope<Self::Actor, VerifyToken>;
 }
 
 /// Check if the given token is still valid based on its ID.
-pub(super) struct CheckTokenLiveness(pub String);
+pub(super) struct VerifyToken(pub String);
 
-impl Message for CheckTokenLiveness {
-    type Result = Result<(), ()>;
+impl Message for VerifyToken {
+    type Result = Result<Claims, ClientError>;
 }
 
 impl WsClientProvider for Network {
@@ -53,12 +55,16 @@ impl WsClientProvider for Network {
     type Context = Context<Self>;
 }
 
-impl Handler<CheckTokenLiveness> for Network {
-    type Result = ResponseActFuture<Self, (), ()>;
+impl Handler<VerifyToken> for Network {
+    type Result = ResponseActFuture<Self, Claims, ClientError>;
 
-    fn handle(&mut self, _msg: CheckTokenLiveness, _ctx: &mut Context<Self>) -> Self::Result {
-        // TODO: need to finish this up.
-        Box::new(fut::ok(()))
+    fn handle(&mut self, msg: VerifyToken, _ctx: &mut Context<Self>) -> Self::Result {
+        // TODO: implement this. See #24.
+        if msg.0.len() != 0 {
+            Box::new(fut::err(ClientError::new_unauthorized()))
+        } else {
+            Box::new(fut::ok(Claims::V1(ClaimsV1{all: true, grants: Vec::new()})))
+        }
     }
 }
 
@@ -70,7 +76,13 @@ enum ClientState {
     Active(ClientStateActive),
 }
 
-struct ClientStateActive; // TODO: add permissions cache here.
+/// The state associated with an active client connection.
+///
+/// TODO: add permissions cache here.
+struct ClientStateActive {
+    /// The authN/authZ claims of the connection.
+    _claims: Claims,
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // WsClient //////////////////////////////////////////////////////////////////////////////////////
@@ -78,7 +90,7 @@ struct ClientStateActive; // TODO: add permissions cache here.
 /// An actor responsible for handling inbound WebSocket connections from clients.
 pub(super) struct WsClient<P: WsClientProvider> {
     /// The ID of this node.
-    node_id: NodeId,
+    _node_id: NodeId,
 
     /// The address of the provider.
     provider: Addr<P::Actor>,
@@ -101,16 +113,13 @@ pub(super) struct WsClient<P: WsClientProvider> {
     /// If this amount of time elapses without hearing from the client, it will be reckoned dead.
     /// This value may be updated by clients during the handshake.
     liveness_threshold: Duration,
-
-    // /// A map of pending stream deliveries awaiting a client response.
-    // stream_outbound: HashMap<String, (oneshot::Sender<Result<api::Response, ()>>, SpawnHandle)>, // TODO: update type.
 }
 
 impl<P: WsClientProvider> WsClient<P> {
     /// Create a new instance.
-    pub fn new(provider: Addr<P::Actor>, node_id: NodeId, liveness_threshold: Duration) -> Self {
+    pub fn new(provider: Addr<P::Actor>, _node_id: NodeId, liveness_threshold: Duration) -> Self {
         Self{
-            node_id, provider,
+            _node_id, provider,
             connection_id: uuid::Uuid::new_v4().to_string(),
             heartbeat: Instant::now(),
             heartbeat_handle: None,
@@ -119,22 +128,7 @@ impl<P: WsClientProvider> WsClient<P> {
         }
     }
 
-    // /// Sever the connection with the peer after sending a disconnect frame.
-    // fn disconnect(&mut self, disconnect: api::Disconnect, ctx: &mut ws::WebsocketContext<Self>) {
-    //     debug!("Peer connection needs disconnect: {}. Closing.", disconnect as i32);
-    //     use prost::Message;
-    //     let frame = api::Frame{meta: None, payload: Some(api::frame::Payload::Disconnect(disconnect as i32))};
-    //     let mut data = bytes::BytesMut::with_capacity(frame.encoded_len());
-    //     let _ = frame.encode(&mut data).map_err(|err| error!("Failed to serialize protobuf frame. {}", err));
-    //     ctx.binary(data);
-    //     ctx.stop();
-    // }
-
     /// Handle client `ConnectRequest` frame.
-    ///
-    /// A handshake frame has been received. Update the peer ID based on the given information,
-    /// propagate all of this information to the parent `Network` actor, and then response to
-    /// the caller with a handshake frame as well.
     fn handle_connect(&mut self, frame: api::ConnectRequest, meta: api::FrameMeta, ctx: &mut ws::WebsocketContext<Self>) {
         // Issue a normal response if the connection is already active.
         if let ClientState::Active(_) = &self.state {
@@ -142,40 +136,28 @@ impl<P: WsClientProvider> WsClient<P> {
             return self.send_frame(ServerPayload::Connect(api::ConnectResponse{error: None, id: self.connection_id.clone()}), meta, ctx);
         }
 
-        // Extract auth data and statically validate it.
-        // TODO: implement this. See #24.
-        if &frame.token != "" {
-            return self.send_frame(ServerPayload::Connect(api::ConnectResponse{
-                error: Some(ClientError::new_unauthorized()),
-                id: String::new(),
-            }), meta, ctx);
-        }
+        // Call provider to validate the given token and extract its claims object.
+        let f = fut::wrap_future(self.provider.send(VerifyToken(frame.token)))
+            .map_err(|_, _: &mut Self, _| ClientError::new_internal())
+            .and_then(|res, _, _| fut::result(res))
 
-        // Call provider to ensure the client's token ID is still live.
-        let f = fut::wrap_future(self.provider.send(CheckTokenLiveness(String::new())))
-            .map_err(|_, _, _| ()).then(|res, _, _| fut::result(res))
-            .and_then(|_, _, _| fut::ok(()));
+            // Transition to active state.
+            .and_then(|_claims, act, _| {
+                act.state = ClientState::Active(ClientStateActive{_claims});
+                fut::ok(())
+            })
 
-        // TODO:
-        // - Register the client connection and its auth data with the provider.
-        // - Transition to active state.
+            // Emit response.
+            .then(move |res, act, ctx| {
+                match res {
+                    Ok(_) => act.send_frame(ServerPayload::Connect(api::ConnectResponse{error: None, id: act.connection_id.clone()}), meta, ctx),
+                    Err(err) => act.send_frame(ServerPayload::Connect(api::ConnectResponse{error: Some(err), id: String::new()}), meta, ctx),
+                }
+                fut::ok(())
+            });
 
         ctx.spawn(f);
     }
-
-    // /// Handle sending a handshake response.
-    // fn handshake_response(&mut self, meta: api::Meta, ctx: &mut ws::WebsocketContext<Self>) {
-    //     // Respond to the caller with a handshake frame.
-    //     // TODO: finish up the routing info pattern. See the peer connection management doc.
-    //     use prost::Message;
-    //     let hs_out = api::Handshake{node_id: self.node_id, routing_info: String::with_capacity(0)};
-    //     let frame = api::Frame{meta: Some(meta), payload: Some(api::frame::Payload::Response(api::Response{
-    //         segment: Some(api::response::Segment::Handshake(hs_out)),
-    //     }))};
-    //     let mut data = bytes::BytesMut::with_capacity(frame.encoded_len());
-    //     let _ = frame.encode(&mut data).map_err(|err| error!("Failed to serialize protobuf frame. {}", err));
-    //     ctx.binary(data);
-    // }
 
     /// Perform a healthcheck at the given interval.
     fn healthcheck(&mut self, ctx: &mut ws::WebsocketContext<Self>) {
@@ -190,8 +172,13 @@ impl<P: WsClientProvider> WsClient<P> {
         }));
     }
 
+    /// Send a frame to the connected client.
     fn send_frame(&mut self, payload: ServerPayload, meta: api::FrameMeta, ctx: &mut ws::WebsocketContext<Self>) {
-
+        use prost::Message;
+        let frame = api::ServerFrame{payload: Some(payload), meta: Some(meta)};
+        let mut data = bytes::BytesMut::with_capacity(frame.encoded_len());
+        let _ = frame.encode(&mut data).map_err(|err| error!("Failed to serialize protobuf frame. {}", err));
+        ctx.binary(data);
     }
 }
 

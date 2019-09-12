@@ -12,12 +12,13 @@ Users are not able to directly use the resources of Railgun, that is what tokens
 - `all`: a boolean value. If this value is `true`, then the `grants` field will be ignored, the token will be able to utilize any resources of the cluster, and can only be deleted by a `root` user.
 - `grants`: a list permissions granted per namespace. Each grant has the following structure:
     - `namespace`: the namespace which the grant pertains to.
+    - `can_create`: a boolean value. If `true`, this token can be used to create new endpoints, streams and pipelines in the associated namespace.
     - `messaging`: a `read/write/none` enum value.
     - `endpoints`: a list of endpoint permissions with the following structure:
         - `matcher`: the endpoint name matcher to use. May include a wildcard to match endpoints hierarchically. Same wildcard rules apply as described in the ephemeral messaging chapter.
         - `access`: a `read/write/both` enum value.
     - `streams`: a list of stream permissions with the following structure:
-        - `matcher`: the stream name matcher to use. May include a wildcard to match endpoints hierarchically. Same wildcard rules apply as described in the ephemeral messaging chapter.
+        - `matcher`: the stream name matcher to use. May include a wildcard to match streams hierarchically. Same wildcard rules apply as described in the ephemeral messaging chapter.
         - `access`: a `read/write/both` enum value.
 
 In addition to the above:
