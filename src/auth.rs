@@ -1,5 +1,8 @@
 use serde::{Serialize, Deserialize};
 
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// JWT Data Models ///////////////////////////////////////////////////////////////////////////////
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag="v")]
 pub enum Claims {
@@ -66,4 +69,35 @@ pub enum StreamAccess {
     Read,
     Write,
     All,
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// User Data Models //////////////////////////////////////////////////////////////////////////////
+
+/// A user of the Railgun system.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct User {
+    /// The user's name.
+    pub name: String,
+    /// The user's role.
+    pub role: UserRole,
+}
+
+/// A user's role within Railgun.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum UserRole {
+    /// Full control over the Railgun cluster and all resources.
+    Root,
+    /// Full control over the resources of specific namespaces and access to system metrics.
+    Admin {
+        /// The namespaces on which this user has authorization.
+        namespaces: Vec<String>,
+    },
+    /// Read-only permissions on resources of specifed namespaces and/or the cluster's metrics.
+    Viewer {
+        /// A boolean indicating if this user is authorized to view system metrics.
+        metrics: bool,
+        /// The namespaces on which this user has authorization.
+        namespaces: Vec<String>,
+    },
 }

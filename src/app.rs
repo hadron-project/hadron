@@ -51,12 +51,13 @@ impl App {
         let app = ctx.address();
 
         // Instantiate the Raft storage system & start it.
-        let storage = Storage::new(app.clone(), &*config).unwrap_or_else(|err| {
+        let mut storage = Storage::new(&*config).unwrap_or_else(|err| {
             error!("Error initializing the system database. {}", err);
             std::process::exit(1);
         });
         let nodeid = storage.node_id();
-        let storage_addr = SyncArbiter::start(3, move || storage.clone()); // TODO: probably use `num_cores` crate.
+        let storage_arb = Arbiter::new();
+        let storage_addr = Storage::start_in_arbiter(&storage_arb, move |_| storage);
 
         // Boot the network actor on a dedicated thread. Serves on dedicated threadpool.
         let (net_arb, net_cfg, net_app, net_nodeid) = (Arbiter::new(), config.clone(), app.clone(), nodeid.clone());
