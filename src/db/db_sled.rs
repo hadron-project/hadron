@@ -1,7 +1,7 @@
 //! A module encapsulating all logic for interfacing with the data storage system.
 
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{BTreeMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -21,7 +21,7 @@ use actix_raft::{
         HardState,
         InitialState,
         InstallSnapshot,
-        InstallSnapshotChunk,
+        // InstallSnapshotChunk,
         ReplicateLogEntries,
         SaveHardState,
     },
@@ -34,6 +34,7 @@ use uuid;
 
 use crate::{
     NodeId,
+    auth::User,
     config::Config,
     db::{AppData},
     proto::client::api::{ClientError, ErrorCode},
@@ -48,7 +49,7 @@ const RAFT_LAL_KEY: &str = "/raft/lal";
 /// The key used for storing the node ID of the current node.
 const NODE_ID_KEY: &str = "id";
 /// The DB path prefix for all users.
-const _USERS_PATH_PREFIX: &str = "/users/";
+const USERS_PATH_PREFIX: &str = "/users/";
 /// The DB path prefix for all users.
 const _TOKENS_PATH_PREFIX: &str = "/tokens/";
 /// The DB path prefix for all namespaces.
@@ -61,6 +62,8 @@ const _PIPELINES_PATH_PREFIX: &str = "/pipelines/";
 const ERR_DESERIALIZE_ENTRY: &str = "Failed to deserialize entry from log. Data is corrupt.";
 /// An error from deserializing HardState record.
 const ERR_DESERIALIZE_HS: &str = "Failed to deserialize HardState from storage. Data is corrupt.";
+/// An error from deserializing a User record.
+const ERR_DESERIALIZE_USER: &str = "Failed to deserialize User from storage. Data is corrupt.";
 /// An initialization error where an entry was expected, but none was found.
 const ERR_MISSING_ENTRY: &str = "Unable to access expected log entry.";
 
@@ -120,7 +123,16 @@ impl SledStorage {
         // Initialize and restore any previous state from disk.
         let log = db.open_tree(RAFT_LOG_PREFIX)?;
         let state = Self::initialize(id, &db, &log)?;
-        let _ = Self::build_indices(&db)?;
+
+        // Build indices.
+        // - index all tokens: these are just simple IDs.
+        // - index all namespaces: just namespace names.
+        // - index all endpoints: namespace/endpoint as key.
+        // - index all pipelines: namespace/pipeline as key.
+        // - index all streams: namespace/stream as key.
+        //     - value will include all details of the stream, including indexed unique IDs if applicable.
+        let users_collection = db.open_tree(USERS_PATH_PREFIX)?;
+        let _users = Self::index_users_data(&users_collection)?;
 
         let sled = SyncArbiter::start(3, move || SledActor{db: db.clone(), log: log.clone()}); // TODO: probably use `num_cores` crate.
         Ok(SledStorage{
@@ -179,16 +191,18 @@ impl SledStorage {
         Ok(InitialState{last_log_index, last_log_term, last_applied_log, hard_state})
     }
 
-    /// Build indices on all state recovered from disk.
-    fn build_indices(db: &sled::Db) -> Result<(), failure::Error> {
-        // - index all users: index full auth::User model.
-        // - index all tokens: these are just simple IDs.
-        // - index all namespaces: just namespace names.
-        // - index all endpoints: namespace/endpoint as key.
-        // - index all pipelines: namespace/pipeline as key.
-        // - index all streams: namespace/stream as key.
-        //     - value will include all details of the stream, including indexed unique IDs if applicable.
-        Ok(())
+    /// Index users data.
+    fn index_users_data(coll: &sled::Tree) -> Result<BTreeMap<String, User>, failure::Error> {
+        let mut users = BTreeMap::new();
+        for res in coll.iter() {
+            let (_, model_raw) = res?;
+            let user: User = bincode::deserialize(&model_raw).map_err(|err| {
+                error!("{} {}", ERR_DESERIALIZE_USER, err);
+                failure::err_msg(ERR_DESERIALIZE_USER)
+            })?;
+            users.insert(user.name.clone(), user);
+        }
+        Ok(users)
     }
 
     /// This node's ID.
@@ -409,4 +423,73 @@ fn unchecked_u64_from_be_bytes(buf: sled::IVec) -> u64 {
     use std::convert::TryInto;
     let (int_bytes, _) = buf.split_at(std::mem::size_of::<u64>());
     u64::from_be_bytes(int_bytes.try_into().unwrap())
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Tests /////////////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::UserRole;
+
+    use proptest::prelude::*;
+    use tempfile;
+
+    proptest! {
+        #[test]
+        fn unchecked_u64_from_be_bytes_should_succeed_for_all_be_u64_bytes(val in u64::min_value()..u64::max_value()) {
+            let u64_bytes = sled::IVec::from(&val.to_be_bytes());
+            let output = unchecked_u64_from_be_bytes(u64_bytes);
+            assert_eq!(output, val);
+        }
+    }
+
+    mod sled_storage {
+        use super::*;
+
+        #[test]
+        fn index_users_data_should_return_empty_index_with_no_data() {
+            let (_dir, db) = setup_db();
+            let output = SledStorage::index_users_data(&db).expect("index users data");
+            assert_eq!(output.len(), 0);
+        }
+
+        #[test]
+        fn index_users_data_should_return_expected_index_with_populated_users() {
+            let (_dir, db) = setup_db();
+            let users_index = setup_base_users(&db);
+            let output = SledStorage::index_users_data(&db).expect("index users data");
+            assert_eq!(output, users_index);
+            assert_eq!(output.len(), users_index.len());
+            assert_eq!(output.len(), 3);
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Fixtures //////////////////////////////////////////////////////////////
+
+    fn setup_db() -> (tempfile::TempDir, sled::Db) {
+        let dir = tempfile::tempdir_in("/tmp").expect("new temp dir");
+        let dbpath = dir.path().join("db");
+        let tree = sled::Db::open(&dbpath).expect("open database");
+        (dir, tree)
+    }
+
+    fn setup_base_users(db: &sled::Db) -> BTreeMap<String, User> {
+        let mut index = BTreeMap::new();
+        let user0 = User{name: String::from("root-0"), role: UserRole::Root};
+        let user1 = User{name: String::from("admin-0"), role: UserRole::Admin{namespaces: vec![String::from("default")]}};
+        let user2 = User{name: String::from("viewer-0"), role: UserRole::Viewer{namespaces: vec![String::from("default")], metrics: true}};
+        index.insert(user0.name.clone(), user0);
+        index.insert(user1.name.clone(), user1);
+        index.insert(user2.name.clone(), user2);
+
+        for user in index.values() {
+            let user_bytes = bincode::serialize(&user).expect("serialize user");
+            db.insert(&user.name, user_bytes.as_slice()).expect("write user to disk");
+        }
+
+        index
+    }
 }

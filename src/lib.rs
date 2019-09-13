@@ -10,8 +10,6 @@ mod db;
 mod discovery;
 mod proto;
 
-// use serde::{Serialize, Deserialize};
-
 // Public exports for binaries.
 pub use crate::{
     app::App,

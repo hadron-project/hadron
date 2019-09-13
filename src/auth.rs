@@ -75,7 +75,7 @@ pub enum StreamAccess {
 // User Data Models //////////////////////////////////////////////////////////////////////////////
 
 /// A user of the Railgun system.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct User {
     /// The user's name.
     pub name: String,
@@ -84,7 +84,7 @@ pub struct User {
 }
 
 /// A user's role within Railgun.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub enum UserRole {
     /// Full control over the Railgun cluster and all resources.
     Root,

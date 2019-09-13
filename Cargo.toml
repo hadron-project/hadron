@@ -30,3 +30,7 @@ uuid = { version="0.7", default-features=false, features=["v4"] }
 
 [build-dependencies]
 prost-build = "0.5"
+
+[dev-dependencies]
+proptest = "0.9"
+tempfile = "3"

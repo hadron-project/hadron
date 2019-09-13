@@ -51,7 +51,7 @@ impl App {
         let app = ctx.address();
 
         // Instantiate the Raft storage system & start it.
-        let mut storage = Storage::new(&*config).unwrap_or_else(|err| {
+        let storage = Storage::new(&*config).unwrap_or_else(|err| {
             error!("Error initializing the system database. {}", err);
             std::process::exit(1);
         });
