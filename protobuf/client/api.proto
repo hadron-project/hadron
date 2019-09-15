@@ -112,6 +112,17 @@ enum ErrorCode {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
+// Common Components /////////////////////////////////////////////////////////////////////////////
+
+// The ID of a stream entry.
+//
+// This wrapper type is used to allow for leaving the ID field null when there is no assocaited ID.
+message StreamEntryId {
+  // The associated ID. Even an empty string will be treated as an ID.
+  string id = 1;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
 // ConnectRequest & ConnectResponse //////////////////////////////////////////////////////////////
 
 // A request to connect to the cluster.
@@ -166,6 +177,14 @@ message PubRpcResponse {
 // PubStreamRequest & PubStreamResponse //////////////////////////////////////////////////////////
 
 message PubStreamRequest {
+  // The namespace of the stream to publish to.
+  string namespace = 1;
+  // The name of the stream to publish to.
+  string name = 2;
+  // The ID of the entry. Leave null if there is no associated ID.
+  StreamEntryId id = 3;
+  // The data payload of the entry to publish.
+  bytes data = 4;
 }
 
 message PubStreamResponse {

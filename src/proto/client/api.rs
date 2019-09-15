@@ -142,6 +142,19 @@ pub struct ClientError {
     pub code: i32,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
+// Common Components /////////////////////////////////////////////////////////////////////////////
+
+/// The ID of a stream entry.
+///
+/// This wrapper type is used to allow for leaving the ID field null when there is no assocaited ID.
+#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize)]
+pub struct StreamEntryId {
+    /// The associated ID. Even an empty string will be treated as an ID.
+    #[prost(string, tag="1")]
+    pub id: std::string::String,
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////
 // ConnectRequest & ConnectResponse //////////////////////////////////////////////////////////////
 
 /// A request to connect to the cluster.
@@ -211,6 +224,18 @@ pub struct PubRpcResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
 pub struct PubStreamRequest {
+    /// The namespace of the stream to publish to.
+    #[prost(string, tag="1")]
+    pub namespace: std::string::String,
+    /// The name of the stream to publish to.
+    #[prost(string, tag="2")]
+    pub name: std::string::String,
+    /// The ID of the entry. Leave null if there is no associated ID.
+    #[prost(message, optional, tag="3")]
+    pub id: ::std::option::Option<StreamEntryId>,
+    /// The data payload of the entry to publish.
+    #[prost(bytes, tag="4")]
+    pub data: std::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]

@@ -3,7 +3,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
-    sync::Arc,
 };
 
 use actix::prelude::*;
@@ -36,7 +35,7 @@ use crate::{
     NodeId,
     auth::User,
     config::Config,
-    db::{AppData, models::{Pipeline, Stream}},
+    db::{AppData, models::{Pipeline, Stream, StreamType, StreamEntry}},
     proto::client::api::{ClientError, ErrorCode},
 };
 
@@ -50,17 +49,22 @@ const RAFT_LAL_KEY: &str = "/raft/lal";
 const NODE_ID_KEY: &str = "id";
 
 /// The DB path prefix for all users.
-const USERS_PATH_PREFIX: &str = "/users/";
+const OBJECTS_USERS: &str = "/objects/users/";
 /// The DB path prefix for all users.
-const TOKENS_PATH_PREFIX: &str = "/tokens/";
+const OBJECTS_TOKENS: &str = "/objects/tokens/";
 /// The DB path prefix for all namespaces.
-const NS_PATH_PREFIX: &str = "/ns/";
+const OBJECTS_NS: &str = "/objects/ns/";
 /// The DB path prefix for all namespaces.
-const ENDPOINTS_PATH_PREFIX: &str = "/endpoints/";
+const OBJECTS_ENDPOINTS: &str = "/objects/endpoints/";
 /// The DB path prefix for all streams.
-const STREAMS_PATH_PREFIX: &str = "/streams/";
+const OBJECTS_STREAMS: &str = "/objects/streams/";
 /// The DB path prefix for all pipelines.
-const PIPELINES_PATH_PREFIX: &str = "/pipelines/";
+const OBJECTS_PIPELINES: &str = "/objects/pipelines/";
+
+/// The prefix under which all streams store their data.
+///
+/// Streams MUST index their data as `/streams/<namespace>/<stream_name>/<entry_index>`.
+const STREAMS_DATA_PREFIX: &str = "/streams";
 
 /// An error from deserializing an entry.
 const ERR_DESERIALIZE_ENTRY: &str = "Failed to deserialize entry from log. Data is corrupt.";
@@ -72,6 +76,8 @@ const ERR_DESERIALIZE_USER: &str = "Failed to deserialize User from storage. Dat
 const ERR_DESERIALIZE_PIPELINE: &str = "Failed to deserialize Pipeline from storage. Data is corrupt.";
 /// An error from deserializing a Stream record.
 const ERR_DESERIALIZE_STREAM: &str = "Failed to deserialize Stream from storage. Data is corrupt.";
+/// An error from deserializing a Stream Entry record.
+const ERR_DESERIALIZE_STREAM_ENTRY: &str = "Failed to deserialize Stream Entry from storage. Data is corrupt.";
 /// An initialization error where an entry was expected, but none was found.
 const ERR_MISSING_ENTRY: &str = "Unable to access expected log entry.";
 /// An error from an endpoint's index being malformed.
@@ -92,6 +98,13 @@ type RgSaveHardState = SaveHardState<ClientError>;
 // SledStorage ///////////////////////////////////////////////////////////////////////////////////
 
 /// An implementation of the Railgun storage engine using Sled.
+///
+/// This actor is responsible for orchestrating all interaction with the storage engine. It
+/// implements the `RaftStorage` interface, and all data mutations must go through Raft.
+///
+/// This actor also uses a set of synchronous actors which perform the actual blocking IO on the
+/// sled storage engine. However, this actor manages the memory of the sled objects, as the sync
+/// actor instances are blind to the higher level abstractions of the system.
 pub struct SledStorage {
     /// The ID of this node.
     id: NodeId,
@@ -107,6 +120,18 @@ pub struct SledStorage {
     last_log_term: u64,
     /// The index of the last Raft entry to be applied to storage.
     last_applied_log: u64,
+    #[allow(dead_code)] users_collection: sled::Tree,
+    #[allow(dead_code)] indexed_users: BTreeMap<String, User>,
+    #[allow(dead_code)] tokens_collection: sled::Tree,
+    #[allow(dead_code)] indexed_tokens: BTreeSet<String>,
+    #[allow(dead_code)] ns_collection: sled::Tree,
+    #[allow(dead_code)] indexed_namespaces: BTreeSet<String>,
+    #[allow(dead_code)] endpoints_collection: sled::Tree,
+    #[allow(dead_code)] indexed_endpoints: BTreeSet<(String, String)>,
+    #[allow(dead_code)] pipelines_collection: sled::Tree,
+    #[allow(dead_code)] indexed_pipelines: BTreeMap<(String, String), Pipeline>,
+    #[allow(dead_code)] streams_collection: sled::Tree,
+    #[allow(dead_code)] indexed_streams: BTreeMap<(String, String), Stream>,
 }
 
 impl SledStorage {
@@ -135,18 +160,20 @@ impl SledStorage {
         let state = Self::initialize(id, &db, &log)?;
 
         // Build indices.
-        let users_collection = db.open_tree(USERS_PATH_PREFIX)?;
-        let _users = Self::index_users_data(&users_collection)?;
-        let tokens_collection = db.open_tree(TOKENS_PATH_PREFIX)?;
-        let _tokens = Self::index_tokens_data(&tokens_collection)?;
-        let ns_collection = db.open_tree(NS_PATH_PREFIX)?;
-        let _namespaces = Self::index_ns_data(&ns_collection)?;
-        let endpoints_collection = db.open_tree(ENDPOINTS_PATH_PREFIX)?;
-        let _endpoints = Self::index_endpoints_data(&endpoints_collection)?;
-        let pipelines_collection = db.open_tree(PIPELINES_PATH_PREFIX)?;
-        let _pipelines = Self::index_pipelines_data(&pipelines_collection)?;
-        let streams_collection = db.open_tree(STREAMS_PATH_PREFIX)?;
-        let _streams = Self::index_streams_data(&streams_collection)?;
+        info!("Indexing data.");
+        let users_collection = db.open_tree(OBJECTS_USERS)?;
+        let indexed_users = Self::index_users_data(&users_collection)?;
+        let tokens_collection = db.open_tree(OBJECTS_TOKENS)?;
+        let indexed_tokens = Self::index_tokens_data(&tokens_collection)?;
+        let ns_collection = db.open_tree(OBJECTS_NS)?;
+        let indexed_namespaces = Self::index_ns_data(&ns_collection)?;
+        let endpoints_collection = db.open_tree(OBJECTS_ENDPOINTS)?;
+        let indexed_endpoints = Self::index_endpoints_data(&endpoints_collection)?;
+        let pipelines_collection = db.open_tree(OBJECTS_PIPELINES)?;
+        let indexed_pipelines = Self::index_pipelines_data(&pipelines_collection)?;
+        let streams_collection = db.open_tree(OBJECTS_STREAMS)?;
+        let indexed_streams = Self::index_streams_data(&db, &streams_collection)?;
+        info!("Finished indexing data.");
 
         let sled = SyncArbiter::start(3, move || SledActor{db: db.clone(), log: log.clone()}); // TODO: probably use `num_cores` crate.
         Ok(SledStorage{
@@ -154,6 +181,12 @@ impl SledStorage {
             last_log_index: state.last_log_index,
             last_log_term: state.last_log_term,
             last_applied_log: state.last_applied_log,
+            users_collection, indexed_users,
+            tokens_collection, indexed_tokens,
+            ns_collection, indexed_namespaces,
+            endpoints_collection, indexed_endpoints,
+            pipelines_collection, indexed_pipelines,
+            streams_collection, indexed_streams,
         })
     }
 
@@ -270,21 +303,39 @@ impl SledStorage {
     }
 
     /// Index streams data.
-    fn index_streams_data(coll: &sled::Tree) -> Result<BTreeMap<(String, String), Stream>, failure::Error> {
+    fn index_streams_data(db: &sled::Db, coll: &sled::Tree) -> Result<BTreeMap<(String, String), Stream>, failure::Error> {
         let mut index = BTreeMap::new();
         for res in coll.iter() {
             let (_, model_raw) = res?;
-            let stream: Stream = bincode::deserialize(&model_raw).map_err(|err| {
+            let mut stream: Stream = bincode::deserialize(&model_raw).map_err(|err| {
                 error!("{} {}", ERR_DESERIALIZE_STREAM, err);
                 failure::err_msg(ERR_DESERIALIZE_STREAM)
             })?;
 
             // If the stream has a unique ID constraint, then index its IDs.
-            // TODO:
+            // TODO: we can parallelize this pretty aggressively with Rayon. See #26.
+            if let StreamType::UniqueId{index: indexed_ids} = &mut stream.stream_type {
+                let keyspace = SledStorage::stream_keyspace(&stream.namespace, &stream.name);
+                for res in db.open_tree(keyspace)?.iter() {
+                    let (_, rawmodel) = res?;
+                    let entry: StreamEntry = bincode::deserialize(&rawmodel).map_err(|err| {
+                        error!("{} {}", ERR_DESERIALIZE_STREAM_ENTRY, err);
+                        failure::err_msg(ERR_DESERIALIZE_STREAM_ENTRY)
+                    })?;
+                    if let Some(id) = entry.id {
+                        indexed_ids.insert(id);
+                    }
+                }
+            }
 
             index.insert((stream.namespace.clone(), stream.name.clone()), stream);
         }
         Ok(index)
+    }
+
+    /// Get the keyspace for a stream given its namespace & name.
+    fn stream_keyspace(ns: &str, name: &str) -> String {
+        format!("{}/{}/{}/", STREAMS_DATA_PREFIX, ns, name)
     }
 
     /// This node's ID.
@@ -403,7 +454,7 @@ impl Handler<RgSaveHardState> for SledStorage {
 /// Sync actor for interfacing with Sled.
 struct SledActor {
     db: sled::Db,
-    log: Arc<sled::Tree>,
+    log: sled::Tree,
 }
 
 impl Actor for SledActor {
@@ -513,7 +564,10 @@ fn unchecked_u64_from_be_bytes(buf: sled::IVec) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::UserRole;
+    use crate::{
+        auth::UserRole,
+        db::models::StreamVisibility,
+    };
 
     use proptest::prelude::*;
     use tempfile;
@@ -602,7 +656,7 @@ mod tests {
         #[test]
         fn index_pipelines_data_should_return_empty_index_with_no_data() {
             let (_dir, db) = setup_db();
-            let output = SledStorage::index_endpoints_data(&db).expect("index pipelines data");
+            let output = SledStorage::index_pipelines_data(&db).expect("index pipelines data");
             assert_eq!(output.len(), 0);
         }
 
@@ -619,18 +673,28 @@ mod tests {
         #[test]
         fn index_streams_data_should_return_empty_index_with_no_data() {
             let (_dir, db) = setup_db();
-            let output = SledStorage::index_endpoints_data(&db).expect("index streams data");
+            let streams_tree = db.open_tree(OBJECTS_STREAMS).expect("open streams path prefix");
+            let output = SledStorage::index_streams_data(&db, &streams_tree).expect("index streams data");
             assert_eq!(output.len(), 0);
         }
 
         #[test]
         fn index_streams_data_should_return_expected_index_with_populated_data() {
             let (_dir, db) = setup_db();
-            let streams_index = setup_base_streams(&db);
-            let output = SledStorage::index_streams_data(&db).expect("index streams data");
+            let streams_tree = db.open_tree(OBJECTS_STREAMS).expect("open streams path prefix");
+            let streams_index = setup_base_streams(&db, &streams_tree);
+            let output = SledStorage::index_streams_data(&db, &streams_tree).expect("index streams data");
             assert_eq!(output, streams_index);
             assert_eq!(output.len(), streams_index.len());
             assert_eq!(output.len(), 3);
+        }
+
+        #[test]
+        fn stream_keyspace_returns_expected_value() {
+            let (ns, name) = ("default", "slipstream");
+            let expected = format!("/streams/default/slipstream/");
+            let output = SledStorage::stream_keyspace(ns, name);
+            assert_eq!(expected, output);
         }
     }
 
@@ -723,12 +787,17 @@ mod tests {
         index
     }
 
-    fn setup_base_streams(db: &sled::Db) -> BTreeMap<(String, String), Stream> {
+    fn setup_base_streams(db: &sled::Db, tree: &sled::Tree) -> BTreeMap<(String, String), Stream> {
         let mut index = BTreeMap::new();
         let stream_name = String::from("events");
-        let stream0 = Stream{namespace: String::from("identity-service"), name: stream_name.clone()};
-        let stream1 = Stream{namespace: String::from("projects-service"), name: stream_name.clone()};
-        let stream2 = Stream{namespace: String::from("billing-service"), name: stream_name.clone()};
+
+        // Setup some indexed IDs.
+        let mut indexed_ids = BTreeSet::new();
+        indexed_ids.insert(String::from("testing"));
+
+        let stream0 = Stream{namespace: String::from("identity-service"), name: stream_name.clone(), stream_type: StreamType::Standard, visibility: StreamVisibility::Namespace};
+        let stream1 = Stream{namespace: String::from("projects-service"), name: stream_name.clone(), stream_type: StreamType::Standard, visibility: StreamVisibility::Private(String::from("pipelineX"))};
+        let stream2 = Stream{namespace: String::from("billing-service"), name: stream_name.clone(), stream_type: StreamType::UniqueId{index: indexed_ids}, visibility: StreamVisibility::Namespace};
         index.insert((stream0.namespace.clone(), stream0.name.clone()), stream0);
         index.insert((stream1.namespace.clone(), stream1.name.clone()), stream1);
         index.insert((stream2.namespace.clone(), stream2.name.clone()), stream2);
@@ -737,8 +806,14 @@ mod tests {
             let streambytes = bincode::serialize(stream).expect("serialize stream");
             let key = format!("{}/{}", stream.namespace, stream.name);
             let keybytes = key.as_bytes();
-            db.insert(keybytes, streambytes).expect("write stream to disk");
+            tree.insert(keybytes, streambytes).expect("write stream to disk");
         }
+
+        // Write a single entry to stream "billing-service/events" for testing.
+        let keyspace = SledStorage::stream_keyspace("billing-service", &stream_name);
+        let entry_bytes = bincode::serialize(&StreamEntry{id: Some(String::from("testing")), data: vec![]}).expect("serialize stream entry");
+        db.open_tree(&keyspace).expect("open stream keyspace")
+            .insert(format!("{}{}", keyspace, "0").as_bytes(), entry_bytes).expect("write stream entry");
 
         index
     }
