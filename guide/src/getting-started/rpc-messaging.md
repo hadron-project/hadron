@@ -3,6 +3,7 @@ RPC Messaging
 RPC messaging is a service-oriented request/response system, akin to traditional REST APIs or other RPC systems like gRPC.
 
 - RPC messaging is understood in terms of "endpoints".
+- Endpoint names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards. Consumers do not use wildcards for endpoints.
 - RPC messages are published to a specific endpoint within a namespace.
 - RPC endpoints are declared explicity in code and must be created on the server.
 - RPC messages are not durable, but if an endpoint being published to has no live consumers, an error response will be immediately returned for better control flow.

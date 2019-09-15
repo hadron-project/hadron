@@ -1,7 +1,7 @@
 //! A module encapsulating all logic for interfacing with the data storage system.
 
 use std::{
-    collections::{BTreeMap, hash_map::DefaultHasher},
+    collections::{BTreeMap, BTreeSet, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -36,7 +36,7 @@ use crate::{
     NodeId,
     auth::User,
     config::Config,
-    db::{AppData},
+    db::{AppData, models::{Pipeline, Stream}},
     proto::client::api::{ClientError, ErrorCode},
 };
 
@@ -48,24 +48,34 @@ const RAFT_HARDSTATE_KEY: &str = "/raft/hs";
 const RAFT_LAL_KEY: &str = "/raft/lal";
 /// The key used for storing the node ID of the current node.
 const NODE_ID_KEY: &str = "id";
+
 /// The DB path prefix for all users.
 const USERS_PATH_PREFIX: &str = "/users/";
 /// The DB path prefix for all users.
-const _TOKENS_PATH_PREFIX: &str = "/tokens/";
+const TOKENS_PATH_PREFIX: &str = "/tokens/";
 /// The DB path prefix for all namespaces.
-const _NS_PATH_PREFIX: &str = "/ns/";
+const NS_PATH_PREFIX: &str = "/ns/";
+/// The DB path prefix for all namespaces.
+const ENDPOINTS_PATH_PREFIX: &str = "/endpoints/";
 /// The DB path prefix for all streams.
-const _STREAMS_PATH_PREFIX: &str = "/streams/";
+const STREAMS_PATH_PREFIX: &str = "/streams/";
 /// The DB path prefix for all pipelines.
-const _PIPELINES_PATH_PREFIX: &str = "/pipelines/";
+const PIPELINES_PATH_PREFIX: &str = "/pipelines/";
+
 /// An error from deserializing an entry.
 const ERR_DESERIALIZE_ENTRY: &str = "Failed to deserialize entry from log. Data is corrupt.";
 /// An error from deserializing HardState record.
 const ERR_DESERIALIZE_HS: &str = "Failed to deserialize HardState from storage. Data is corrupt.";
 /// An error from deserializing a User record.
 const ERR_DESERIALIZE_USER: &str = "Failed to deserialize User from storage. Data is corrupt.";
+/// An error from deserializing a Pipeline record.
+const ERR_DESERIALIZE_PIPELINE: &str = "Failed to deserialize Pipeline from storage. Data is corrupt.";
+/// An error from deserializing a Stream record.
+const ERR_DESERIALIZE_STREAM: &str = "Failed to deserialize Stream from storage. Data is corrupt.";
 /// An initialization error where an entry was expected, but none was found.
 const ERR_MISSING_ENTRY: &str = "Unable to access expected log entry.";
+/// An error from an endpoint's index being malformed.
+const ERR_MALFORMED_ENDPOINT_INDEX: &str = "Malformed index for endpoint.";
 
 type RgEntry = Entry<AppData>;
 type RgAppendLogEntry = AppendLogEntry<AppData, ClientError>;
@@ -125,14 +135,18 @@ impl SledStorage {
         let state = Self::initialize(id, &db, &log)?;
 
         // Build indices.
-        // - index all tokens: these are just simple IDs.
-        // - index all namespaces: just namespace names.
-        // - index all endpoints: namespace/endpoint as key.
-        // - index all pipelines: namespace/pipeline as key.
-        // - index all streams: namespace/stream as key.
-        //     - value will include all details of the stream, including indexed unique IDs if applicable.
         let users_collection = db.open_tree(USERS_PATH_PREFIX)?;
         let _users = Self::index_users_data(&users_collection)?;
+        let tokens_collection = db.open_tree(TOKENS_PATH_PREFIX)?;
+        let _tokens = Self::index_tokens_data(&tokens_collection)?;
+        let ns_collection = db.open_tree(NS_PATH_PREFIX)?;
+        let _namespaces = Self::index_ns_data(&ns_collection)?;
+        let endpoints_collection = db.open_tree(ENDPOINTS_PATH_PREFIX)?;
+        let _endpoints = Self::index_endpoints_data(&endpoints_collection)?;
+        let pipelines_collection = db.open_tree(PIPELINES_PATH_PREFIX)?;
+        let _pipelines = Self::index_pipelines_data(&pipelines_collection)?;
+        let streams_collection = db.open_tree(STREAMS_PATH_PREFIX)?;
+        let _streams = Self::index_streams_data(&streams_collection)?;
 
         let sled = SyncArbiter::start(3, move || SledActor{db: db.clone(), log: log.clone()}); // TODO: probably use `num_cores` crate.
         Ok(SledStorage{
@@ -193,16 +207,84 @@ impl SledStorage {
 
     /// Index users data.
     fn index_users_data(coll: &sled::Tree) -> Result<BTreeMap<String, User>, failure::Error> {
-        let mut users = BTreeMap::new();
+        let mut index = BTreeMap::new();
         for res in coll.iter() {
             let (_, model_raw) = res?;
             let user: User = bincode::deserialize(&model_raw).map_err(|err| {
                 error!("{} {}", ERR_DESERIALIZE_USER, err);
                 failure::err_msg(ERR_DESERIALIZE_USER)
             })?;
-            users.insert(user.name.clone(), user);
+            index.insert(user.name.clone(), user);
         }
-        Ok(users)
+        Ok(index)
+    }
+
+    /// Index tokens data.
+    fn index_tokens_data(coll: &sled::Tree) -> Result<BTreeSet<String>, failure::Error> {
+        let mut index = BTreeSet::new();
+        for res in coll.iter() {
+            let (_, token) = res?;
+            let val = String::from_utf8(token.to_vec())?;
+            index.insert(val);
+        }
+        Ok(index)
+    }
+
+    /// Index namespaces data.
+    fn index_ns_data(coll: &sled::Tree) -> Result<BTreeSet<String>, failure::Error> {
+        let mut index = BTreeSet::new();
+        for res in coll.iter() {
+            let (_, ns) = res?;
+            let val = String::from_utf8(ns.to_vec())?;
+            index.insert(val);
+        }
+        Ok(index)
+    }
+
+    /// Index endpoints data.
+    fn index_endpoints_data(coll: &sled::Tree) -> Result<BTreeSet<(String, String)>, failure::Error> {
+        let mut index = BTreeSet::new();
+        for res in coll.iter() {
+            let (_, endpoint) = res?;
+            let val = String::from_utf8(endpoint.to_vec())?;
+            let parts = val.splitn(2, "/").collect::<Vec<_>>();
+            let ns = parts.get(0).ok_or_else(|| failure::err_msg(ERR_MALFORMED_ENDPOINT_INDEX))?.to_string();
+            let endpoint = parts.get(1).ok_or_else(|| failure::err_msg(ERR_MALFORMED_ENDPOINT_INDEX))?.to_string();
+            index.insert((ns, endpoint));
+        }
+        Ok(index)
+    }
+
+    /// Index pipelines data.
+    fn index_pipelines_data(coll: &sled::Tree) -> Result<BTreeMap<(String, String), Pipeline>, failure::Error> {
+        let mut index = BTreeMap::new();
+        for res in coll.iter() {
+            let (_, model_raw) = res?;
+            let pipeline: Pipeline = bincode::deserialize(&model_raw).map_err(|err| {
+                error!("{} {}", ERR_DESERIALIZE_PIPELINE, err);
+                failure::err_msg(ERR_DESERIALIZE_PIPELINE)
+            })?;
+            index.insert((pipeline.namespace.clone(), pipeline.name.clone()), pipeline);
+        }
+        Ok(index)
+    }
+
+    /// Index streams data.
+    fn index_streams_data(coll: &sled::Tree) -> Result<BTreeMap<(String, String), Stream>, failure::Error> {
+        let mut index = BTreeMap::new();
+        for res in coll.iter() {
+            let (_, model_raw) = res?;
+            let stream: Stream = bincode::deserialize(&model_raw).map_err(|err| {
+                error!("{} {}", ERR_DESERIALIZE_STREAM, err);
+                failure::err_msg(ERR_DESERIALIZE_STREAM)
+            })?;
+
+            // If the stream has a unique ID constraint, then index its IDs.
+            // TODO:
+
+            index.insert((stream.namespace.clone(), stream.name.clone()), stream);
+        }
+        Ok(index)
     }
 
     /// This node's ID.
@@ -435,6 +517,7 @@ mod tests {
 
     use proptest::prelude::*;
     use tempfile;
+    use uuid;
 
     proptest! {
         #[test]
@@ -456,12 +539,97 @@ mod tests {
         }
 
         #[test]
-        fn index_users_data_should_return_expected_index_with_populated_users() {
+        fn index_users_data_should_return_expected_index_with_populated_data() {
             let (_dir, db) = setup_db();
             let users_index = setup_base_users(&db);
             let output = SledStorage::index_users_data(&db).expect("index users data");
             assert_eq!(output, users_index);
             assert_eq!(output.len(), users_index.len());
+            assert_eq!(output.len(), 3);
+        }
+
+        #[test]
+        fn index_tokens_data_should_return_empty_index_with_no_data() {
+            let (_dir, db) = setup_db();
+            let output = SledStorage::index_tokens_data(&db).expect("index tokens data");
+            assert_eq!(output.len(), 0);
+        }
+
+        #[test]
+        fn index_tokens_data_should_return_expected_index_with_populated_data() {
+            let (_dir, db) = setup_db();
+            let tokens_index = setup_base_tokens(&db);
+            let output = SledStorage::index_tokens_data(&db).expect("index tokens data");
+            assert_eq!(output, tokens_index);
+            assert_eq!(output.len(), tokens_index.len());
+            assert_eq!(output.len(), 3);
+        }
+
+        #[test]
+        fn index_ns_data_should_return_empty_index_with_no_data() {
+            let (_dir, db) = setup_db();
+            let output = SledStorage::index_ns_data(&db).expect("index ns data");
+            assert_eq!(output.len(), 0);
+        }
+
+        #[test]
+        fn index_ns_data_should_return_expected_index_with_populated_data() {
+            let (_dir, db) = setup_db();
+            let ns_index = setup_base_namespaces(&db);
+            let output = SledStorage::index_ns_data(&db).expect("index ns data");
+            assert_eq!(output, ns_index);
+            assert_eq!(output.len(), ns_index.len());
+            assert_eq!(output.len(), 3);
+        }
+
+        #[test]
+        fn index_endpoints_data_should_return_empty_index_with_no_data() {
+            let (_dir, db) = setup_db();
+            let output = SledStorage::index_endpoints_data(&db).expect("index endpoints data");
+            assert_eq!(output.len(), 0);
+        }
+
+        #[test]
+        fn index_endpoints_data_should_return_expected_index_with_populated_data() {
+            let (_dir, db) = setup_db();
+            let endpoints_index = setup_base_endpoints(&db);
+            let output = SledStorage::index_endpoints_data(&db).expect("index endpoints data");
+            assert_eq!(output, endpoints_index);
+            assert_eq!(output.len(), endpoints_index.len());
+            assert_eq!(output.len(), 3);
+        }
+
+        #[test]
+        fn index_pipelines_data_should_return_empty_index_with_no_data() {
+            let (_dir, db) = setup_db();
+            let output = SledStorage::index_endpoints_data(&db).expect("index pipelines data");
+            assert_eq!(output.len(), 0);
+        }
+
+        #[test]
+        fn index_pipelines_data_should_return_expected_index_with_populated_data() {
+            let (_dir, db) = setup_db();
+            let pipelines_index = setup_base_pipelines(&db);
+            let output = SledStorage::index_pipelines_data(&db).expect("index pipelines data");
+            assert_eq!(output, pipelines_index);
+            assert_eq!(output.len(), pipelines_index.len());
+            assert_eq!(output.len(), 3);
+        }
+
+        #[test]
+        fn index_streams_data_should_return_empty_index_with_no_data() {
+            let (_dir, db) = setup_db();
+            let output = SledStorage::index_endpoints_data(&db).expect("index streams data");
+            assert_eq!(output.len(), 0);
+        }
+
+        #[test]
+        fn index_streams_data_should_return_expected_index_with_populated_data() {
+            let (_dir, db) = setup_db();
+            let streams_index = setup_base_streams(&db);
+            let output = SledStorage::index_streams_data(&db).expect("index streams data");
+            assert_eq!(output, streams_index);
+            assert_eq!(output.len(), streams_index.len());
             assert_eq!(output.len(), 3);
         }
     }
@@ -488,6 +656,88 @@ mod tests {
         for user in index.values() {
             let user_bytes = bincode::serialize(&user).expect("serialize user");
             db.insert(&user.name, user_bytes.as_slice()).expect("write user to disk");
+        }
+
+        index
+    }
+
+    fn setup_base_tokens(db: &sled::Db) -> BTreeSet<String> {
+        let mut index = BTreeSet::new();
+        index.insert(uuid::Uuid::new_v4().to_string());
+        index.insert(uuid::Uuid::new_v4().to_string());
+        index.insert(uuid::Uuid::new_v4().to_string());
+
+        for token in index.iter() {
+            db.insert(token.as_bytes(), token.as_bytes()).expect("write token to disk");
+        }
+
+        index
+    }
+
+    fn setup_base_namespaces(db: &sled::Db) -> BTreeSet<String> {
+        let mut index = BTreeSet::new();
+        index.insert(String::from("default"));
+        index.insert(String::from("railgun"));
+        index.insert(String::from("rg"));
+
+        for ns in index.iter() {
+            db.insert(ns.as_bytes(), ns.as_bytes()).expect("write namespace to disk");
+        }
+
+        index
+    }
+
+    fn setup_base_endpoints(db: &sled::Db) -> BTreeSet<(String, String)> {
+        let mut index = BTreeSet::new();
+        let ns = String::from("identity-service");
+        index.insert((ns.clone(), String::from("sign-up")));
+        index.insert((ns.clone(), String::from("login")));
+        index.insert((ns.clone(), String::from("reset-password")));
+
+        for (val_ns, endpoint) in index.iter() {
+            let key = format!("{}/{}", val_ns, endpoint);
+            let keybytes = key.as_bytes();
+            db.insert(keybytes, keybytes).expect("write endpoint to disk");
+        }
+
+        index
+    }
+
+    fn setup_base_pipelines(db: &sled::Db) -> BTreeMap<(String, String), Pipeline> {
+        let mut index = BTreeMap::new();
+        let ns = String::from("identity-service");
+        let pipe0 = Pipeline{namespace: ns.clone(), name: String::from("sign-up")};
+        let pipe1 = Pipeline{namespace: ns.clone(), name: String::from("login")};
+        let pipe2 = Pipeline{namespace: ns.clone(), name: String::from("reset-password")};
+        index.insert((pipe0.namespace.clone(), pipe0.name.clone()), pipe0);
+        index.insert((pipe1.namespace.clone(), pipe1.name.clone()), pipe1);
+        index.insert((pipe2.namespace.clone(), pipe2.name.clone()), pipe2);
+
+        for (_, pipeline) in index.iter() {
+            let pipebytes = bincode::serialize(pipeline).expect("serialize pipeline");
+            let key = format!("{}/{}", pipeline.namespace, pipeline.name);
+            let keybytes = key.as_bytes();
+            db.insert(keybytes, pipebytes).expect("write pipeline to disk");
+        }
+
+        index
+    }
+
+    fn setup_base_streams(db: &sled::Db) -> BTreeMap<(String, String), Stream> {
+        let mut index = BTreeMap::new();
+        let stream_name = String::from("events");
+        let stream0 = Stream{namespace: String::from("identity-service"), name: stream_name.clone()};
+        let stream1 = Stream{namespace: String::from("projects-service"), name: stream_name.clone()};
+        let stream2 = Stream{namespace: String::from("billing-service"), name: stream_name.clone()};
+        index.insert((stream0.namespace.clone(), stream0.name.clone()), stream0);
+        index.insert((stream1.namespace.clone(), stream1.name.clone()), stream1);
+        index.insert((stream2.namespace.clone(), stream2.name.clone()), stream2);
+
+        for (_, stream) in index.iter() {
+            let streambytes = bincode::serialize(stream).expect("serialize stream");
+            let key = format!("{}/{}", stream.namespace, stream.name);
+            let keybytes = key.as_bytes();
+            db.insert(keybytes, streambytes).expect("write stream to disk");
         }
 
         index
