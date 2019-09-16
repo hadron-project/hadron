@@ -110,6 +110,10 @@ pub struct SledStorage {
     id: NodeId,
     /// The addr of the sled sync actor for DB operations.
     sled: Addr<SledActor>,
+    /// The main sled database handle.
+    db: sled::Db,
+    /// The keyspace used for the Raft log.
+    log: sled::Tree,
     /// The latest hardstate of the node.
     ///
     /// This is only updated after successfully being written to disk.
@@ -175,9 +179,9 @@ impl SledStorage {
         let indexed_streams = Self::index_streams_data(&db, &streams_collection)?;
         info!("Finished indexing data.");
 
-        let sled = SyncArbiter::start(3, move || SledActor{db: db.clone(), log: log.clone()}); // TODO: probably use `num_cores` crate.
+        let sled = SyncArbiter::start(3, move || SledActor); // TODO: probably use `num_cores` crate.
         Ok(SledStorage{
-            id, sled, hs: state.hard_state,
+            id, sled, db, log, hs: state.hard_state,
             last_log_index: state.last_log_index,
             last_log_term: state.last_log_term,
             last_applied_log: state.last_applied_log,
@@ -426,9 +430,11 @@ impl Handler<RgInstallSnapshot> for SledStorage {
 impl Handler<RgReplicateLogEntries> for SledStorage {
     type Result = ResponseActFuture<Self, (), ClientError>;
 
-    fn handle(&mut self, _msg: RgReplicateLogEntries, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Box::new(fut::ok(()))
+    fn handle(&mut self, msg: RgReplicateLogEntries, _ctx: &mut Self::Context) -> Self::Result {
+        Box::new(fut::wrap_future(self.sled.send(SyncReplicateLogEntries(msg, self.log.clone())))
+            .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
+            .and_then(|res, _, _| fut::result(res))
+        )
     }
 }
 
@@ -437,7 +443,7 @@ impl Handler<RgSaveHardState> for SledStorage {
 
     fn handle(&mut self, msg: RgSaveHardState, _ctx: &mut Self::Context) -> Self::Result {
         let hs = msg.hs.clone();
-        Box::new(fut::wrap_future(self.sled.send(msg))
+        Box::new(fut::wrap_future(self.sled.send(SyncSaveHardState(msg, self.db.clone())))
             .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
             .and_then(|res, _, _| fut::result(res))
             .and_then(move |_, act, _| {
@@ -452,10 +458,7 @@ impl Handler<RgSaveHardState> for SledStorage {
 // SledActor /////////////////////////////////////////////////////////////////////////////////////
 
 /// Sync actor for interfacing with Sled.
-struct SledActor {
-    db: sled::Db,
-    log: sled::Tree,
-}
+struct SledActor;
 
 impl Actor for SledActor {
     type Context = SyncContext<Self>;
@@ -515,27 +518,49 @@ impl Handler<RgInstallSnapshot> for SledActor {
     }
 }
 
-impl Handler<RgReplicateLogEntries> for SledActor {
+struct SyncReplicateLogEntries(RgReplicateLogEntries, sled::Tree);
+
+impl Message for SyncReplicateLogEntries {
+    type Result = Result<(), ClientError>;
+}
+
+impl Handler<SyncReplicateLogEntries> for SledActor {
     type Result = Result<(), ClientError>;
 
-    fn handle(&mut self, _msg: RgReplicateLogEntries, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Ok(())
+    fn handle(&mut self, msg: SyncReplicateLogEntries, _ctx: &mut Self::Context) -> Self::Result {
+        let mut batch = sled::Batch::default();
+        for entry in msg.0.entries.iter() {
+            let data = bincode::serialize(entry).map_err(|err| {
+                error!("Error serializing log entry: {}", err);
+                ClientError::new_internal()
+            })?;
+            batch.insert(&entry.index.to_be_bytes(), data.as_slice());
+        }
+        msg.1.apply_batch(batch).map_err(|err| {
+            error!("Error applying batch of Raft log entries to storage: {}", err);
+            ClientError::new_internal()
+        })
     }
 }
 
-impl Handler<RgSaveHardState> for SledActor {
+struct SyncSaveHardState(RgSaveHardState, sled::Db);
+
+impl Message for SyncSaveHardState {
+    type Result = Result<(), ClientError>;
+}
+
+impl Handler<SyncSaveHardState> for SledActor {
     type Result = Result<(), ClientError>;
 
-    fn handle(&mut self, msg: RgSaveHardState, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: SyncSaveHardState, _ctx: &mut Self::Context) -> Self::Result {
         // Serialize data.
-        let hs: Vec<u8> = bincode::serialize(&msg.hs).map_err(|err| {
+        let hs: Vec<u8> = bincode::serialize(&msg.0.hs).map_err(|err| {
             error!("Error while serializing Raft HardState object: {:?}", err);
             ClientError::new_internal()
         })?;
 
         // Write to disk.
-        self.db.insert(RAFT_HARDSTATE_KEY, hs).map_err(|err| {
+        msg.1.insert(RAFT_HARDSTATE_KEY, hs).map_err(|err| {
             error!("Error while writing Raft HardState to disk: {:?}", err);
             ClientError::new_internal()
         })?;
