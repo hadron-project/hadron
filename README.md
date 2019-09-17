@@ -2,7 +2,7 @@ railgun
 =======
 A distributed streaming and messaging platform written in Rust.
 
-Railgun's mission statement is to be the singular platform for all streaming and messaging needs, to advance the state of the art in exactly-once idempotent stream processing, all to provide developers a better tool to reduce error handling and complexity in building distributed systems. Railgun alltogether replaces other messaging and streaming platforms and removes the need for other intra-service communication patterns like gRPC & REST.
+Railgun's mission statement is to be the singular platform for all streaming and messaging needs, to advance the state of the art in exactly-once idempotent stream processing, all to provide developers a better tool to reduce error handling and complexity in building distributed systems. Railgun altogether replaces other messaging and streaming platforms, removes the need for other intra-service communication protocols like gRPC or REST, and inherently acts as a service discovery mechanism.
 
 Railgun is built around three core primitives: ephemeral messaging, RPC messaging & durable streams. Ephemeral messaging offers topic based publish/subscribe patterns with wildcards, fanout, load balancing queue groups, and more. RPC messaging offers request/response patterns for service-oriented architectures. Durable streams offer configurable durability, robust consumer patterns and also offer opt-in unique ID validation on messages for server enforced "exactly once" semantics.
 

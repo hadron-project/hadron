@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
+    sync::Arc,
 };
 
 use actix::prelude::*;
@@ -35,7 +36,7 @@ use crate::{
     NodeId,
     auth::User,
     db::{AppData, models::{Pipeline, Stream, StreamType, StreamEntry}},
-    proto::client::api::{ClientError, ErrorCode},
+    proto::client::api::{ClientError},
 };
 
 /// The path to the raft log.
@@ -96,6 +97,16 @@ type RgSaveHardState = SaveHardState<ClientError>;
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // SledStorage ///////////////////////////////////////////////////////////////////////////////////
 
+#[allow(dead_code)]
+struct ObjectCollections {
+    users_collection: sled::Tree,
+    tokens_collection: sled::Tree,
+    ns_collection: sled::Tree,
+    endpoints_collection: sled::Tree,
+    pipelines_collection: sled::Tree,
+    streams_collection: sled::Tree,
+}
+
 /// An implementation of the Railgun storage engine using Sled.
 ///
 /// This actor is responsible for orchestrating all interaction with the storage engine. It
@@ -123,17 +134,12 @@ pub struct SledStorage {
     last_log_term: u64,
     /// The index of the last Raft entry to be applied to storage.
     last_applied_log: u64,
-    #[allow(dead_code)] users_collection: sled::Tree,
+    object_collections: Arc<ObjectCollections>,
     #[allow(dead_code)] indexed_users: BTreeMap<String, User>,
-    #[allow(dead_code)] tokens_collection: sled::Tree,
     #[allow(dead_code)] indexed_tokens: BTreeSet<String>,
-    #[allow(dead_code)] ns_collection: sled::Tree,
     #[allow(dead_code)] indexed_namespaces: BTreeSet<String>,
-    #[allow(dead_code)] endpoints_collection: sled::Tree,
     #[allow(dead_code)] indexed_endpoints: BTreeSet<(String, String)>,
-    #[allow(dead_code)] pipelines_collection: sled::Tree,
     #[allow(dead_code)] indexed_pipelines: BTreeMap<(String, String), Pipeline>,
-    #[allow(dead_code)] streams_collection: sled::Tree,
     #[allow(dead_code)] indexed_streams: BTreeMap<(String, String), Stream>,
 }
 
@@ -176,20 +182,23 @@ impl SledStorage {
         let indexed_pipelines = Self::index_pipelines_data(&pipelines_collection)?;
         let streams_collection = db.open_tree(OBJECTS_STREAMS)?;
         let indexed_streams = Self::index_streams_data(&db, &streams_collection)?;
+        let object_collections = Arc::new(ObjectCollections{
+            endpoints_collection, ns_collection,
+            pipelines_collection, streams_collection,
+            tokens_collection, users_collection,
+        });
         info!("Finished indexing data.");
 
         let sled = SyncArbiter::start(3, move || SledActor); // TODO: probably use `num_cores` crate.
         Ok(SledStorage{
-            id, sled, db, log, hs: state.hard_state,
+            id, sled, db, log,
+            hs: state.hard_state, object_collections,
             last_log_index: state.last_log_index,
             last_log_term: state.last_log_term,
             last_applied_log: state.last_applied_log,
-            users_collection, indexed_users,
-            tokens_collection, indexed_tokens,
-            ns_collection, indexed_namespaces,
-            endpoints_collection, indexed_endpoints,
-            pipelines_collection, indexed_pipelines,
-            streams_collection, indexed_streams,
+            indexed_endpoints, indexed_namespaces,
+            indexed_pipelines, indexed_streams,
+            indexed_tokens, indexed_users,
         })
     }
 
@@ -387,9 +396,11 @@ impl Handler<RgAppendLogEntry> for SledStorage {
 impl Handler<RgApplyToStateMachine> for SledStorage {
     type Result = ResponseActFuture<Self, (), ClientError>;
 
-    fn handle(&mut self, _msg: RgApplyToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Box::new(fut::ok(()))
+    fn handle(&mut self, msg: RgApplyToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
+        Box::new(fut::wrap_future(self.sled.send(SyncApplyToStateMachine(msg, self.db.clone(), self.object_collections.clone())))
+            .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
+            .and_then(|res, _, _| fut::result(res))
+        )
     }
 }
 
@@ -474,6 +485,12 @@ impl Handler<RgInstallSnapshot> for SledStorage {
 /// Sync actor for interfacing with Sled.
 struct SledActor;
 
+impl SledActor {
+    fn apply_entry_to_state_machine(&mut self, _entry: &RgEntry, _db: &sled::Db, _colls: &Arc<ObjectCollections>) -> Result<(), ClientError> {
+        Ok(()) // TODO: impl this
+    }
+}
+
 impl Actor for SledActor {
     type Context = SyncContext<Self>;
 }
@@ -504,11 +521,23 @@ impl Handler<SyncAppendLogEntry> for SledActor {
     }
 }
 
-impl Handler<RgApplyToStateMachine> for SledActor {
+struct SyncApplyToStateMachine(RgApplyToStateMachine, sled::Db, Arc<ObjectCollections>);
+
+impl Message for SyncApplyToStateMachine {
+    type Result = Result<(), ClientError>;
+}
+
+impl Handler<SyncApplyToStateMachine> for SledActor {
     type Result = Result<(), ClientError>;
 
-    fn handle(&mut self, _msg: RgApplyToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
+    fn handle(&mut self, msg: SyncApplyToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
+        use actix_raft::storage::ApplyToStateMachinePayload::{Multi, Single};
+        match &msg.0.payload {
+            Single(entry) => self.apply_entry_to_state_machine(&*entry, &msg.1, &msg.2)?,
+            Multi(entries) => for entry in entries {
+                self.apply_entry_to_state_machine(entry, &msg.1, &msg.2)?
+            }
+        }
         Ok(())
     }
 }
