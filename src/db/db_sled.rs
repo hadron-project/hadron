@@ -409,9 +409,11 @@ impl Handler<RgGetInitialState> for SledStorage {
 impl Handler<RgGetLogEntries> for SledStorage {
     type Result = ResponseActFuture<Self, Vec<RgEntry>, ClientError>;
 
-    fn handle(&mut self, _msg: RgGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Box::new(fut::ok(vec![]))
+    fn handle(&mut self, msg: RgGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
+        Box::new(fut::wrap_future(self.sled.send(SyncGetLogEntries(msg, self.log.clone())))
+            .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
+            .and_then(|res, _, _| fut::result(res))
+        )
     }
 }
 
@@ -511,12 +513,31 @@ impl Handler<RgApplyToStateMachine> for SledActor {
     }
 }
 
-impl Handler<RgGetLogEntries> for SledActor {
+struct SyncGetLogEntries(RgGetLogEntries, sled::Tree);
+
+impl Message for SyncGetLogEntries {
+    type Result = Result<Vec<RgEntry>, ClientError>;
+}
+
+impl Handler<SyncGetLogEntries> for SledActor {
     type Result = Result<Vec<RgEntry>, ClientError>;
 
-    fn handle(&mut self, _msg: RgGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Ok(vec![])
+    fn handle(&mut self, msg: SyncGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
+        let start = msg.0.start.to_be_bytes();
+        let stop = msg.0.stop.to_be_bytes();
+        let entries = msg.1.range(start..stop).values().try_fold(vec![], |mut acc, res| {
+            let data = res.map_err(|err| {
+                error!("Error from sled in GetLogEntries. {}", err);
+                ClientError::new_internal()
+            })?;
+            let entry = bincode::deserialize(&data).map_err(|err| {
+                error!("Error deserializing entry in  GetLogEntries. {}", err);
+                ClientError::new_internal()
+            })?;
+            acc.push(entry);
+            Ok(acc)
+        })?;
+        Ok(entries)
     }
 }
 
@@ -789,6 +810,38 @@ mod tests {
                 }
                 _ => panic!("unexpected entry type"),
             }
+        }
+
+        //////////////////////////////////////////////////////////////////////
+        // Handle ReplicateLogEntries ////////////////////////////////////////
+
+        #[test]
+        fn handle_get_log_entries() {
+            let mut sys = System::builder().name("test").stop_on_panic(true).build();
+            let dir = tempfile::tempdir_in("/tmp").expect("new temp dir");
+            let db_path = dir.path().join("db").to_string_lossy().to_string();
+            let storage = SledStorage::new(&db_path).expect("instantiate storage");
+            let log = storage.log();
+            let storage_addr = storage.start();
+            let entry0 = Entry{term: 1, index: 0, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+                namespace: String::from("default"), name: String::from("events0"), id: None, data: vec![],
+            }))})};
+            log.insert(entry0.index.to_be_bytes(), bincode::serialize(&entry0).expect("serialize entry")).expect("append to log");
+            let entry1 = Entry{term: 1, index: 1, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+                namespace: String::from("default"), name: String::from("events1"), id: None, data: vec![],
+            }))})};
+            log.insert(entry1.index.to_be_bytes(), bincode::serialize(&entry1).expect("serialize entry")).expect("append to log");
+            let msg = RgGetLogEntries::new(0, 500);
+
+            let f = storage_addr.send(msg).map_err(|err| panic!(err)).and_then(|res| res).map_err(|err| panic!(err))
+                .map(|entries| {
+                    assert_eq!(entries.len(), 2);
+                    assert_eq!(entries[0].index, 0);
+                    assert_eq!(entries[1].index, 1);
+                    assert_eq!(entries[0].term, 1);
+                    assert_eq!(entries[1].term, 1);
+                });
+            sys.block_on(f).expect("sys run");
         }
 
         //////////////////////////////////////////////////////////////////////
