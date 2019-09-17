@@ -34,7 +34,6 @@ use uuid;
 use crate::{
     NodeId,
     auth::User,
-    config::Config,
     db::{AppData, models::{Pipeline, Stream, StreamType, StreamEntry}},
     proto::client::api::{ClientError, ErrorCode},
 };
@@ -142,9 +141,9 @@ impl SledStorage {
     /// Create a new instance.
     ///
     /// This will initialize the data store, and will ensure that the database has a node ID.
-    pub fn new(config: &Config) -> Result<Self, failure::Error> {
+    pub fn new(db_path: &str) -> Result<Self, failure::Error> {
         info!("Initializing storage engine SledStorage.");
-        let db = sled::Db::open(&config.db_path)?;
+        let db = sled::Db::open(db_path)?;
         let mut hasher = DefaultHasher::default();
         let id: u64 = match db.get(NODE_ID_KEY)? {
             Some(id) => {
@@ -346,6 +345,20 @@ impl SledStorage {
     pub fn node_id(&self) -> NodeId {
         self.id
     }
+
+    /// Get a handle to the database.
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub fn db(&self) -> sled::Db {
+        self.db.clone()
+    }
+
+    /// Get a handle to the Raft log tree.
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub fn log(&self) -> sled::Tree {
+        self.log.clone()
+    }
 }
 
 impl Actor for SledStorage {
@@ -363,9 +376,11 @@ impl RaftStorage<AppData, ClientError> for SledStorage {
 impl Handler<RgAppendLogEntry> for SledStorage {
     type Result = ResponseActFuture<Self, (), ClientError>;
 
-    fn handle(&mut self, _msg: RgAppendLogEntry, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Box::new(fut::ok(()))
+    fn handle(&mut self, msg: RgAppendLogEntry, _ctx: &mut Self::Context) -> Self::Result {
+        Box::new(fut::wrap_future(self.sled.send(SyncAppendLogEntry(msg, self.log.clone())))
+            .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
+            .and_then(|res, _, _| fut::result(res))
+        )
     }
 }
 
@@ -375,24 +390,6 @@ impl Handler<RgApplyToStateMachine> for SledStorage {
     fn handle(&mut self, _msg: RgApplyToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
         // TODO: impl
         Box::new(fut::ok(()))
-    }
-}
-
-impl Handler<RgCreateSnapshot> for SledStorage {
-    type Result = ResponseActFuture<Self, CurrentSnapshotData, ClientError>;
-
-    fn handle(&mut self, _msg: RgCreateSnapshot, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Box::new(fut::err(ClientError{code: ErrorCode::Internal as i32, message: String::from("")}))
-    }
-}
-
-impl Handler<RgGetCurrentSnapshot> for SledStorage {
-    type Result = ResponseActFuture<Self, Option<CurrentSnapshotData>, ClientError>;
-
-    fn handle(&mut self, _msg: RgGetCurrentSnapshot, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Box::new(fut::ok(None))
     }
 }
 
@@ -415,15 +412,6 @@ impl Handler<RgGetLogEntries> for SledStorage {
     fn handle(&mut self, _msg: RgGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
         // TODO: impl
         Box::new(fut::ok(vec![]))
-    }
-}
-
-impl Handler<RgInstallSnapshot> for SledStorage {
-    type Result = ResponseActFuture<Self, (), ClientError>;
-
-    fn handle(&mut self, _msg: RgInstallSnapshot, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Box::new(fut::ok(()))
     }
 }
 
@@ -454,6 +442,30 @@ impl Handler<RgSaveHardState> for SledStorage {
     }
 }
 
+impl Handler<RgCreateSnapshot> for SledStorage {
+    type Result = ResponseActFuture<Self, CurrentSnapshotData, ClientError>;
+
+    fn handle(&mut self, _msg: RgCreateSnapshot, _ctx: &mut Self::Context) -> Self::Result {
+        unimplemented!() // TODO: impl
+    }
+}
+
+impl Handler<RgGetCurrentSnapshot> for SledStorage {
+    type Result = ResponseActFuture<Self, Option<CurrentSnapshotData>, ClientError>;
+
+    fn handle(&mut self, _msg: RgGetCurrentSnapshot, _ctx: &mut Self::Context) -> Self::Result {
+        unimplemented!() // TODO: impl
+    }
+}
+
+impl Handler<RgInstallSnapshot> for SledStorage {
+    type Result = ResponseActFuture<Self, (), ClientError>;
+
+    fn handle(&mut self, _msg: RgInstallSnapshot, _ctx: &mut Self::Context) -> Self::Result {
+        unimplemented!() // TODO: impl
+    }
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // SledActor /////////////////////////////////////////////////////////////////////////////////////
 
@@ -464,11 +476,28 @@ impl Actor for SledActor {
     type Context = SyncContext<Self>;
 }
 
-impl Handler<RgAppendLogEntry> for SledActor {
+struct SyncAppendLogEntry(RgAppendLogEntry, sled::Tree);
+
+impl Message for SyncAppendLogEntry {
+    type Result = Result<(), ClientError>;
+}
+
+impl Handler<SyncAppendLogEntry> for SledActor {
     type Result = Result<(), ClientError>;
 
-    fn handle(&mut self, _msg: RgAppendLogEntry, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
+    fn handle(&mut self, msg: SyncAppendLogEntry, _ctx: &mut Self::Context) -> Self::Result {
+        // TODO: this is where application level constraints may be enforced,
+        // just before the proposed entry hits the log.
+
+        // Entry data checks out, so append it to the log.
+        let data = bincode::serialize(&*msg.0.entry).map_err(|err| {
+            error!("Error serializing log entry: {}", err);
+            ClientError::new_internal()
+        })?;
+        msg.1.insert(msg.0.entry.index.to_be_bytes(), data.as_slice()).map_err(|err| {
+            error!("Error serializing log entry: {}", err);
+            ClientError::new_internal()
+        })?;
         Ok(())
     }
 }
@@ -482,39 +511,12 @@ impl Handler<RgApplyToStateMachine> for SledActor {
     }
 }
 
-impl Handler<RgCreateSnapshot> for SledActor {
-    type Result = Result<CurrentSnapshotData, ClientError>;
-
-    fn handle(&mut self, _msg: RgCreateSnapshot, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Err(ClientError{code: ErrorCode::Internal as i32, message: String::from("")})
-    }
-}
-
-impl Handler<RgGetCurrentSnapshot> for SledActor {
-    type Result = Result<Option<CurrentSnapshotData>, ClientError>;
-
-    fn handle(&mut self, _msg: RgGetCurrentSnapshot, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Ok(None)
-    }
-}
-
 impl Handler<RgGetLogEntries> for SledActor {
     type Result = Result<Vec<RgEntry>, ClientError>;
 
     fn handle(&mut self, _msg: RgGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
         // TODO: impl
         Ok(vec![])
-    }
-}
-
-impl Handler<RgInstallSnapshot> for SledActor {
-    type Result = Result<(), ClientError>;
-
-    fn handle(&mut self, _msg: RgInstallSnapshot, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: impl
-        Ok(())
     }
 }
 
@@ -554,7 +556,7 @@ impl Handler<SyncSaveHardState> for SledActor {
 
     fn handle(&mut self, msg: SyncSaveHardState, _ctx: &mut Self::Context) -> Self::Result {
         // Serialize data.
-        let hs: Vec<u8> = bincode::serialize(&msg.0.hs).map_err(|err| {
+        let hs = bincode::serialize(&msg.0.hs).map_err(|err| {
             error!("Error while serializing Raft HardState object: {:?}", err);
             ClientError::new_internal()
         })?;
@@ -567,6 +569,30 @@ impl Handler<SyncSaveHardState> for SledActor {
 
         // Respond.
         Ok(())
+    }
+}
+
+impl Handler<RgCreateSnapshot> for SledActor {
+    type Result = Result<CurrentSnapshotData, ClientError>;
+
+    fn handle(&mut self, _msg: RgCreateSnapshot, _ctx: &mut Self::Context) -> Self::Result {
+        unimplemented!() // TODO: impl
+    }
+}
+
+impl Handler<RgGetCurrentSnapshot> for SledActor {
+    type Result = Result<Option<CurrentSnapshotData>, ClientError>;
+
+    fn handle(&mut self, _msg: RgGetCurrentSnapshot, _ctx: &mut Self::Context) -> Self::Result {
+        unimplemented!() // TODO: impl
+    }
+}
+
+impl Handler<RgInstallSnapshot> for SledActor {
+    type Result = Result<(), ClientError>;
+
+    fn handle(&mut self, _msg: RgInstallSnapshot, _ctx: &mut Self::Context) -> Self::Result {
+        unimplemented!() // TODO: impl
     }
 }
 
@@ -592,8 +618,10 @@ mod tests {
     use crate::{
         auth::UserRole,
         db::models::StreamVisibility,
+        proto::client::api,
     };
-
+    use actix_raft::messages::{Entry, EntryType, EntryNormal};
+    use std::sync::Arc;
     use proptest::prelude::*;
     use tempfile;
     use uuid;
@@ -720,6 +748,133 @@ mod tests {
             let expected = format!("/streams/default/slipstream/");
             let output = SledStorage::stream_keyspace(ns, name);
             assert_eq!(expected, output);
+        }
+
+        //////////////////////////////////////////////////////////////////////
+        // Handle AppendLogEntry /////////////////////////////////////////////
+
+        #[test]
+        fn handle_append_log_entry() {
+            let mut sys = System::builder().name("test").stop_on_panic(true).build();
+            let dir = tempfile::tempdir_in("/tmp").expect("new temp dir");
+            let db_path = dir.path().join("db").to_string_lossy().to_string();
+            let storage = SledStorage::new(&db_path).expect("instantiate storage");
+            let log = storage.log();
+            let storage_addr = storage.start();
+            let entry = Entry{term: 20, index: 99999, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+                namespace: String::from("default"), name: String::from("events"), id: None, data: vec![],
+            }))})};
+            let msg = RgAppendLogEntry::new(Arc::new(entry.clone()));
+
+            let f = storage_addr.send(msg).map_err(|err| panic!(err)).and_then(|res| res).map_err(|err| panic!(err));
+            sys.block_on(f).expect("sys run");
+
+            // Ensure the expected data was written to disk.
+            let entries: Vec<_> = log.iter()
+                .map(|res| res.expect("iter log entry"))
+                .map(|(_, raw)| bincode::deserialize::<RgEntry>(&raw).expect("deserialize entry"))
+                .collect();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].index, entry.index);
+            assert_eq!(entries[0].term, entry.term);
+            match &entries[0].entry_type {
+                EntryType::Normal(entry) => match &entry.data {
+                    Some(AppData::PubStream(data)) => {
+                        assert_eq!(data.namespace.as_str(), "default");
+                        assert_eq!(data.name.as_str(), "events");
+                        assert_eq!(&data.id, &None);
+                        assert_eq!(data.data.len(), 0);
+                    }
+                    _ => panic!("expected a populated PubStreamRequest entry"),
+                }
+                _ => panic!("unexpected entry type"),
+            }
+        }
+
+        //////////////////////////////////////////////////////////////////////
+        // Handle ReplicateLogEntries ////////////////////////////////////////
+
+        #[test]
+        fn handle_replicate_log_entries() {
+            let mut sys = System::builder().name("test").stop_on_panic(true).build();
+            let dir = tempfile::tempdir_in("/tmp").expect("new temp dir");
+            let db_path = dir.path().join("db").to_string_lossy().to_string();
+            let storage = SledStorage::new(&db_path).expect("instantiate storage");
+            let log = storage.log();
+            let storage_addr = storage.start();
+            let msg0 = Entry{term: 1, index: 0, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+                namespace: String::from("default"), name: String::from("events0"), id: None, data: vec![],
+            }))})};
+            let msg1 = Entry{term: 1, index: 1, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+                namespace: String::from("default"), name: String::from("events1"), id: None, data: vec![],
+            }))})};
+            let msg = RgReplicateLogEntries::new(Arc::new(vec![msg0.clone(), msg1.clone()]));
+
+            let f = storage_addr.send(msg).map_err(|err| panic!(err)).and_then(|res| res).map_err(|err| panic!(err));
+            sys.block_on(f).expect("sys run");
+
+            // Ensure the expected data was written to disk.
+            let entries: Vec<_> = log.iter()
+                .map(|res| res.expect("iter log entry"))
+                .map(|(_, raw)| bincode::deserialize::<RgEntry>(&raw).expect("deserialize entry"))
+                .collect();
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].index, msg0.index);
+            assert_eq!(entries[0].term, msg0.term);
+            match &entries[0].entry_type {
+                EntryType::Normal(entry) => match &entry.data {
+                    Some(AppData::PubStream(data)) => {
+                        assert_eq!(data.namespace.as_str(), "default");
+                        assert_eq!(data.name.as_str(), "events0");
+                        assert_eq!(&data.id, &None);
+                        assert_eq!(data.data.len(), 0);
+                    }
+                    _ => panic!("expected a populated PubStreamRequest entry"),
+                }
+                _ => panic!("unexpected entry type"),
+            }
+            assert_eq!(entries[1].index, msg1.index);
+            assert_eq!(entries[1].term, msg1.term);
+            match &entries[1].entry_type {
+                EntryType::Normal(entry) => match &entry.data {
+                    Some(AppData::PubStream(data)) => {
+                        assert_eq!(data.namespace.as_str(), "default");
+                        assert_eq!(data.name.as_str(), "events1");
+                        assert_eq!(&data.id, &None);
+                        assert_eq!(data.data.len(), 0);
+                    }
+                    _ => panic!("expected a populated PubStreamRequest entry"),
+                }
+                _ => panic!("unexpected entry type"),
+            }
+        }
+
+        //////////////////////////////////////////////////////////////////////
+        // Handle SaveHardState //////////////////////////////////////////////
+
+        #[test]
+        fn handle_save_hard_state() {
+            let mut sys = System::builder().name("test").stop_on_panic(true).build();
+            let dir = tempfile::tempdir_in("/tmp").expect("new temp dir");
+            let db_path = dir.path().join("db").to_string_lossy().to_string();
+            let storage = SledStorage::new(&db_path).expect("instantiate storage");
+            let db = storage.db();
+            let storage_addr = storage.start();
+            let orig_hs = HardState{
+                current_term: 666, voted_for: Some(6),
+                membership: MembershipConfig{is_in_joint_consensus: false, members: vec![6], non_voters: Vec::new(), removing: Vec::new()},
+            };
+            let msg = RgSaveHardState::new(orig_hs.clone());
+
+            let f = storage_addr.send(msg).map_err(|err| panic!(err)).and_then(|res| res).map_err(|err| panic!(err));
+            sys.block_on(f).expect("sys run");
+
+            // Ensure the expected data was written to disk.
+            let raw_hs = db.get(RAFT_HARDSTATE_KEY).expect("get hardstate from disk").expect("hardstate value should exist");
+            let hs: HardState = bincode::deserialize(&raw_hs).expect("deserialize hardstate");
+            assert_eq!(orig_hs.current_term, hs.current_term);
+            assert_eq!(orig_hs.voted_for, hs.voted_for);
+            assert_eq!(orig_hs.membership, hs.membership);
         }
     }
 

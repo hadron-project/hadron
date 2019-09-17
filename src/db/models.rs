@@ -51,7 +51,7 @@ pub enum StreamVisibility {
 }
 
 /// An entry of data written to a stream.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct StreamEntry {
     /// The optional ID of the entry.
     pub id: Option<String>,
