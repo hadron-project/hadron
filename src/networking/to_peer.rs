@@ -196,10 +196,10 @@ impl WsToPeer {
         // Extract handshake response segment, else handle errors.
         let hs = match response.segment {
             Some(api::response::Segment::Handshake(hs)) => hs,
-            // Some(other) => { // NOTE: enable this once we have more options.
-            //     debug!("Invalid frame received from handshake request. {:?}", other);
-            //     self.handshake(ctx);
-            // }
+            Some(other) => {
+                debug!("Invalid frame received from handshake request. {:?}", other);
+                return self.handshake(ctx);
+            }
             None => return self.handshake(ctx),
         };
 
@@ -270,7 +270,7 @@ impl WsToPeer {
                     let (sink, stream) = framed.split();
                     let bsink: Box<dyn Sink<SinkItem=Message, SinkError=WsProtocolError> + 'static> = Box::new(sink);
                     let bstream: Box<dyn Stream<Item=Frame, Error=WsProtocolError> + 'static> = Box::new(stream);
-                    let _ = conntx.unbounded_send(NewConnection{sink: bsink, stream: bstream}); // Will nevery meaningfully fail.
+                    let _ = conntx.unbounded_send(NewConnection{sink: bsink, stream: bstream}); // Will never meaningfully fail.
                     Ok(())
                 }
                 Err(err) => {
@@ -355,7 +355,7 @@ impl WsToPeer {
                 Ready => (),
                 NotReady(m) => {
                     error!("Could not queue message to be sent to peer.");
-                    ctx.notify(OutboundMessage(m));
+                    ctx.notify(RetryOutboundMessage(m));
                 }
             }
         }
@@ -520,20 +520,17 @@ impl WriteHandler<WsProtocolError> for WsToPeer {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// OutboundMessage ///////////////////////////////////////////////////////////////////////////////
+// RetryOutboundMessage //////////////////////////////////////////////////////////////////////////
 
-/// A wrapper type for outbound messages.
-///
-/// This is typically used once one of the connection specific child actors is ready to send a
-/// finalized binary WebSocket message over its connection.
+/// A wrapper type used for retrying attempts to send outbound messages.
 #[derive(Message)]
-pub(self) struct OutboundMessage(pub Message);
+pub(self) struct RetryOutboundMessage(pub Message);
 
-impl Handler<OutboundMessage> for WsToPeer {
+impl Handler<RetryOutboundMessage> for WsToPeer {
     type Result = ();
 
     /// Handle requests to send outbound messages to the connected peer.
-    fn handle(&mut self, msg: OutboundMessage, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: RetryOutboundMessage, ctx: &mut Self::Context) {
         self.write_outbound_message(ctx, msg.0);
     }
 }
@@ -553,7 +550,6 @@ impl Handler<OutboundPeerRequest> for WsToPeer {
 
         // Build the outbound request frame.
         let requestid = uuid::Uuid::new_v4().to_string();
-        // let deadline = (chrono::Utc::now() + chrono::Duration::seconds(msg.timeout.as_secs() as i64)).timestamp_millis();
         let frame = api::Frame{
             meta: Some(api::Meta{id: requestid.clone()}),
             payload: Some(api::frame::Payload::Request(msg.request)),

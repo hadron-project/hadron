@@ -5,7 +5,7 @@ pub struct Meta {
     #[prost(string, tag="1")]
     pub id: std::string::String,
 }
-/// An API frame.
+/// A peer to peer message frame.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Frame {
     /// The metadata of the frame.
@@ -27,10 +27,13 @@ pub mod frame {
         Disconnect(i32),
     }
 }
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Frame Variants ////////////////////////////////////////////////////////////////////////////////
+
 /// A request from a peer node.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Request {
-    #[prost(oneof="request::Segment", tags="1")]
+    #[prost(oneof="request::Segment", tags="1, 2")]
     pub segment: ::std::option::Option<request::Segment>,
 }
 pub mod request {
@@ -38,12 +41,14 @@ pub mod request {
     pub enum Segment {
         #[prost(message, tag="1")]
         Handshake(super::Handshake),
+        #[prost(message, tag="2")]
+        Raft(super::RaftRequest),
     }
 }
 /// A response to an earlier sent request.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Response {
-    #[prost(oneof="response::Segment", tags="1")]
+    #[prost(oneof="response::Segment", tags="1, 2")]
     pub segment: ::std::option::Option<response::Segment>,
 }
 pub mod response {
@@ -51,6 +56,8 @@ pub mod response {
     pub enum Segment {
         #[prost(message, tag="1")]
         Handshake(super::Handshake),
+        #[prost(message, tag="2")]
+        Raft(super::RaftResponse),
     }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -63,6 +70,43 @@ pub struct Handshake {
     pub node_id: u64,
     #[prost(string, tag="2")]
     pub routing_info: std::string::String,
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Raft Request & Response ///////////////////////////////////////////////////////////////////////
+
+/// A Raft request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RaftRequest {
+    #[prost(oneof="raft_request::Payload", tags="1, 2, 3")]
+    pub payload: ::std::option::Option<raft_request::Payload>,
+}
+pub mod raft_request {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Payload {
+        #[prost(bytes, tag="1")]
+        AppendEntries(std::vec::Vec<u8>),
+        #[prost(bytes, tag="2")]
+        Vote(std::vec::Vec<u8>),
+        #[prost(bytes, tag="3")]
+        InstallSnapshot(std::vec::Vec<u8>),
+    }
+}
+/// A Raft response.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RaftResponse {
+    #[prost(oneof="raft_response::Payload", tags="1, 2, 3")]
+    pub payload: ::std::option::Option<raft_response::Payload>,
+}
+pub mod raft_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Payload {
+        #[prost(bytes, tag="1")]
+        AppendEntries(std::vec::Vec<u8>),
+        #[prost(bytes, tag="2")]
+        Vote(std::vec::Vec<u8>),
+        #[prost(bytes, tag="3")]
+        InstallSnapshot(std::vec::Vec<u8>),
+    }
 }
 /// A disconnect variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

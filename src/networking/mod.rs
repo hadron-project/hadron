@@ -18,7 +18,10 @@ use actix_web::{
     web,
 };
 use actix_web_actors::ws;
-use futures::future::err as fut_err;
+use futures::future::{
+    Either,
+    err as fut_err,
+};
 use log::{debug, error};
 
 use crate::{
@@ -33,17 +36,16 @@ use crate::{
     discovery::{
         Discovery, ObservedPeersChangeset,
     },
+    proto::peer::api,
 };
 
 type WsClient = client::WsClient<Network>;
 
 /// The interval at which heartbeats are sent to peer nodes.
 pub(self) const PEER_HB_INTERVAL: Duration = Duration::from_secs(2);
-
 /// The amount of time which is allowed to elapse between successful heartbeats before a
 /// connection is reckoned as being dead between peer nodes.
 pub(self) const PEER_HB_THRESHOLD: Duration = Duration::from_secs(10);
-
 /// The amount of time which is allowed to elapse between a handshake request/response cycle.
 pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -149,6 +151,23 @@ impl Network {
     fn handle_client_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
         debug!("Handling a new client connection request.");
         ws::start(WsClient::new(data.parent.clone(), data.node_id, data.config.client_liveness_threshold()), &req, stream)
+    }
+
+    pub(self) fn send_outbound_peer_request(&mut self, msg: OutboundPeerRequest, _: &mut Context<Self>) -> impl Future<Item=api::Response, Error=()> {
+        // Get a reference to actor which is holding the connection to the target node.
+        let addr = match self.routing_table.get(&msg.target_node) {
+            None => {
+                error!("Attempted to send an outbound peer request to a peer which is not registered in the connections routing table.");
+                return Either::B(fut_err(()));
+            }
+            Some(addr) => addr,
+        };
+
+        // Send the outbound request to the target node.
+        match addr {
+            PeerAddr::FromPeer(iaddr) => Either::A(Either::A(iaddr.send(msg).map_err(|_| ()).and_then(|res| res))),
+            PeerAddr::ToPeer(iaddr) => Either::A(Either::B(iaddr.send(msg).map_err(|_| ()).and_then(|res| res))),
+        }
     }
 }
 
@@ -287,8 +306,7 @@ impl Handler<ClosingPeerConnection> for Network {
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // PeerConnectionLive ////////////////////////////////////////////////////////////////////////////
 
-// TODO: get this wired up with child actors and handle here.
-
+/// A message indicating that a connection with a specific peer is now live.
 pub(self) struct PeerConnectionLive {
     /// The ID of the peer with which the connection is now live.
     peer_id: NodeId,
@@ -344,8 +362,9 @@ impl Handler<PeerConnectionLive> for Network {
 /// A wrapper type for outbound requests destined for a specific peer.
 ///
 /// The parent `Network` actor will receive messages from other higher-level actors to have
-/// messages sent to specific destinations by Node ID. This same message instance will then be
-/// forwarded to a specific child actor responsible for the target socket.
+/// messages sent to specific destinations by Node ID. Different message types are used by other
+/// higher-level actors, as different actors may require different intnerfaces, but they should
+/// all use this message type in their handlers to interact with the peer connection actors.
 pub struct OutboundPeerRequest {
     pub request: peer::api::Request,
     pub target_node: NodeId,
@@ -356,45 +375,8 @@ impl actix::Message for OutboundPeerRequest {
     type Result = Result<peer::api::Response, ()>;
 }
 
-impl Handler<OutboundPeerRequest> for Network {
-    type Result = ResponseFuture<peer::api::Response, ()>;
-
-    /// Handle requests to send outbound messages to a connected peer.
-    fn handle(&mut self, msg: OutboundPeerRequest, _ctx: &mut Self::Context) -> Self::Result {
-        // Get a reference to actor which is holding the connection to the target node.
-        let addr = match self.routing_table.get(&msg.target_node) {
-            None => {
-                error!("Attempted to send an outbound peer request to a peer which is not registered in the connections routing table.");
-                return Box::new(fut_err(()));
-            }
-            Some(addr) => addr,
-        };
-
-        // Send the outbound request to the target node.
-        match addr {
-            PeerAddr::FromPeer(iaddr) => Box::new(iaddr.send(msg)
-                .map_err(|_| ())
-                .and_then(|res| res)),
-            PeerAddr::ToPeer(iaddr) => Box::new(iaddr.send(msg)
-                .map_err(|_| ())
-                .and_then(|res| res)),
-        }
-    }
-}
-
-// TODO: probably something like this.
-// #[derive(Message)]
-// pub(self) struct OutboundPeerResponse {
-//     pub frame: PeerFrame,
-//     pub target_node: String,
-// }
-
-// TODO: probably something like this.
-// #[derive(Message)]
-// pub(self) struct OutboundClientResponse {
-//     pub frame: ClientFrame,
-//     pub target_client: String,
-// }
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// InboundPeerRequest ////////////////////////////////////////////////////////////////////////////
 
 /// A message type wrapping an inbound peer API request along with its metadata.
 #[derive(Message)]

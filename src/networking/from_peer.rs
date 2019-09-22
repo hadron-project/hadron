@@ -20,7 +20,7 @@ use crate::{
     NodeId,
     networking::{
         PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
-        ClosingPeerConnection, Network, OutboundPeerRequest,
+        ClosingPeerConnection, Network, InboundPeerRequest, OutboundPeerRequest,
         PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
     },
     proto::peer::api,
@@ -162,14 +162,9 @@ impl WsFromPeer {
         // Handshakes will only ever be initiated by a `WsToPeer` actor (not this one), so we need
         // to check for and handle handshake requests here.
         match req.segment {
-            Some(api::request::Segment::Handshake(hs)) => {
-                self.handshake(hs, meta, ctx)
-            }
-            None => {
-                // NOTE: this will pretty much never be hit.
-                warn!("Empty request segment received in WsFromPeer.");
-            }
-            // _ => self.parent.do_send(InboundPeerRequest(req, meta)), // NOTE: compiler will force this to be re-enabled once there are more variants.
+            Some(api::request::Segment::Handshake(hs)) => self.handshake(hs, meta, ctx),
+            Some(_) => self.parent.do_send(InboundPeerRequest(req, meta)), // Propagate the frame further up the stack.
+            None => warn!("Empty request segment received in WsFromPeer."),
         }
     }
 
