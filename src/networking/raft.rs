@@ -20,6 +20,10 @@ use crate::{
 
 /// The default timeout for Raft AppendEntries RPCs.
 pub(self) const RAFT_APPEND_ENTRIES_TIMEOUT: Duration = Duration::from_secs(5);
+/// The default timeout for Raft InstallSnapshot RPCs.
+pub(self) const RAFT_INSTALL_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
+/// The default timeout for Raft VoteRequest RPCs.
+pub(self) const RAFT_VOTE_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // RaftNetwork impl //////////////////////////////////////////////////////////////////////////////
@@ -64,17 +68,71 @@ impl Handler<RgAppendEntriesRequest> for Network {
 }
 
 impl Handler<InstallSnapshotRequest> for Network {
-    type Result = ResponseActFuture<Self, InstallSnapshotResponse, ()>;
+    type Result = ResponseFuture<InstallSnapshotResponse, ()>;
 
-    fn handle(&mut self, _msg: InstallSnapshotRequest, _ctx: &mut Self::Context) -> Self::Result {
-        Box::new(fut::err(()))
+    fn handle(&mut self, msg: InstallSnapshotRequest, ctx: &mut Self::Context) -> Self::Result {
+        let payload = match bincode::serialize(&msg) {
+            Err(err) => {
+                error!("Error serializing outbound InstallSnapshotRequest. {}", err);
+                return Box::new(fut_err(()));
+            }
+            Ok(payload) => payload,
+        };
+        let request = api::Request{segment: Some(api::request::Segment::Raft(api::RaftRequest{
+            payload: Some(api::raft_request::Payload::InstallSnapshot(payload)),
+        }))};
+        let outbound = OutboundPeerRequest{request, target_node: msg.target, timeout: RAFT_INSTALL_SNAPSHOT_TIMEOUT};
+
+        Box::new(self.send_outbound_peer_request(outbound, ctx)
+            .and_then(|frame| {
+                let raft_frame = match frame.segment {
+                    Some(api::response::Segment::Raft(raft_frame)) => raft_frame,
+                    _ => return Err(()),
+                };
+                let data = match raft_frame.payload {
+                    Some(api::raft_response::Payload::InstallSnapshot(data)) => data,
+                    _ => return Err(()),
+                };
+                let res: InstallSnapshotResponse = bincode::deserialize(&data).map_err(|err| {
+                    error!("Error deserializing InstallSnapshotResponse. {}", err);
+                    ()
+                })?;
+                Ok(res)
+            }))
     }
 }
 
 impl Handler<VoteRequest> for Network {
-    type Result = ResponseActFuture<Self, VoteResponse, ()>;
+    type Result = ResponseFuture<VoteResponse, ()>;
 
-    fn handle(&mut self, _msg: VoteRequest, _ctx: &mut Self::Context) -> Self::Result {
-        Box::new(fut::err(()))
+    fn handle(&mut self, msg: VoteRequest, ctx: &mut Self::Context) -> Self::Result {
+        let payload = match bincode::serialize(&msg) {
+            Err(err) => {
+                error!("Error serializing outbound VoteRequest. {}", err);
+                return Box::new(fut_err(()));
+            }
+            Ok(payload) => payload,
+        };
+        let request = api::Request{segment: Some(api::request::Segment::Raft(api::RaftRequest{
+            payload: Some(api::raft_request::Payload::Vote(payload)),
+        }))};
+        let outbound = OutboundPeerRequest{request, target_node: msg.target, timeout: RAFT_VOTE_REQUEST_TIMEOUT};
+
+        Box::new(self.send_outbound_peer_request(outbound, ctx)
+            .and_then(|frame| {
+                let raft_frame = match frame.segment {
+                    Some(api::response::Segment::Raft(raft_frame)) => raft_frame,
+                    _ => return Err(()),
+                };
+                let data = match raft_frame.payload {
+                    Some(api::raft_response::Payload::Vote(data)) => data,
+                    _ => return Err(()),
+                };
+                let res: VoteResponse = bincode::deserialize(&data).map_err(|err| {
+                    error!("Error deserializing VoteResponse. {}", err);
+                    ()
+                })?;
+                Ok(res)
+            }))
     }
 }
