@@ -35,17 +35,24 @@ spec:
             - containerPort: {{.Values.statefulSet.pod.port}}
           env:
             - name: RUST_LOG
-              value: railgun=debug
+              value: railgun=debug,actix_raft=info
             - name: RG_PORT
               value: {{.Values.statefulSet.pod.port | quote}}
+            - name: RG_INITIAL_CLUSTER_FORMATION_DELAY
+              value: {{.Values.statefulSet.clustering.formationDelaySeconds | quote}}
+            - name: RG_DISCOVERY_BACKEND
+              value: {{.Values.statefulSet.clustering.discoveryBackend}}
             - name: RG_DISCOVERY_DNS_NAME
-              # NOTE: the "*." prefix works with ClusterIP services as well as Headless services.
-              value: "*.railgun"
+              value: {{.Values.statefulSet.clustering.dnsName | quote}}
             - name: RG_DB_PATH
               value: {{.Values.statefulSet.db.path}}
+            - name: RG_DB_PATH
+              value: {{.Values.statefulSet.db.path}}
+
           volumeMounts:
             - name: data
               mountPath: {{.Values.statefulSet.db.path}}
+
   volumeClaimTemplates:
     - metadata:
         name: data

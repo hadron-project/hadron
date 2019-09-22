@@ -1,4 +1,5 @@
-FROM rust:1.35.0-slim as base
+ARG TAG=1.37.0-slim-stretch
+FROM rust:${TAG} as base
 
 LABEL maintainer="Anthony Dodd"
 WORKDIR /railgun
@@ -12,6 +13,6 @@ COPY ./Cargo.lock Cargo.lock
 COPY ./Cargo.toml Cargo.toml
 RUN cargo build --release
 
-FROM rust:1.35.0-slim as release
+FROM rust:${TAG} as release
 COPY --from=builder-release /railgun/target/release/railgun /bin/railgun
 CMD ["/bin/railgun"]

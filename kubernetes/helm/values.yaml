@@ -16,6 +16,13 @@ statefulSet:
     annotations: {}
     port: 15000
 
+  ## Cluster Configuration
+  clustering:
+    formationDelaySeconds: 10
+    discoveryBackend: DNS
+    ## NOTE: the "*." prefix works with ClusterIP services as well as Headless services.
+    dnsName: "*.railgun"
+
   ## Database Configuration
   db:
     ## The path where the persistent volume for data storage will be mounted. This value is also
@@ -24,6 +31,7 @@ statefulSet:
     ## The size of the persistent volume to provision for data storage.
     volumeSize: 5Gi
     ## The name of the storage class to use.
-    storageClassName: "standard"
+    # storageClassName: "standard"
+    storageClassName: "hostpath"
     ## The access modes for the persistent volume for data storage.
     accessModes: [ "ReadWriteOnce" ]

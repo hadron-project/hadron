@@ -1,4 +1,6 @@
 # Directory Ignores #
+guide
+kubernetes
 target
 
 # File Ignores #

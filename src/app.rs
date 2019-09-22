@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
 use actix::prelude::*;
-use actix_raft::Raft;
+use actix_raft::{
+    Raft,
+    admin::{InitWithConfig},
+};
 use log::{error, info};
 
 use crate::{
+    NodeId,
     config::Config,
     networking::{Network},
     db::{AppData, Storage},
@@ -33,9 +37,11 @@ type AppRaft = Raft<AppData, ClientError, Network, Storage>;
 /// this system, but gives actors direct access to the network stack for sending messages to peers
 /// and clients.
 pub struct App {
+    id: NodeId,
+    config: Arc<Config>,
     _storage: Addr<Storage>,
     _network: Addr<Network>,
-    _raft: Addr<AppRaft>,
+    raft: Addr<AppRaft>,
 }
 
 impl App {
@@ -72,20 +78,41 @@ impl App {
             std::process::exit(1);
         });
         let raft_arb = Arbiter::new();
-        let raft = AppRaft::new(nodeid, raft_cfg, net_addr.clone(), storage_addr.clone(), metrics_receiver);
+        let raft = AppRaft::new(nodeid.clone(), raft_cfg, net_addr.clone(), storage_addr.clone(), metrics_receiver);
         let raft_addr = AppRaft::start_in_arbiter(&raft_arb, move |_| raft);
 
         info!("Railgun is firing on all interfaces on port {}!", &config.port);
         App{
+            id: nodeid,
+            config,
             _storage: storage_addr,
             _network: net_addr,
-            _raft: raft_addr,
+            raft: raft_addr,
         }
     }
 }
 
 impl Actor for App {
     type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        // Spawn a delayed function for issuing the initial cluster formation command.
+        ctx.run_later(self.config.initial_cluster_formation_delay(), |act, ctx| act.initial_cluster_formation(ctx));
+    }
+}
+
+impl App {
+    /// Issue the initial cluster formation command to this node.
+    fn initial_cluster_formation(&mut self, ctx: &mut Context<Self>) {
+        let f = self.raft.send(InitWithConfig::new(vec![self.id]))
+            .map_err(|err| {
+                error!("Error sending InitWithConfig command. {}", err)
+            })
+            .and_then(|res| futures::future::result(res).map_err(|err| {
+                error!("Error from InitWithConfig command. {:?}", err)
+            }));
+        ctx.spawn(fut::wrap_future(f));
+    }
 }
 
 // TODO: setup handler for inbound network frames from `Network` actor.

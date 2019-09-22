@@ -19,12 +19,12 @@ pub mod frame {
     /// The payload of data for this frame.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Payload {
-        #[prost(message, tag="2")]
-        Request(super::Request),
-        #[prost(message, tag="3")]
-        Response(super::Response),
-        #[prost(enumeration="super::Disconnect", tag="4")]
+        #[prost(enumeration="super::Disconnect", tag="2")]
         Disconnect(i32),
+        #[prost(message, tag="3")]
+        Request(super::Request),
+        #[prost(message, tag="4")]
+        Response(super::Response),
     }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////

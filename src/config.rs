@@ -22,6 +22,10 @@ pub struct Config {
     //////////////////////////////////////////////////////////////////////////
     // Discovery Config //////////////////////////////////////////////////////
 
+    /// The number of seconds to wait before issuing the initial cluster formation commands.
+    initial_cluster_formation_delay: u8,
+    _initial_cluster_formation_delay: Option<Duration>,
+
     /// The discovery backend to use.
     #[serde(flatten)]
     pub discovery_backend: DiscoveryBackend,
@@ -78,7 +82,18 @@ impl Config {
         };
         config.snapshot_dir = Some(Config::build_snapshot_dir(config.db_path.clone()));
         config._client_liveness_threshold = Some(Duration::from_secs(config.client_liveness_threshold as u64));
+        config._initial_cluster_formation_delay = Some(Duration::from_secs(config.initial_cluster_formation_delay as u64));
         config
+    }
+
+    /// The threshold in seconds of not receiving a heartbeat from a client, after which it is reckoned to be dead.
+    pub fn client_liveness_threshold(&self) -> Duration {
+        self._client_liveness_threshold.unwrap_or_else(|| Duration::from_secs(self.client_liveness_threshold as u64))
+    }
+
+    /// The number of seconds to wait before issuing the initial cluster formation commands.
+    pub fn initial_cluster_formation_delay(&self) -> Duration {
+        self._initial_cluster_formation_delay.clone().unwrap_or_else(|| Duration::from_secs(self.initial_cluster_formation_delay as u64))
     }
 
     /// The path to the configured snapshots dir.
@@ -86,12 +101,9 @@ impl Config {
         self.snapshot_dir.clone().unwrap_or_else(|| Config::build_snapshot_dir(self.db_path.clone()))
     }
 
-    pub fn client_liveness_threshold(&self) -> Duration {
-        self._client_liveness_threshold.unwrap_or_else(|| Duration::from_secs(self.client_liveness_threshold as u64))
-    }
-}
+    //////////////////////////////////////////////////////////////////////////
+    // Private Methods ///////////////////////////////////////////////////////
 
-impl Config {
     fn build_snapshot_dir(db_path: String) -> String {
         path::PathBuf::from(db_path).join(db::DEFAULT_SNAPSHOT_SUBDIR).to_string_lossy().to_string()
     }
