@@ -31,7 +31,7 @@ statefulSet:
     ## The size of the persistent volume to provision for data storage.
     volumeSize: 5Gi
     ## The name of the storage class to use.
-    # storageClassName: "standard"
+    # NOTE: "hostpath" for docker-desktop-k8s; "standard" for minikube; other values for different platforms.
     storageClassName: "hostpath"
     ## The access modes for the persistent volume for data storage.
     accessModes: [ "ReadWriteOnce" ]

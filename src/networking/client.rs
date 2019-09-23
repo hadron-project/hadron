@@ -32,11 +32,11 @@ use crate::{
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// WsClientProvider //////////////////////////////////////////////////////////////////////////////
+// WsClientNetworkService ////////////////////////////////////////////////////////////////////////
 
-/// The `WsClient` actor's provider interface.
-pub(super) trait WsClientProvider: 'static {
-    /// The type to use as the provider. Should just be `Self` of the implementing type.
+/// The `WsClient` actor's network service interface.
+pub(super) trait WsClientNetworkService: 'static {
+    /// The type to use as the service. Should just be `Self` of the implementing type.
     type Actor: Actor<Context=Self::Context> + Handler<VerifyToken>;
 
     /// The type to use as the storage actor's context. Should be `Context<Self>` or `SyncContext<Self>`.
@@ -50,7 +50,7 @@ impl Message for VerifyToken {
     type Result = Result<Claims, ClientError>;
 }
 
-impl WsClientProvider for Network {
+impl WsClientNetworkService for Network {
     type Actor = Self;
     type Context = Context<Self>;
 }
@@ -88,12 +88,12 @@ struct ClientStateActive {
 // WsClient //////////////////////////////////////////////////////////////////////////////////////
 
 /// An actor responsible for handling inbound WebSocket connections from clients.
-pub(super) struct WsClient<P: WsClientProvider> {
+pub(super) struct WsClient<P: WsClientNetworkService> {
     /// The ID of this node.
     _node_id: NodeId,
 
-    /// The address of the provider.
-    provider: Addr<P::Actor>,
+    /// The address of the network service.
+    network_service: Addr<P::Actor>,
 
     /// The ID assigned to this connection.
     connection_id: String,
@@ -115,11 +115,11 @@ pub(super) struct WsClient<P: WsClientProvider> {
     liveness_threshold: Duration,
 }
 
-impl<P: WsClientProvider> WsClient<P> {
+impl<P: WsClientNetworkService> WsClient<P> {
     /// Create a new instance.
-    pub fn new(provider: Addr<P::Actor>, _node_id: NodeId, liveness_threshold: Duration) -> Self {
+    pub fn new(network_service: Addr<P::Actor>, _node_id: NodeId, liveness_threshold: Duration) -> Self {
         Self{
-            _node_id, provider,
+            _node_id, network_service,
             connection_id: uuid::Uuid::new_v4().to_string(),
             heartbeat: Instant::now(),
             heartbeat_handle: None,
@@ -136,8 +136,8 @@ impl<P: WsClientProvider> WsClient<P> {
             return self.send_frame(ServerPayload::Connect(api::ConnectResponse{error: None, id: self.connection_id.clone()}), meta, ctx);
         }
 
-        // Call provider to validate the given token and extract its claims object.
-        let f = fut::wrap_future(self.provider.send(VerifyToken(frame.token)))
+        // Call network service to validate the given token and extract its claims object.
+        let f = fut::wrap_future(self.network_service.send(VerifyToken(frame.token)))
             .map_err(|_, _: &mut Self, _| ClientError::new_internal())
             .and_then(|res, _, _| fut::result(res))
 
@@ -182,7 +182,7 @@ impl<P: WsClientProvider> WsClient<P> {
     }
 }
 
-impl<P: WsClientProvider> Actor for WsClient<P> {
+impl<P: WsClientNetworkService> Actor for WsClient<P> {
     type Context = ws::WebsocketContext<Self>;
 
     /// Logic for starting this actor.
@@ -194,7 +194,7 @@ impl<P: WsClientProvider> Actor for WsClient<P> {
     }
 }
 
-impl<P: WsClientProvider> StreamHandler<ws::Message, ws::ProtocolError> for WsClient<P> {
+impl<P: WsClientNetworkService> StreamHandler<ws::Message, ws::ProtocolError> for WsClient<P> {
     /// Handle messages received over the WebSocket.
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
         match msg {

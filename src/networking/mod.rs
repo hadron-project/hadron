@@ -50,6 +50,17 @@ pub(self) const PEER_HB_THRESHOLD: Duration = Duration::from_secs(10);
 pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
+// NetworkAppService /////////////////////////////////////////////////////////////////////////////
+
+// pub(super) trait NetworkAppService: 'static {
+//     /// The type to use as the service. Should just be `Self` of the implementing type.
+//     type Actor: Actor<Context=Self::Context> + Handler<VerifyToken>;
+
+//     /// The type to use as the storage actor's context. Should be `Context<Self>` or `SyncContext<Self>`.
+//     type Context: ActorContext + ToEnvelope<Self::Actor, VerifyToken>;
+// }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
 // ServerState ///////////////////////////////////////////////////////////////////////////////////
 
 /// A type used as a shared state context for all WebSocket actor instances.
@@ -300,6 +311,8 @@ impl Handler<ClosingPeerConnection> for Network {
                 self.socketaddr_to_peer.remove(&addr);
             }
         }
+
+        // TODO: propagate info to parent app.
     }
 }
 
@@ -351,6 +364,8 @@ impl Handler<PeerConnectionLive> for Network {
 
         // Propagate new routing info.
         // TODO: impl this.
+
+        // TODO: propagate info to parent app.
 
         Ok(())
     }
