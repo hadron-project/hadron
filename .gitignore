@@ -1,5 +1,8 @@
 # File Ignores #
 
 # Directory Ignores #
+.cargo
+actix-raft
 guide/book
 target
+vendor

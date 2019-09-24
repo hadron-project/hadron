@@ -7,7 +7,7 @@ version = "0.1.0"
 [dependencies]
 actix = "0.8"
 actix-codec = "0.1"
-actix-raft = "0.3"
+actix-raft = { path="actix-raft" }
 actix-web = "1.0"
 actix-web-actors = "1.0"
 awc = "0.2"
@@ -23,6 +23,7 @@ log = "0.4"
 prost = "0.5"
 serde = { version="1", features=["derive"] }
 sled = "0.28"
+tracing = "0.1"
 trust-dns-resolver = "0.11"
 uuid = { version="0.7", default-features=false, features=["v4"] }
 

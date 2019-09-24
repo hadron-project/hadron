@@ -48,15 +48,17 @@ pub mod request {
 /// A response to an earlier sent request.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Response {
-    #[prost(oneof="response::Segment", tags="1, 2")]
+    #[prost(oneof="response::Segment", tags="1, 2, 3")]
     pub segment: ::std::option::Option<response::Segment>,
 }
 pub mod response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Segment {
-        #[prost(message, tag="1")]
-        Handshake(super::Handshake),
+        #[prost(enumeration="super::Error", tag="1")]
+        Error(i32),
         #[prost(message, tag="2")]
+        Handshake(super::Handshake),
+        #[prost(message, tag="3")]
         Raft(super::RaftResponse),
     }
 }
@@ -108,9 +110,17 @@ pub mod raft_response {
         InstallSnapshot(std::vec::Vec<u8>),
     }
 }
-/// A disconnect variant.
+/// A peer error variant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Error {
+    /// An internal error has taken place. The request should be safe to retry, if related to a request.
+    Internal = 0,
+}
+/// A frame indicating that the peer connection must disconnect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Disconnect {
+    /// The disconnect frame has been sent because the connection is no longer valid..
     ConnectionInvalid = 0,
 }

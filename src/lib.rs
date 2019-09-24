@@ -9,6 +9,7 @@ mod consensus;
 mod db;
 mod discovery;
 mod proto;
+mod utils;
 
 // Public exports for binaries.
 pub use crate::{

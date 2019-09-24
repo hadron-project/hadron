@@ -33,13 +33,21 @@ message Request {
 // A response to an earlier sent request.
 message Response {
   oneof segment {
-    Handshake handshake = 1;
-    RaftResponse raft = 2;
+    Error error = 1;
+    Handshake handshake = 2;
+    RaftResponse raft = 3;
   }
 }
 
-// A disconnect variant.
+// A peer error variant.
+enum Error {
+  // An internal error has taken place. The request should be safe to retry, if related to a request.
+  Internal = 0;
+}
+
+// A frame indicating that the peer connection must disconnect.
 enum Disconnect {
+  // The disconnect frame has been sent because the connection is no longer valid..
   ConnectionInvalid = 0;
 }
 

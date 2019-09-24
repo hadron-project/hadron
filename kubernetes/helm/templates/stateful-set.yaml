@@ -35,7 +35,7 @@ spec:
             - containerPort: {{.Values.statefulSet.pod.port}}
           env:
             - name: RUST_LOG
-              value: railgun=debug,actix_raft=info
+              value: railgun=debug,actix_raft=debug
             - name: RG_PORT
               value: {{.Values.statefulSet.pod.port | quote}}
             - name: RG_INITIAL_CLUSTER_FORMATION_DELAY

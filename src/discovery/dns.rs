@@ -37,7 +37,6 @@ impl DnsDiscovery {
     }
 
     fn poll_dns(&mut self, ctx: &mut Context<Self>) {
-        debug!("Starting new DNS peer discovery request.");
         ctx.spawn(
             fut::wrap_future(self.resolver.lookup_ip(self.discovery_dns_name.as_str()))
                 .map(|lookup_res, act: &mut Self, _| {
@@ -59,6 +58,7 @@ impl Actor for DnsDiscovery {
     /// configured DNS name.
     fn started(&mut self, ctx: &mut Context<Self>) {
         debug!("Booting the DNS discovery backend.");
+        self.poll_dns(ctx);
         ctx.run_interval(Duration::from_secs(10), |act, ctx| act.poll_dns(ctx));
     }
 }

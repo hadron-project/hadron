@@ -28,7 +28,7 @@ use actix_raft::{
 };
 use bincode;
 use failure;
-use log::{error, info};
+use log::{debug, error, info};
 use sled;
 use uuid;
 
@@ -152,17 +152,15 @@ impl SledStorage {
         let db = sled::Db::open(db_path)?;
         let mut hasher = DefaultHasher::default();
         let id: u64 = match db.get(NODE_ID_KEY)? {
-            Some(id) => {
-                hasher.write(id.as_ref());
-                hasher.finish()
-            },
+            Some(id) => unchecked_u64_from_be_bytes(id),
             None => {
                 uuid::Uuid::new_v4().hash(&mut hasher);
                 let id: u64 = hasher.finish();
-                db.insert(NODE_ID_KEY, id.to_le_bytes().as_ref())?;
+                db.insert(NODE_ID_KEY, id.to_be_bytes().as_ref())?;
                 id
             }
         };
+        debug!("Node ID: {}", id);
 
         // Initialize and restore any previous state from disk.
         let log = db.open_tree(RAFT_LOG_PREFIX)?;
