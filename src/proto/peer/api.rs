@@ -5,7 +5,7 @@ pub struct Meta {
     #[prost(string, tag="1")]
     pub id: std::string::String,
 }
-/// An API frame.
+/// A peer to peer message frame.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Frame {
     /// The metadata of the frame.
@@ -19,18 +19,21 @@ pub mod frame {
     /// The payload of data for this frame.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Payload {
-        #[prost(message, tag="2")]
-        Request(super::Request),
-        #[prost(message, tag="3")]
-        Response(super::Response),
-        #[prost(enumeration="super::Disconnect", tag="4")]
+        #[prost(enumeration="super::Disconnect", tag="2")]
         Disconnect(i32),
+        #[prost(message, tag="3")]
+        Request(super::Request),
+        #[prost(message, tag="4")]
+        Response(super::Response),
     }
 }
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Frame Variants ////////////////////////////////////////////////////////////////////////////////
+
 /// A request from a peer node.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Request {
-    #[prost(oneof="request::Segment", tags="1")]
+    #[prost(oneof="request::Segment", tags="1, 2")]
     pub segment: ::std::option::Option<request::Segment>,
 }
 pub mod request {
@@ -38,19 +41,25 @@ pub mod request {
     pub enum Segment {
         #[prost(message, tag="1")]
         Handshake(super::Handshake),
+        #[prost(message, tag="2")]
+        Raft(super::RaftRequest),
     }
 }
 /// A response to an earlier sent request.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Response {
-    #[prost(oneof="response::Segment", tags="1")]
+    #[prost(oneof="response::Segment", tags="1, 2, 3")]
     pub segment: ::std::option::Option<response::Segment>,
 }
 pub mod response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Segment {
-        #[prost(message, tag="1")]
+        #[prost(enumeration="super::Error", tag="1")]
+        Error(i32),
+        #[prost(message, tag="2")]
         Handshake(super::Handshake),
+        #[prost(message, tag="3")]
+        Raft(super::RaftResponse),
     }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -64,9 +73,54 @@ pub struct Handshake {
     #[prost(string, tag="2")]
     pub routing_info: std::string::String,
 }
-/// A disconnect variant.
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Raft Request & Response ///////////////////////////////////////////////////////////////////////
+
+/// A Raft request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RaftRequest {
+    #[prost(oneof="raft_request::Payload", tags="1, 2, 3")]
+    pub payload: ::std::option::Option<raft_request::Payload>,
+}
+pub mod raft_request {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Payload {
+        #[prost(bytes, tag="1")]
+        AppendEntries(std::vec::Vec<u8>),
+        #[prost(bytes, tag="2")]
+        Vote(std::vec::Vec<u8>),
+        #[prost(bytes, tag="3")]
+        InstallSnapshot(std::vec::Vec<u8>),
+    }
+}
+/// A Raft response.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RaftResponse {
+    #[prost(oneof="raft_response::Payload", tags="1, 2, 3")]
+    pub payload: ::std::option::Option<raft_response::Payload>,
+}
+pub mod raft_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Payload {
+        #[prost(bytes, tag="1")]
+        AppendEntries(std::vec::Vec<u8>),
+        #[prost(bytes, tag="2")]
+        Vote(std::vec::Vec<u8>),
+        #[prost(bytes, tag="3")]
+        InstallSnapshot(std::vec::Vec<u8>),
+    }
+}
+/// A peer error variant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Error {
+    /// An internal error has taken place. The request should be safe to retry, if related to a request.
+    Internal = 0,
+}
+/// A frame indicating that the peer connection must disconnect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Disconnect {
+    /// The disconnect frame has been sent because the connection is no longer valid..
     ConnectionInvalid = 0,
 }

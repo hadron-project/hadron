@@ -2,7 +2,7 @@ Durable Streams
 ===============
 Durable streams are append-only, immutable logs of data.
 
-- Durable stream messages have no concept of “topics”. The stream itself can be named hierarchically, but wildcards have no meaning to consumers. Stream names must conform to the pattern: `[-_A-Za-z0-9.]+`.
+- Stream names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards. Consumers do not use wildcards for streams.
 - Provides **at least once delivery semantics** by default, or **exactly once delivery semantics** if writing to a stream with [unique id checking](#unique-id-checking) enabled.
 - Stream data is replicated accross the entire cluster via the Raft consensus protocol which guarantees strict linearizability.
 - Messages must be ack’ed. Messages may be nack’ed to indicate that redelivery is needed. Redelivery may be immediate or may have a delay applied to the message (for the consumer group only). Automatic redelivery takes place when the consumer dies and can not ack or nack amessage. Redelivery delays are tied directly to the lifetime of consumers and their durability. See the [consumers section](#consumers) below for more details.

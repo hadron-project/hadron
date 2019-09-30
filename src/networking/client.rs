@@ -11,10 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use actix::{
-    prelude::*,
-    dev::ToEnvelope,
-};
+use actix::prelude::*;
 use actix_web_actors::ws;
 use bytes;
 use log::{debug, error, info, warn};
@@ -22,8 +19,7 @@ use uuid;
 
 use crate::{
     NodeId,
-    auth::{Claims, ClaimsV1},
-    networking::{Network},
+    auth::{Claims},
     proto::client::api::{
         self, ClientError,
         client_frame::Payload as ClientPayload,
@@ -32,40 +28,28 @@ use crate::{
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// WsClientProvider //////////////////////////////////////////////////////////////////////////////
+// WsClientServices //////////////////////////////////////////////////////////////////////////////
 
-/// The `WsClient` actor's provider interface.
-pub(super) trait WsClientProvider: 'static {
-    /// The type to use as the provider. Should just be `Self` of the implementing type.
-    type Actor: Actor<Context=Self::Context> + Handler<VerifyToken>;
-
-    /// The type to use as the storage actor's context. Should be `Context<Self>` or `SyncContext<Self>`.
-    type Context: ActorContext + ToEnvelope<Self::Actor, VerifyToken>;
+/// All services needed by the `WsClient` actor.
+pub(super) struct WsClientServices {
+    verify_token: Recipient<VerifyToken>,
 }
+
+impl WsClientServices {
+    /// Create a new instance.
+    pub fn new(verify_token: Recipient<VerifyToken>) -> Self {
+        Self{verify_token}
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// VerifyToken ///////////////////////////////////////////////////////////////////////////////////
 
 /// Check if the given token is still valid based on its ID.
 pub(super) struct VerifyToken(pub String);
 
 impl Message for VerifyToken {
     type Result = Result<Claims, ClientError>;
-}
-
-impl WsClientProvider for Network {
-    type Actor = Self;
-    type Context = Context<Self>;
-}
-
-impl Handler<VerifyToken> for Network {
-    type Result = ResponseActFuture<Self, Claims, ClientError>;
-
-    fn handle(&mut self, msg: VerifyToken, _ctx: &mut Context<Self>) -> Self::Result {
-        // TODO: implement this. See #24.
-        if msg.0.len() != 0 {
-            Box::new(fut::err(ClientError::new_unauthorized()))
-        } else {
-            Box::new(fut::ok(Claims::V1(ClaimsV1{all: true, grants: Vec::new()})))
-        }
-    }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -88,26 +72,20 @@ struct ClientStateActive {
 // WsClient //////////////////////////////////////////////////////////////////////////////////////
 
 /// An actor responsible for handling inbound WebSocket connections from clients.
-pub(super) struct WsClient<P: WsClientProvider> {
+pub(super) struct WsClient {
     /// The ID of this node.
     _node_id: NodeId,
-
-    /// The address of the provider.
-    provider: Addr<P::Actor>,
-
+    /// The services which this actor depends upon.
+    services: WsClientServices,
     /// The ID assigned to this connection.
     connection_id: String,
-
     /// The last successful heartbeat on this socket. Will reckon the client as being dead after
     /// `CLIENT_HB_THRESHOLD` has been exceeded since last successful heartbeat.
     heartbeat: Instant,
-
     /// A handle to the heartbeat interval job.
     heartbeat_handle: Option<SpawnHandle>,
-
     /// The state of the client connection.
     state: ClientState,
-
     /// The configured liveness threshold for this client connection.
     ///
     /// If this amount of time elapses without hearing from the client, it will be reckoned dead.
@@ -115,11 +93,11 @@ pub(super) struct WsClient<P: WsClientProvider> {
     liveness_threshold: Duration,
 }
 
-impl<P: WsClientProvider> WsClient<P> {
+impl WsClient {
     /// Create a new instance.
-    pub fn new(provider: Addr<P::Actor>, _node_id: NodeId, liveness_threshold: Duration) -> Self {
+    pub fn new(services: WsClientServices, _node_id: NodeId, liveness_threshold: Duration) -> Self {
         Self{
-            _node_id, provider,
+            _node_id, services,
             connection_id: uuid::Uuid::new_v4().to_string(),
             heartbeat: Instant::now(),
             heartbeat_handle: None,
@@ -136,8 +114,8 @@ impl<P: WsClientProvider> WsClient<P> {
             return self.send_frame(ServerPayload::Connect(api::ConnectResponse{error: None, id: self.connection_id.clone()}), meta, ctx);
         }
 
-        // Call provider to validate the given token and extract its claims object.
-        let f = fut::wrap_future(self.provider.send(VerifyToken(frame.token)))
+        // Call network service to validate the given token and extract its claims object.
+        let f = fut::wrap_future(self.services.verify_token.send(VerifyToken(frame.token)))
             .map_err(|_, _: &mut Self, _| ClientError::new_internal())
             .and_then(|res, _, _| fut::result(res))
 
@@ -182,7 +160,7 @@ impl<P: WsClientProvider> WsClient<P> {
     }
 }
 
-impl<P: WsClientProvider> Actor for WsClient<P> {
+impl Actor for WsClient {
     type Context = ws::WebsocketContext<Self>;
 
     /// Logic for starting this actor.
@@ -194,7 +172,7 @@ impl<P: WsClientProvider> Actor for WsClient<P> {
     }
 }
 
-impl<P: WsClientProvider> StreamHandler<ws::Message, ws::ProtocolError> for WsClient<P> {
+impl StreamHandler<ws::Message, ws::ProtocolError> for WsClient {
     /// Handle messages received over the WebSocket.
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
         match msg {

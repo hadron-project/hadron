@@ -9,8 +9,7 @@ mod consensus;
 mod db;
 mod discovery;
 mod proto;
-
-// use serde::{Serialize, Deserialize};
+mod utils;
 
 // Public exports for binaries.
 pub use crate::{

@@ -18,34 +18,52 @@ use actix_web::{
     web,
 };
 use actix_web_actors::ws;
-use futures::future::err as fut_err;
+use futures::future::{
+    Either,
+    err as fut_err,
+};
 use log::{debug, error};
 
 use crate::{
     NodeId,
-    app,
-    proto::{peer},
+    app::{InboundRaftRequest, UpdatePeerInfo},
+    auth::{Claims, ClaimsV1},
     config::Config,
     networking::{
-        from_peer::WsFromPeer,
-        to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer},
+        client::{VerifyToken, WsClient, WsClientServices},
+        from_peer::{WsFromPeer, WsFromPeerServices},
+        to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer, WsToPeerServices},
     },
     discovery::{
         Discovery, ObservedPeersChangeset,
     },
+    proto::{client::api::ClientError, peer::{self, api}},
 };
-
-type WsClient = client::WsClient<Network>;
 
 /// The interval at which heartbeats are sent to peer nodes.
 pub(self) const PEER_HB_INTERVAL: Duration = Duration::from_secs(2);
-
 /// The amount of time which is allowed to elapse between successful heartbeats before a
 /// connection is reckoned as being dead between peer nodes.
 pub(self) const PEER_HB_THRESHOLD: Duration = Duration::from_secs(10);
-
 /// The amount of time which is allowed to elapse between a handshake request/response cycle.
 pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// NetworkServices  //////////////////////////////////////////////////////////////////////////////
+
+/// All services needed by the `Network` actor.
+#[derive(Clone)]
+pub struct NetworkServices {
+    pub update_peer_info: Recipient<UpdatePeerInfo>,
+    pub inbound_raft_request: Recipient<InboundRaftRequest>,
+}
+
+impl NetworkServices {
+    /// Create a new instance.
+    pub fn new(update_peer_info: Recipient<UpdatePeerInfo>, inbound_raft_request: Recipient<InboundRaftRequest>) -> Self {
+        Self{update_peer_info, inbound_raft_request}
+    }
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // ServerState ///////////////////////////////////////////////////////////////////////////////////
@@ -54,6 +72,7 @@ pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Clone)]
 pub(self) struct ServerState {
     pub parent: Addr<Network>,
+    pub services: NetworkServices,
     pub node_id: NodeId,
     pub config: Arc<Config>,
 }
@@ -87,7 +106,7 @@ enum PeerAddr {
 ///
 /// See the README.md in this directory for additional information on actor responsibilities.
 pub struct Network {
-    _app: Addr<app::App>,
+    services: NetworkServices,
     node_id: NodeId,
     config: Arc<Config>,
     server: Option<Server>,
@@ -102,7 +121,7 @@ impl Network {
     /// This is expected to be called from within this actors `App::create` method which provides
     /// the context, and thus the address, of this actor. This is needed for spawning other actors
     /// and setting up proper communication channels.
-    pub fn new(ctx: &mut Context<Self>, app: Addr<app::App>, node_id: NodeId, config: Arc<Config>) -> Self {
+    pub fn new(ctx: &mut Context<Self>, services: NetworkServices, node_id: NodeId, config: Arc<Config>) -> Self {
 
         // Boot the configured discovery system on a new dedicated thread.
         let (recipient, innercfg) = (ctx.address().recipient(), config.clone());
@@ -111,9 +130,7 @@ impl Network {
         );
 
         Network{
-            _app: app,
-            node_id,
-            config,
+            services, node_id, config,
             server: None,
             socketaddr_to_peer: HashMap::new(),
             routing_table: HashMap::new(),
@@ -123,7 +140,7 @@ impl Network {
 
     /// Build a new network server instance for use by this system.
     pub fn build_server(&self, ctx: &Context<Self>) -> Result<Server, ()> {
-        let data = ServerState{parent: ctx.address(), node_id: self.node_id, config: self.config.clone()};
+        let data = ServerState{parent: ctx.address(), services: self.services.clone(), node_id: self.node_id, config: self.config.clone()};
         let server = HttpServer::new(move || {
             App::new().data(data.clone())
                 // This endpoint is used for internal client communication.
@@ -143,12 +160,33 @@ impl Network {
     /// Handler for opening new peer WebSocket connections.
     fn handle_peer_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
         debug!("Handling a new peer connection request.");
-        ws::start(WsFromPeer::new(data.parent.clone(), data.node_id), &req, stream)
+        let services = WsFromPeerServices::new(data.parent.clone().recipient(),
+            data.services.inbound_raft_request.clone(),
+            data.parent.clone().recipient(),
+        );
+        ws::start(WsFromPeer::new(services, data.node_id), &req, stream)
     }
 
     fn handle_client_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
         debug!("Handling a new client connection request.");
-        ws::start(WsClient::new(data.parent.clone(), data.node_id, data.config.client_liveness_threshold()), &req, stream)
+        ws::start(WsClient::new(WsClientServices::new(data.parent.clone().recipient()), data.node_id, data.config.client_liveness_threshold()), &req, stream)
+    }
+
+    pub(self) fn send_outbound_peer_request(&mut self, msg: OutboundPeerRequest, _: &mut Context<Self>) -> impl Future<Item=api::Response, Error=()> {
+        // Get a reference to actor which is holding the connection to the target node.
+        let addr = match self.routing_table.get(&msg.target_node) {
+            None => {
+                error!("Attempted to send an outbound peer request to a peer which is not registered in the connections routing table.");
+                return Either::B(fut_err(()));
+            }
+            Some(addr) => addr,
+        };
+
+        // Send the outbound request to the target node.
+        match addr {
+            PeerAddr::FromPeer(iaddr) => Either::A(Either::A(iaddr.send(msg).map_err(|_| ()).and_then(|res| res))),
+            PeerAddr::ToPeer(iaddr) => Either::A(Either::B(iaddr.send(msg).map_err(|_| ()).and_then(|res| res))),
+        }
     }
 }
 
@@ -203,7 +241,8 @@ impl Handler<ObservedPeersChangeset> for Network {
         // Spawn new outbound connections to peers.
         tospawn.into_iter().for_each(|socketaddr| {
             debug!("Spawning a new outbound peer connection to '{}'.", &socketaddr);
-            let addr = WsToPeer::new(ctx.address(), self.node_id, socketaddr).start();
+            let services = WsToPeerServices::new(ctx.address().recipient(), self.services.inbound_raft_request.clone(), ctx.address().recipient());
+            let addr = WsToPeer::new(services, self.node_id, socketaddr).start();
             let discovery_state = DiscoveryState::Observed;
             self.socketaddr_to_peer.insert(socketaddr, WsToPeerState{addr, discovery_state});
         });
@@ -243,11 +282,7 @@ pub(self) enum PeerHandshakeState {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// ClosingPeerConnection /////////////////////////////////////////////////////////////////////////
-
-/// A message type used to indicate that a peer connection is closing.
-#[derive(Message)]
-pub(self) struct ClosingPeerConnection(pub PeerConnectionIdentifier);
+// PeerConnectionIdentifier //////////////////////////////////////////////////////////////////////
 
 /// The element used to identify a peer connection.
 ///
@@ -264,6 +299,13 @@ pub enum PeerConnectionIdentifier {
     SocketAddrAndId(SocketAddr, NodeId),
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// ClosingPeerConnection /////////////////////////////////////////////////////////////////////////
+
+/// A message type used to indicate that a peer connection is closing.
+#[derive(Message)]
+pub struct ClosingPeerConnection(pub PeerConnectionIdentifier);
+
 impl Handler<ClosingPeerConnection> for Network {
     type Result = ();
 
@@ -272,6 +314,8 @@ impl Handler<ClosingPeerConnection> for Network {
         match msg.0 {
             PeerConnectionIdentifier::NodeId(id) => {
                 self.routing_table.remove(&id);
+                let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Remove(id))
+                    .map_err(|err| error!("Error sending `UpdatePeerInfo::Remove` from `Network` actor. {}", err));
             }
             PeerConnectionIdentifier::SocketAddr(addr) => {
                 self.socketaddr_to_peer.remove(&addr);
@@ -279,6 +323,8 @@ impl Handler<ClosingPeerConnection> for Network {
             PeerConnectionIdentifier::SocketAddrAndId(addr, id) => {
                 self.routing_table.remove(&id);
                 self.socketaddr_to_peer.remove(&addr);
+                let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Remove(id))
+                    .map_err(|err| error!("Error sending `UpdatePeerInfo::Remove` from `Network` actor. {}", err));
             }
         }
     }
@@ -287,9 +333,8 @@ impl Handler<ClosingPeerConnection> for Network {
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // PeerConnectionLive ////////////////////////////////////////////////////////////////////////////
 
-// TODO: get this wired up with child actors and handle here.
-
-pub(self) struct PeerConnectionLive {
+/// A message indicating that a connection with a specific peer is now live.
+pub struct PeerConnectionLive {
     /// The ID of the peer with which the connection is now live.
     peer_id: NodeId,
 
@@ -302,41 +347,45 @@ pub(self) struct PeerConnectionLive {
 }
 
 impl Message for PeerConnectionLive {
-    type Result = Result<(), peer::api::Disconnect>;
+    type Result = ();
 }
 
 impl Handler<PeerConnectionLive> for Network {
-    type Result = Result<(), peer::api::Disconnect>;
+    type Result = ();
 
     /// Handle messages from child actors indicating that their connections are now live.
     ///
     /// This routine is responsible for a checking to ensure that the newly connected peer doesn't
-    /// already have a connection. If it does, it will respond to the caller with an error
-    /// indicating that such is the case.
+    /// already have a connection. If it does, it will sever the old connection, replacing it with
+    /// the new connection.
     ///
     /// It will also update this actor's internal state to map the peer's node ID to the actor's
-    /// address for message routing, and will propagate the routing of the newly connected peer
-    /// to the App actor for high-level controls.
-    fn handle(&mut self, msg: PeerConnectionLive, _ctx: &mut Self::Context) -> Self::Result {
-        // If a connection already exists to the target peer, then this connection is invalid.
-        if self.routing_table.contains_key(&msg.peer_id) {
-            debug!("Connection with peer {} already established.", &msg.peer_id);
-            return Err(peer::api::Disconnect::ConnectionInvalid);
-        }
-
+    /// address for message routing, and will propagate the routing info of the newly connected
+    /// peer to the App actor for high-level controls.
+    fn handle(&mut self, msg: PeerConnectionLive, _ctx: &mut Self::Context) {
         // Update routing table with new information.
-        debug!("Connection with peer {} now live.", &msg.peer_id);
-        self.routing_table.insert(msg.peer_id, msg.addr);
-        for peer in self.routing_table.keys() {
-            debug!("Is connected to: {}", peer);
+        let old = self.routing_table.insert(msg.peer_id, msg.addr);
+
+        // If an old connection has been replaced, disconnect it.
+        match old {
+            Some(PeerAddr::FromPeer(addr)) => addr.do_send(DisconnectPeer),
+            Some(PeerAddr::ToPeer(addr)) => addr.do_send(DisconnectPeer),
+            None => (),
         }
+        self.routing_table.keys().for_each(|peer| debug!("Is connected to: {}", peer));
 
-        // Propagate new routing info.
-        // TODO: impl this.
-
-        Ok(())
+        // Update app instance with new connection info.
+        let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Update{peer: msg.peer_id, routing_info: msg.routing_info})
+            .map_err(|err| error!("Error sending `UpdatePeerInfo::Update` from `Network` actor. {}", err));
     }
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// DisconnectPeer ////////////////////////////////////////////////////////////////////////////////
+
+/// A message instructing a peer connection to be severed.
+#[derive(Message)]
+pub(self) struct DisconnectPeer;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // OutboundPeerRequest ///////////////////////////////////////////////////////////////////////////
@@ -344,8 +393,9 @@ impl Handler<PeerConnectionLive> for Network {
 /// A wrapper type for outbound requests destined for a specific peer.
 ///
 /// The parent `Network` actor will receive messages from other higher-level actors to have
-/// messages sent to specific destinations by Node ID. This same message instance will then be
-/// forwarded to a specific child actor responsible for the target socket.
+/// messages sent to specific destinations by Node ID. Different message types are used by other
+/// higher-level actors, as different actors may require different intnerfaces, but they should
+/// all use this message type in their handlers to interact with the peer connection actors.
 pub struct OutboundPeerRequest {
     pub request: peer::api::Request,
     pub target_node: NodeId,
@@ -356,55 +406,18 @@ impl actix::Message for OutboundPeerRequest {
     type Result = Result<peer::api::Response, ()>;
 }
 
-impl Handler<OutboundPeerRequest> for Network {
-    type Result = ResponseFuture<peer::api::Response, ()>;
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// VerifyToken ///////////////////////////////////////////////////////////////////////////////////
 
-    /// Handle requests to send outbound messages to a connected peer.
-    fn handle(&mut self, msg: OutboundPeerRequest, _ctx: &mut Self::Context) -> Self::Result {
-        // Get a reference to actor which is holding the connection to the target node.
-        let addr = match self.routing_table.get(&msg.target_node) {
-            None => {
-                error!("Attempted to send an outbound peer request to a peer which is not registered in the connections routing table.");
-                return Box::new(fut_err(()));
-            }
-            Some(addr) => addr,
-        };
+impl Handler<VerifyToken> for Network {
+    type Result = ResponseActFuture<Self, Claims, ClientError>;
 
-        // Send the outbound request to the target node.
-        match addr {
-            PeerAddr::FromPeer(iaddr) => Box::new(iaddr.send(msg)
-                .map_err(|_| ())
-                .and_then(|res| res)),
-            PeerAddr::ToPeer(iaddr) => Box::new(iaddr.send(msg)
-                .map_err(|_| ())
-                .and_then(|res| res)),
+    fn handle(&mut self, msg: VerifyToken, _ctx: &mut Context<Self>) -> Self::Result {
+        // TODO: implement this. See #24.
+        if msg.0.len() != 0 {
+            Box::new(fut::err(ClientError::new_unauthorized()))
+        } else {
+            Box::new(fut::ok(Claims::V1(ClaimsV1{all: true, grants: Vec::new()})))
         }
-    }
-}
-
-// TODO: probably something like this.
-// #[derive(Message)]
-// pub(self) struct OutboundPeerResponse {
-//     pub frame: PeerFrame,
-//     pub target_node: String,
-// }
-
-// TODO: probably something like this.
-// #[derive(Message)]
-// pub(self) struct OutboundClientResponse {
-//     pub frame: ClientFrame,
-//     pub target_client: String,
-// }
-
-/// A message type wrapping an inbound peer API request along with its metadata.
-#[derive(Message)]
-pub struct InboundPeerRequest(peer::api::Request, peer::api::Meta);
-
-impl Handler<InboundPeerRequest> for Network {
-    type Result = ();
-
-    /// Handle inbound peer API requests.
-    fn handle(&mut self, _msg: InboundPeerRequest, _ctx: &mut Self::Context) {
-        // TODO: handle sending this request over to the App actor for high-level handling.
     }
 }

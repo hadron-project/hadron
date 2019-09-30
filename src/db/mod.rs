@@ -1,6 +1,7 @@
 //! A module encapsulating all logic for interfacing with the data storage system.
 
 mod db_sled;
+mod models;
 
 use actix_raft;
 

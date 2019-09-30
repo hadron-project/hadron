@@ -4,6 +4,7 @@ Pipelines are pre-defined multi-stage data workflows, structured in terms of a g
 
 Pipelines may be used to model services which are responsible for handling request/response traffic — in which case the pipline will start with an RPC endpoint. Pipelines may also be used to model background tasks which do not handle client traffic — in which case the pipeline will start with a durable stream stage. This is perfect for asynchronous build systems, provisioning, data processing, custom jobs, and the like.
 
+- Pipeline names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
 - Pipelines may be composed of 1 or more stages (nodes of the graph), which are just streams with their associated handler functions.
 - Pipelines must have exactly one entrypoint stage. That stage may be an RPC message handler or a stream handler. All other downstream stages of a pipeline must be stream handler stages (not ephemeral or RPC message handler stages).
 - Pipelines are exclusive. They represent a single type of action to be taken over the data moving through the pipeline. All consumers of pipeline stages will be treated as being part of the same consumer group and messages will be load balanced across all consumers. To consume from a public stage of a pipeline for some purpose outside of the scope of the pipeline, use the standard stream consumer or RPC consumer APIs.

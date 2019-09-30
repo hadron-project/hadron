@@ -1,4 +1,7 @@
 # Directory Ignores #
+actix-raft/target
+guide
+kubernetes
 target
 
 # File Ignores #
