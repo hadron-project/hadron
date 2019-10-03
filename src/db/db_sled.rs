@@ -9,10 +9,8 @@ use std::{
 use actix::prelude::*;
 use actix_raft::{
     RaftStorage,
-    messages::{Entry, MembershipConfig},
+    messages::MembershipConfig,
     storage::{
-        AppendLogEntry,
-        ApplyToStateMachine,
         CreateSnapshot,
         CurrentSnapshotData,
         GetCurrentSnapshot,
@@ -21,22 +19,26 @@ use actix_raft::{
         HardState,
         InitialState,
         InstallSnapshot,
-        // InstallSnapshotChunk,
-        ReplicateLogEntries,
+        AppendEntryToLog,
+        ReplicateToLog,
+        ApplyEntryToStateMachine,
+        ReplicateToStateMachine,
         SaveHardState,
     },
 };
 use bincode;
 use failure;
 use log::{debug, error, info};
-use sled;
+use sled::{self, Transactional};
 use uuid;
 
 use crate::{
     NodeId,
+    app::{AppData, AppDataResponse, RgEntry, RgEntryNormal, RgEntryPayload},
     auth::User,
-    db::{AppData, models::{Pipeline, Stream, StreamType, StreamEntry}},
-    proto::client::api::{ClientError},
+    db::models::{Pipeline, Stream, StreamEntry, StreamWrapper},
+    proto::client::api::{self, ClientError},
+    utils,
 };
 
 /// The path to the raft log.
@@ -65,6 +67,8 @@ const OBJECTS_PIPELINES: &str = "/objects/pipelines/";
 ///
 /// Streams MUST index their data as `/streams/<namespace>/<stream_name>/<entry_index>`.
 const STREAMS_DATA_PREFIX: &str = "/streams";
+/// The key used for tracking the next index for the next entry to be written to the respective stream.
+const STREAM_NEXT_INDEX_KEY: &str = "index";
 
 /// An error from deserializing an entry.
 const ERR_DESERIALIZE_ENTRY: &str = "Failed to deserialize entry from log. Data is corrupt.";
@@ -76,22 +80,24 @@ const ERR_DESERIALIZE_USER: &str = "Failed to deserialize User from storage. Dat
 const ERR_DESERIALIZE_PIPELINE: &str = "Failed to deserialize Pipeline from storage. Data is corrupt.";
 /// An error from deserializing a Stream record.
 const ERR_DESERIALIZE_STREAM: &str = "Failed to deserialize Stream from storage. Data is corrupt.";
-/// An error from deserializing a Stream Entry record.
-const ERR_DESERIALIZE_STREAM_ENTRY: &str = "Failed to deserialize Stream Entry from storage. Data is corrupt.";
+// /// An error from deserializing a Stream Entry record.
+// const ERR_DESERIALIZE_STREAM_ENTRY: &str = "Failed to deserialize Stream Entry from storage. Data is corrupt.";
+/// An error while sending messages between the async/sync DB actors.
+const ERR_DURING_DB_MSG: &str = "Actix MailboxError during messaging betweenn DB actors.";
 /// An initialization error where an entry was expected, but none was found.
 const ERR_MISSING_ENTRY: &str = "Unable to access expected log entry.";
 /// An error from an endpoint's index being malformed.
 const ERR_MALFORMED_ENDPOINT_INDEX: &str = "Malformed index for endpoint.";
 
-type RgEntry = Entry<AppData>;
-type RgAppendLogEntry = AppendLogEntry<AppData, ClientError>;
-type RgApplyToStateMachine = ApplyToStateMachine<AppData, ClientError>;
+type RgAppendEntryToLog = AppendEntryToLog<AppData, ClientError>;
+type RgApplyEntryToStateMachine = ApplyEntryToStateMachine<AppData, AppDataResponse, ClientError>;
 type RgCreateSnapshot = CreateSnapshot<ClientError>;
 type RgGetCurrentSnapshot = GetCurrentSnapshot<ClientError>;
 type RgGetInitialState = GetInitialState<ClientError>;
 type RgGetLogEntries = GetLogEntries<AppData, ClientError>;
 type RgInstallSnapshot = InstallSnapshot<ClientError>;
-type RgReplicateLogEntries = ReplicateLogEntries<AppData, ClientError>;
+type RgReplicateToLog = ReplicateToLog<AppData, ClientError>;
+type RgReplicateToStateMachine = ReplicateToStateMachine<AppData, ClientError>;
 type RgSaveHardState = SaveHardState<ClientError>;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -134,13 +140,13 @@ pub struct SledStorage {
     last_log_term: u64,
     /// The index of the last Raft entry to be applied to storage.
     last_applied_log: u64,
-    object_collections: Arc<ObjectCollections>,
+    #[allow(dead_code)] object_collections: Arc<ObjectCollections>,
     #[allow(dead_code)] indexed_users: BTreeMap<String, User>,
     #[allow(dead_code)] indexed_tokens: BTreeSet<String>,
     #[allow(dead_code)] indexed_namespaces: BTreeSet<String>,
-    #[allow(dead_code)] indexed_endpoints: BTreeSet<(String, String)>,
-    #[allow(dead_code)] indexed_pipelines: BTreeMap<(String, String), Pipeline>,
-    #[allow(dead_code)] indexed_streams: BTreeMap<(String, String), Stream>,
+    #[allow(dead_code)] indexed_endpoints: BTreeSet<String>,
+    #[allow(dead_code)] indexed_pipelines: BTreeMap<String, Pipeline>,
+    indexed_streams: BTreeMap<String, StreamWrapper>,
 }
 
 impl SledStorage {
@@ -285,21 +291,22 @@ impl SledStorage {
     }
 
     /// Index endpoints data.
-    fn index_endpoints_data(coll: &sled::Tree) -> Result<BTreeSet<(String, String)>, failure::Error> {
+    fn index_endpoints_data(coll: &sled::Tree) -> Result<BTreeSet<String>, failure::Error> {
         let mut index = BTreeSet::new();
         for res in coll.iter() {
             let (_, endpoint) = res?;
             let val = String::from_utf8(endpoint.to_vec())?;
-            let parts = val.splitn(2, "/").collect::<Vec<_>>();
-            let ns = parts.get(0).ok_or_else(|| failure::err_msg(ERR_MALFORMED_ENDPOINT_INDEX))?.to_string();
-            let endpoint = parts.get(1).ok_or_else(|| failure::err_msg(ERR_MALFORMED_ENDPOINT_INDEX))?.to_string();
-            index.insert((ns, endpoint));
+            let parts = val.splitn(2, "/");
+            if parts.count() != 2 {
+                return Err(failure::err_msg(ERR_MALFORMED_ENDPOINT_INDEX));
+            }
+            index.insert(val);
         }
         Ok(index)
     }
 
     /// Index pipelines data.
-    fn index_pipelines_data(coll: &sled::Tree) -> Result<BTreeMap<(String, String), Pipeline>, failure::Error> {
+    fn index_pipelines_data(coll: &sled::Tree) -> Result<BTreeMap<String, Pipeline>, failure::Error> {
         let mut index = BTreeMap::new();
         for res in coll.iter() {
             let (_, model_raw) = res?;
@@ -307,50 +314,196 @@ impl SledStorage {
                 error!("{} {}", ERR_DESERIALIZE_PIPELINE, err);
                 failure::err_msg(ERR_DESERIALIZE_PIPELINE)
             })?;
-            index.insert((pipeline.namespace.clone(), pipeline.name.clone()), pipeline);
+            index.insert(format!("{}/{}", &pipeline.namespace, &pipeline.name), pipeline);
         }
         Ok(index)
     }
 
     /// Index streams data.
-    fn index_streams_data(db: &sled::Db, coll: &sled::Tree) -> Result<BTreeMap<(String, String), Stream>, failure::Error> {
+    fn index_streams_data(db: &sled::Db, coll: &sled::Tree) -> Result<BTreeMap<String, StreamWrapper>, failure::Error> {
         let mut index = BTreeMap::new();
         for res in coll.iter() {
             let (_, model_raw) = res?;
-            let mut stream: Stream = bincode::deserialize(&model_raw).map_err(|err| {
+            let stream: Stream = bincode::deserialize(&model_raw).map_err(|err| {
                 error!("{} {}", ERR_DESERIALIZE_STREAM, err);
                 failure::err_msg(ERR_DESERIALIZE_STREAM)
             })?;
 
-            // If the stream has a unique ID constraint, then index its IDs.
-            // TODO: we can parallelize this pretty aggressively with Rayon. See #26.
-            if let StreamType::UniqueId{index: indexed_ids} = &mut stream.stream_type {
-                let keyspace = SledStorage::stream_keyspace(&stream.namespace, &stream.name);
-                for res in db.open_tree(keyspace)?.iter() {
-                    let (_, rawmodel) = res?;
-                    let entry: StreamEntry = bincode::deserialize(&rawmodel).map_err(|err| {
-                        error!("{} {}", ERR_DESERIALIZE_STREAM_ENTRY, err);
-                        failure::err_msg(ERR_DESERIALIZE_STREAM_ENTRY)
-                    })?;
-                    if let Some(id) = entry.id {
-                        indexed_ids.insert(id);
-                    }
-                }
-            }
+            // Open stream data & metadata handles.
+            let keyspace_data = SledStorage::stream_keyspace_data(&stream.namespace, &stream.name);
+            let keyspace_meta = SledStorage::stream_keyspace_metadata(&stream.namespace, &stream.name);
+            let data_tree = db.open_tree(&keyspace_data)?;
+            let meta_tree = db.open_tree(&keyspace_meta)?;
 
-            index.insert((stream.namespace.clone(), stream.name.clone()), stream);
+            // Extract the stream's last written index, else 0.
+            let next_index = match meta_tree.get(STREAM_NEXT_INDEX_KEY)? {
+                Some(bin) => unchecked_u64_from_be_bytes(bin),
+                None => 0,
+            };
+
+            // Build stream wrapper.
+            let key = format!("{}/{}", &stream.namespace, &stream.name);
+            let stream_wrapper = StreamWrapper{stream, next_index, data: data_tree, meta: meta_tree};
+
+            // // If the stream has a unique ID constraint, then index its IDs.
+            // // TODO: we can parallelize this pretty aggressively with Rayon. See #26.
+            // if let StreamType::UniqueId{index: indexed_ids} = &mut stream.stream_type {
+            //     let keyspace = SledStorage::stream_keyspace(&stream.namespace, &stream.name);
+            //     for res in db.open_tree(keyspace)?.iter() {
+            //         let (_, rawmodel) = res?;
+            //         let entry: StreamEntry = bincode::deserialize(&rawmodel).map_err(|err| {
+            //             error!("{} {}", ERR_DESERIALIZE_STREAM_ENTRY, err);
+            //             failure::err_msg(ERR_DESERIALIZE_STREAM_ENTRY)
+            //         })?;
+            //         if let Some(id) = entry.id {
+            //             indexed_ids.insert(id);
+            //         }
+            //     }
+            // }
+
+            index.insert(key, stream_wrapper);
         }
         Ok(index)
     }
 
-    /// Get the keyspace for a stream given its namespace & name.
-    fn stream_keyspace(ns: &str, name: &str) -> String {
-        format!("{}/{}/{}/", STREAMS_DATA_PREFIX, ns, name)
+    /// Get the keyspace for a stream's data given its namespace & name.
+    fn stream_keyspace_data(ns: &str, name: &str) -> String {
+        format!("{}/{}/{}/data", STREAMS_DATA_PREFIX, ns, name)
+    }
+
+    /// Get the keyspace for a stream's metadata given its namespace & name.
+    fn stream_keyspace_metadata(ns: &str, name: &str) -> String {
+        format!("{}/{}/{}/metadata", STREAMS_DATA_PREFIX, ns, name)
     }
 
     /// This node's ID.
     pub fn node_id(&self) -> NodeId {
         self.id
+    }
+
+    /// Validate the contents of the given entry before writing it to the log.
+    fn validate_pre_log_entry(&self, entry: &RgEntryNormal) -> Result<(), ClientError> {
+        match &entry.data {
+            AppData::PubStream(data) => self.validate_pub_stream(data),
+            AppData::SubStream(data) => self.validate_sub_stream(data),
+            AppData::SubPipeline(data) => self.validate_sub_pipeline(data),
+            AppData::UnsubStream(data) => self.validate_unsub_stream(data),
+            AppData::UnsubPipeline(data) => self.validate_unsub_pipeline(data),
+            AppData::EnsureRpcEndpoint(data) => self.validate_ennsure_rpc_endpoint(data),
+            AppData::EnsureStream(data) => self.validate_ensure_stream(data),
+            AppData::EnsurePipeline(data) => self.validate_ensure_pipeline(data),
+            AppData::AckStream(data) => self.validate_ack_stream(data),
+            AppData::AckPipeline(data) => self.validate_ack_pipeline(data),
+        }
+    }
+
+    /// Validate the contents of a PubStreamRequest before it hits the log.
+    fn validate_pub_stream(&self, entry: &api::PubStreamRequest) -> Result<(), ClientError> {
+        // Ensure the target stream exists.
+        if let None = self.indexed_streams.get(&format!("{}/{}", &entry.namespace, &entry.name)) {
+            return Err(ClientError::new_unknown_stream(&entry.namespace, &entry.name));
+        }
+        Ok(())
+    }
+
+    /// Validate the contents of a SubStreamRequest before it hits the log.
+    fn validate_sub_stream(&self, _entry: &api::SubStreamRequest) -> Result<(), ClientError> {
+        Ok(())
+    }
+
+    /// Validate the contents of a SubPipelineRequest before it hits the log.
+    fn validate_sub_pipeline(&self, _entry: &api::SubPipelineRequest) -> Result<(), ClientError> {
+        Ok(())
+    }
+
+    /// Validate the contents of a UnsubStreamRequest before it hits the log.
+    fn validate_unsub_stream(&self, _entry: &api::UnsubStreamRequest) -> Result<(), ClientError> {
+        Ok(())
+    }
+
+    /// Validate the contents of a UnsubPipelineRequest before it hits the log.
+    fn validate_unsub_pipeline(&self, _entry: &api::UnsubPipelineRequest) -> Result<(), ClientError> {
+        Ok(())
+    }
+
+    /// Validate the contents of a EnsureRpcEndpointRequest before it hits the log.
+    fn validate_ennsure_rpc_endpoint(&self, _entry: &api::EnsureRpcEndpointRequest) -> Result<(), ClientError> {
+        Ok(())
+    }
+
+    /// Validate the contents of a EnsureStreamRequest before it hits the log.
+    fn validate_ensure_stream(&self, _entry: &api::EnsureStreamRequest) -> Result<(), ClientError> {
+        Ok(())
+    }
+
+    /// Validate the contents of a EnsurePipelineRequest before it hits the log.
+    fn validate_ensure_pipeline(&self, _entry: &api::EnsurePipelineRequest) -> Result<(), ClientError> {
+        Ok(())
+    }
+
+    /// Validate the contents of a AckStreamRequest before it hits the log.
+    fn validate_ack_stream(&self, _entry: &api::AckStreamRequest) -> Result<(), ClientError> {
+        Ok(())
+    }
+
+    /// Validate the contents of a AckPipelineRequest before it hits the log.
+    fn validate_ack_pipeline(&self, _entry: &api::AckPipelineRequest) -> Result<(), ClientError> {
+        Ok(())
+    }
+
+    /// Apply the given entry to the state machine.
+    fn apply_entry_to_state_machine(&mut self, entry: &RgEntry) -> Result<AppDataResponse, ClientError> {
+        match &entry.payload {
+            RgEntryPayload::SnapshotPointer(_) => {
+                error!("Received a request to write a snapshot pointer to state machine. This should never happen.");
+                return Err(ClientError::new_internal());
+            }
+            RgEntryPayload::Blank => Ok(AppDataResponse::Noop),
+            RgEntryPayload::ConfigChange(_) => Ok(AppDataResponse::Noop), // TODO: finish this up.
+            RgEntryPayload::Normal(entry) => match &entry.data {
+                AppData::PubStream(data) => self.apply_pub_stream(data),
+                // AppData::SubStream(data) => self.validate_sub_stream(data),
+                // AppData::SubPipeline(data) => self.validate_sub_pipeline(data),
+                // AppData::UnsubStream(data) => self.validate_unsub_stream(data),
+                // AppData::UnsubPipeline(data) => self.validate_unsub_pipeline(data),
+                // AppData::EnsureRpcEndpoint(data) => self.validate_ennsure_rpc_endpoint(data),
+                // AppData::EnsureStream(data) => self.validate_ensure_stream(data),
+                // AppData::EnsurePipeline(data) => self.validate_ensure_pipeline(data),
+                // AppData::AckStream(data) => self.validate_ack_stream(data),
+                // AppData::AckPipeline(data) => self.validate_ack_pipeline(data),
+                _ => Ok(AppDataResponse::Noop),
+            }
+        }
+    }
+
+    /// Apply the given PubStreamRequest to the state machine.
+    fn apply_pub_stream(&mut self, req: &api::PubStreamRequest) -> Result<AppDataResponse, ClientError> {
+        // Get a handle to the target stream object.
+        let stream = self.indexed_streams.get_mut(&format!("{}/{}", &req.namespace, &req.name)).ok_or_else(|| {
+            error!("Error while applying entry to state machine for a PubStreamRequest. Target stream does not exist in index.");
+            ClientError::new_internal()
+        })?;
+
+        // Create a new stream entry and serialize it.
+        let entry = StreamEntry{index: stream.next_index, data: req.data.clone()};
+        let entry_bytes = bincode::serialize(&entry).map_err(|err| {
+            error!("Error serializing StreamEntry. {}", err);
+            ClientError::new_internal()
+        })?;
+
+        // Write the entry, and the index update transactionally.
+        let next_index = entry.index + 1;
+        (&stream.data, &stream.meta).transaction(|(data, meta)| {
+            data.insert(&entry.index.to_be_bytes(), entry_bytes.as_slice())?;
+            meta.insert(STREAM_NEXT_INDEX_KEY, &next_index.to_be_bytes())?;
+            Ok(())
+        }).map_err(|err| {
+            error!("Error writing stream entry. {}", err);
+            ClientError::new_internal()
+        })?;
+        stream.next_index = next_index; // Update the value of the stream's next index.
+
+        Ok(AppDataResponse::PubStream{index: entry.index})
     }
 
     /// Get a handle to the database.
@@ -375,30 +528,80 @@ impl Actor for SledStorage {
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Impl RaftStorage //////////////////////////////////////////////////////////////////////////////
 
-impl RaftStorage<AppData, ClientError> for SledStorage {
+impl RaftStorage<AppData, AppDataResponse, ClientError> for SledStorage {
     type Actor = Self;
     type Context = Context<Self>;
 }
 
-impl Handler<RgAppendLogEntry> for SledStorage {
+impl Handler<RgAppendEntryToLog> for SledStorage {
     type Result = ResponseActFuture<Self, (), ClientError>;
 
-    fn handle(&mut self, msg: RgAppendLogEntry, _ctx: &mut Self::Context) -> Self::Result {
-        Box::new(fut::wrap_future(self.sled.send(SyncAppendLogEntry(msg, self.log.clone())))
-            .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
-            .and_then(|res, _, _| fut::result(res))
-        )
+    fn handle(&mut self, msg: RgAppendEntryToLog, _ctx: &mut Self::Context) -> Self::Result {
+        // Validate the given payload before writing it to the log.
+        match &msg.entry.payload {
+            RgEntryPayload::SnapshotPointer(_) => {
+                error!("Received a request to write a snapshot pointer to the log. This should never happen.");
+                return Box::new(fut::err(ClientError::new_internal()));
+            }
+            RgEntryPayload::Blank | RgEntryPayload::ConfigChange(_) => (), // No validation needed on these variants.
+            RgEntryPayload::Normal(entry) => if let Err(err) = self.validate_pre_log_entry(entry) {
+                return Box::new(fut::err(err));
+            }
+        }
+
+        // Entry checks out, send it over to be written to the log.
+        let res = bincode::serialize(&*msg.entry).map_err(|err| {
+            error!("Error serializing log entry: {}", err);
+            ClientError::new_internal()
+        }).and_then(|data| {
+            self.log.insert(msg.entry.index.to_be_bytes(), data.as_slice()).map_err(|err| {
+                error!("Error serializing log entry: {}", err);
+                ClientError::new_internal()
+            })
+        }).map(|_| ());
+        Box::new(fut::result(res))
     }
 }
 
-impl Handler<RgApplyToStateMachine> for SledStorage {
+impl Handler<RgReplicateToLog> for SledStorage {
     type Result = ResponseActFuture<Self, (), ClientError>;
 
-    fn handle(&mut self, msg: RgApplyToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
-        Box::new(fut::wrap_future(self.sled.send(SyncApplyToStateMachine(msg, self.db.clone(), self.object_collections.clone())))
-            .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
-            .and_then(|res, _, _| fut::result(res))
-        )
+    fn handle(&mut self, msg: RgReplicateToLog, _ctx: &mut Self::Context) -> Self::Result {
+        let mut batch = sled::Batch::default();
+        let res = msg.entries.iter().try_for_each(|entry| {
+            let data = bincode::serialize(entry).map_err(|err| {
+                error!("Error serializing log entry: {}", err);
+                ClientError::new_internal()
+            })?;
+            batch.insert(&entry.index.to_be_bytes(), data.as_slice());
+            Ok(())
+        }).and_then(|_| {
+            self.log.apply_batch(batch).map_err(|err| {
+                error!("Error applying batch of Raft log entries to storage: {}", err);
+                ClientError::new_internal()
+            })
+        });
+        Box::new(fut::result(res))
+    }
+}
+
+impl Handler<RgApplyEntryToStateMachine> for SledStorage {
+    type Result = ResponseActFuture<Self, AppDataResponse, ClientError>;
+
+    fn handle(&mut self, msg: RgApplyEntryToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
+        Box::new(fut::result(self.apply_entry_to_state_machine(&*msg.payload)))
+    }
+}
+
+impl Handler<RgReplicateToStateMachine> for SledStorage {
+    type Result = ResponseActFuture<Self, (), ClientError>;
+
+    fn handle(&mut self, msg: RgReplicateToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
+        let res = msg.payload.iter().try_for_each(|entry| {
+            let _ = self.apply_entry_to_state_machine(entry)?;
+            Ok(())
+        });
+        Box::new(fut::result(res))
     }
 }
 
@@ -420,18 +623,7 @@ impl Handler<RgGetLogEntries> for SledStorage {
 
     fn handle(&mut self, msg: RgGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
         Box::new(fut::wrap_future(self.sled.send(SyncGetLogEntries(msg, self.log.clone())))
-            .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
-            .and_then(|res, _, _| fut::result(res))
-        )
-    }
-}
-
-impl Handler<RgReplicateLogEntries> for SledStorage {
-    type Result = ResponseActFuture<Self, (), ClientError>;
-
-    fn handle(&mut self, msg: RgReplicateLogEntries, _ctx: &mut Self::Context) -> Self::Result {
-        Box::new(fut::wrap_future(self.sled.send(SyncReplicateLogEntries(msg, self.log.clone())))
-            .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
+            .map_err(|err, _: &mut Self, _| utils::proto_client_error_from_mailbox_error(err, ERR_DURING_DB_MSG))
             .and_then(|res, _, _| fut::result(res))
         )
     }
@@ -443,7 +635,7 @@ impl Handler<RgSaveHardState> for SledStorage {
     fn handle(&mut self, msg: RgSaveHardState, _ctx: &mut Self::Context) -> Self::Result {
         let hs = msg.hs.clone();
         Box::new(fut::wrap_future(self.sled.send(SyncSaveHardState(msg, self.db.clone())))
-            .map_err(|_, _: &mut Self, _| ClientError::new_internal()) // TODO: log
+            .map_err(|err, _: &mut Self, _| utils::proto_client_error_from_mailbox_error(err, ERR_DURING_DB_MSG))
             .and_then(|res, _, _| fut::result(res))
             .and_then(move |_, act, _| {
                 act.hs = hs;
@@ -483,61 +675,8 @@ impl Handler<RgInstallSnapshot> for SledStorage {
 /// Sync actor for interfacing with Sled.
 struct SledActor;
 
-impl SledActor {
-    fn apply_entry_to_state_machine(&mut self, _entry: &RgEntry, _db: &sled::Db, _colls: &Arc<ObjectCollections>) -> Result<(), ClientError> {
-        Ok(()) // TODO: impl this
-    }
-}
-
 impl Actor for SledActor {
     type Context = SyncContext<Self>;
-}
-
-struct SyncAppendLogEntry(RgAppendLogEntry, sled::Tree);
-
-impl Message for SyncAppendLogEntry {
-    type Result = Result<(), ClientError>;
-}
-
-impl Handler<SyncAppendLogEntry> for SledActor {
-    type Result = Result<(), ClientError>;
-
-    fn handle(&mut self, msg: SyncAppendLogEntry, _ctx: &mut Self::Context) -> Self::Result {
-        // TODO: this is where application level constraints may be enforced,
-        // just before the proposed entry hits the log.
-
-        // Entry data checks out, so append it to the log.
-        let data = bincode::serialize(&*msg.0.entry).map_err(|err| {
-            error!("Error serializing log entry: {}", err);
-            ClientError::new_internal()
-        })?;
-        msg.1.insert(msg.0.entry.index.to_be_bytes(), data.as_slice()).map_err(|err| {
-            error!("Error serializing log entry: {}", err);
-            ClientError::new_internal()
-        })?;
-        Ok(())
-    }
-}
-
-struct SyncApplyToStateMachine(RgApplyToStateMachine, sled::Db, Arc<ObjectCollections>);
-
-impl Message for SyncApplyToStateMachine {
-    type Result = Result<(), ClientError>;
-}
-
-impl Handler<SyncApplyToStateMachine> for SledActor {
-    type Result = Result<(), ClientError>;
-
-    fn handle(&mut self, msg: SyncApplyToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
-        use actix_raft::storage::ApplyToStateMachinePayload::{Multi, Single};
-        match &msg.0.payload {
-            Single(entry) => self.apply_entry_to_state_machine(&*entry, &msg.1, &msg.2)?,
-            Multi(entries) => for entry in entries {
-                self.apply_entry_to_state_machine(entry, &msg.1, &msg.2)?
-            }
-        }
-        Ok(())
-    }
 }
 
 struct SyncGetLogEntries(RgGetLogEntries, sled::Tree);
@@ -565,31 +704,6 @@ impl Handler<SyncGetLogEntries> for SledActor {
             Ok(acc)
         })?;
         Ok(entries)
-    }
-}
-
-struct SyncReplicateLogEntries(RgReplicateLogEntries, sled::Tree);
-
-impl Message for SyncReplicateLogEntries {
-    type Result = Result<(), ClientError>;
-}
-
-impl Handler<SyncReplicateLogEntries> for SledActor {
-    type Result = Result<(), ClientError>;
-
-    fn handle(&mut self, msg: SyncReplicateLogEntries, _ctx: &mut Self::Context) -> Self::Result {
-        let mut batch = sled::Batch::default();
-        for entry in msg.0.entries.iter() {
-            let data = bincode::serialize(entry).map_err(|err| {
-                error!("Error serializing log entry: {}", err);
-                ClientError::new_internal()
-            })?;
-            batch.insert(&entry.index.to_be_bytes(), data.as_slice());
-        }
-        msg.1.apply_batch(batch).map_err(|err| {
-            error!("Error applying batch of Raft log entries to storage: {}", err);
-            ClientError::new_internal()
-        })
     }
 }
 
@@ -665,10 +779,10 @@ mod tests {
     use super::*;
     use crate::{
         auth::UserRole,
-        db::models::StreamVisibility,
+        db::models::{StreamType, StreamVisibility},
         proto::client::api,
     };
-    use actix_raft::messages::{Entry, EntryType, EntryNormal};
+    use actix_raft::messages::{Entry, EntryPayload, EntryNormal};
     use std::sync::Arc;
     use proptest::prelude::*;
     use tempfile;
@@ -785,16 +899,26 @@ mod tests {
             let streams_tree = db.open_tree(OBJECTS_STREAMS).expect("open streams path prefix");
             let streams_index = setup_base_streams(&db, &streams_tree);
             let output = SledStorage::index_streams_data(&db, &streams_tree).expect("index streams data");
-            assert_eq!(output, streams_index);
             assert_eq!(output.len(), streams_index.len());
-            assert_eq!(output.len(), 3);
+            assert_eq!(output.len(), 2); // TODO: change this back to 3 once we have indexed streams.
+            for (s0, s1) in output.values().zip(streams_index.values()) {
+                assert_eq!(s0.stream, s1.stream);
+            }
         }
 
         #[test]
-        fn stream_keyspace_returns_expected_value() {
+        fn stream_keyspace_data_returns_expected_value() {
             let (ns, name) = ("default", "slipstream");
-            let expected = format!("/streams/default/slipstream/");
-            let output = SledStorage::stream_keyspace(ns, name);
+            let expected = format!("/streams/default/slipstream/data");
+            let output = SledStorage::stream_keyspace_data(ns, name);
+            assert_eq!(expected, output);
+        }
+
+        #[test]
+        fn stream_keyspace_metadata_returns_expected_value() {
+            let (ns, name) = ("default", "slipstream");
+            let expected = format!("/streams/default/slipstream/metadata");
+            let output = SledStorage::stream_keyspace_metadata(ns, name);
             assert_eq!(expected, output);
         }
 
@@ -809,12 +933,12 @@ mod tests {
             let storage = SledStorage::new(&db_path).expect("instantiate storage");
             let log = storage.log();
             let storage_addr = storage.start();
-            let entry = Entry{term: 20, index: 99999, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+            let entry = Entry{term: 20, index: 99999, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
                 namespace: String::from("default"), name: String::from("events"), id: None, data: vec![],
-            }))})};
-            let msg = RgAppendLogEntry::new(Arc::new(entry.clone()));
+            })})};
+            let msg = RgAppendEntryToLog::new(Arc::new(entry.clone()));
 
-            let f = storage_addr.send(msg).map_err(|err| panic!(err)).and_then(|res| res).map_err(|err| panic!(err));
+            let f = storage_addr.send(msg).map_err(|err| panic!("MailboxError: {}", err)).and_then(|res| res).map_err(|err| panic!("ClientError {:?}", err));
             sys.block_on(f).expect("sys run");
 
             // Ensure the expected data was written to disk.
@@ -825,9 +949,9 @@ mod tests {
             assert_eq!(entries.len(), 1);
             assert_eq!(entries[0].index, entry.index);
             assert_eq!(entries[0].term, entry.term);
-            match &entries[0].entry_type {
-                EntryType::Normal(entry) => match &entry.data {
-                    Some(AppData::PubStream(data)) => {
+            match &entries[0].payload {
+                EntryPayload::Normal(entry) => match &entry.data {
+                    AppData::PubStream(data) => {
                         assert_eq!(data.namespace.as_str(), "default");
                         assert_eq!(data.name.as_str(), "events");
                         assert_eq!(&data.id, &None);
@@ -850,13 +974,13 @@ mod tests {
             let storage = SledStorage::new(&db_path).expect("instantiate storage");
             let log = storage.log();
             let storage_addr = storage.start();
-            let entry0 = Entry{term: 1, index: 0, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+            let entry0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
                 namespace: String::from("default"), name: String::from("events0"), id: None, data: vec![],
-            }))})};
+            })})};
             log.insert(entry0.index.to_be_bytes(), bincode::serialize(&entry0).expect("serialize entry")).expect("append to log");
-            let entry1 = Entry{term: 1, index: 1, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+            let entry1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
                 namespace: String::from("default"), name: String::from("events1"), id: None, data: vec![],
-            }))})};
+            })})};
             log.insert(entry1.index.to_be_bytes(), bincode::serialize(&entry1).expect("serialize entry")).expect("append to log");
             let msg = RgGetLogEntries::new(0, 500);
 
@@ -882,13 +1006,13 @@ mod tests {
             let storage = SledStorage::new(&db_path).expect("instantiate storage");
             let log = storage.log();
             let storage_addr = storage.start();
-            let msg0 = Entry{term: 1, index: 0, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+            let msg0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
                 namespace: String::from("default"), name: String::from("events0"), id: None, data: vec![],
-            }))})};
-            let msg1 = Entry{term: 1, index: 1, entry_type: EntryType::Normal(EntryNormal{data: Some(AppData::from(api::PubStreamRequest{
+            })})};
+            let msg1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
                 namespace: String::from("default"), name: String::from("events1"), id: None, data: vec![],
-            }))})};
-            let msg = RgReplicateLogEntries::new(Arc::new(vec![msg0.clone(), msg1.clone()]));
+            })})};
+            let msg = RgReplicateToLog::new(Arc::new(vec![msg0.clone(), msg1.clone()]));
 
             let f = storage_addr.send(msg).map_err(|err| panic!(err)).and_then(|res| res).map_err(|err| panic!(err));
             sys.block_on(f).expect("sys run");
@@ -901,9 +1025,9 @@ mod tests {
             assert_eq!(entries.len(), 2);
             assert_eq!(entries[0].index, msg0.index);
             assert_eq!(entries[0].term, msg0.term);
-            match &entries[0].entry_type {
-                EntryType::Normal(entry) => match &entry.data {
-                    Some(AppData::PubStream(data)) => {
+            match &entries[0].payload {
+                EntryPayload::Normal(entry) => match &entry.data {
+                    AppData::PubStream(data) => {
                         assert_eq!(data.namespace.as_str(), "default");
                         assert_eq!(data.name.as_str(), "events0");
                         assert_eq!(&data.id, &None);
@@ -915,9 +1039,9 @@ mod tests {
             }
             assert_eq!(entries[1].index, msg1.index);
             assert_eq!(entries[1].term, msg1.term);
-            match &entries[1].entry_type {
-                EntryType::Normal(entry) => match &entry.data {
-                    Some(AppData::PubStream(data)) => {
+            match &entries[1].payload {
+                EntryPayload::Normal(entry) => match &entry.data {
+                    AppData::PubStream(data) => {
                         assert_eq!(data.namespace.as_str(), "default");
                         assert_eq!(data.name.as_str(), "events1");
                         assert_eq!(&data.id, &None);
@@ -1011,35 +1135,33 @@ mod tests {
         index
     }
 
-    fn setup_base_endpoints(db: &sled::Db) -> BTreeSet<(String, String)> {
+    fn setup_base_endpoints(db: &sled::Db) -> BTreeSet<String> {
         let mut index = BTreeSet::new();
-        let ns = String::from("identity-service");
-        index.insert((ns.clone(), String::from("sign-up")));
-        index.insert((ns.clone(), String::from("login")));
-        index.insert((ns.clone(), String::from("reset-password")));
+        let ns = "identity-service";
+        index.insert(format!("{}/{}", ns, "sign-up"));
+        index.insert(format!("{}/{}", ns, "login"));
+        index.insert(format!("{}/{}", ns, "reset-password"));
 
-        for (val_ns, endpoint) in index.iter() {
-            let key = format!("{}/{}", val_ns, endpoint);
-            let keybytes = key.as_bytes();
+        for val in index.iter() {
+            let keybytes = val.as_bytes();
             db.insert(keybytes, keybytes).expect("write endpoint to disk");
         }
 
         index
     }
 
-    fn setup_base_pipelines(db: &sled::Db) -> BTreeMap<(String, String), Pipeline> {
+    fn setup_base_pipelines(db: &sled::Db) -> BTreeMap<String, Pipeline> {
         let mut index = BTreeMap::new();
         let ns = String::from("identity-service");
         let pipe0 = Pipeline{namespace: ns.clone(), name: String::from("sign-up")};
         let pipe1 = Pipeline{namespace: ns.clone(), name: String::from("login")};
         let pipe2 = Pipeline{namespace: ns.clone(), name: String::from("reset-password")};
-        index.insert((pipe0.namespace.clone(), pipe0.name.clone()), pipe0);
-        index.insert((pipe1.namespace.clone(), pipe1.name.clone()), pipe1);
-        index.insert((pipe2.namespace.clone(), pipe2.name.clone()), pipe2);
+        index.insert(format!("{}/{}", &pipe0.namespace, &pipe0.name), pipe0);
+        index.insert(format!("{}/{}", &pipe1.namespace, &pipe1.name), pipe1);
+        index.insert(format!("{}/{}", &pipe2.namespace, &pipe2.name), pipe2);
 
-        for (_, pipeline) in index.iter() {
+        for (key, pipeline) in index.iter() {
             let pipebytes = bincode::serialize(pipeline).expect("serialize pipeline");
-            let key = format!("{}/{}", pipeline.namespace, pipeline.name);
             let keybytes = key.as_bytes();
             db.insert(keybytes, pipebytes).expect("write pipeline to disk");
         }
@@ -1047,7 +1169,7 @@ mod tests {
         index
     }
 
-    fn setup_base_streams(db: &sled::Db, tree: &sled::Tree) -> BTreeMap<(String, String), Stream> {
+    fn setup_base_streams(db: &sled::Db, tree: &sled::Tree) -> BTreeMap<String, StreamWrapper> {
         let mut index = BTreeMap::new();
         let stream_name = String::from("events");
 
@@ -1057,23 +1179,25 @@ mod tests {
 
         let stream0 = Stream{namespace: String::from("identity-service"), name: stream_name.clone(), stream_type: StreamType::Standard, visibility: StreamVisibility::Namespace};
         let stream1 = Stream{namespace: String::from("projects-service"), name: stream_name.clone(), stream_type: StreamType::Standard, visibility: StreamVisibility::Private(String::from("pipelineX"))};
-        let stream2 = Stream{namespace: String::from("billing-service"), name: stream_name.clone(), stream_type: StreamType::UniqueId{index: indexed_ids}, visibility: StreamVisibility::Namespace};
-        index.insert((stream0.namespace.clone(), stream0.name.clone()), stream0);
-        index.insert((stream1.namespace.clone(), stream1.name.clone()), stream1);
-        index.insert((stream2.namespace.clone(), stream2.name.clone()), stream2);
+        // let stream2 = Stream{namespace: String::from("billing-service"), name: stream_name.clone(), stream_type: StreamType::UniqueId{index: indexed_ids}, visibility: StreamVisibility::Namespace};
+        for stream in vec![stream0, stream1] {
+            let keyspace_data = SledStorage::stream_keyspace_data(&stream.namespace, &stream.name);
+            let keyspace_meta = SledStorage::stream_keyspace_metadata(&stream.namespace, &stream.name);
+            let data_tree = db.open_tree(&keyspace_data).expect("open stream data keyspace");
+            let meta_tree = db.open_tree(&keyspace_meta).expect("open stream metadata keyspace");
+            index.insert(format!("{}/{}", &stream.namespace, &stream.name), StreamWrapper{stream, next_index: 0, data: data_tree, meta: meta_tree});
+        }
 
-        for (_, stream) in index.iter() {
-            let streambytes = bincode::serialize(stream).expect("serialize stream");
-            let key = format!("{}/{}", stream.namespace, stream.name);
+        for (key, stream_wrapper) in index.iter() {
+            let streambytes = bincode::serialize(&stream_wrapper.stream).expect("serialize stream");
             let keybytes = key.as_bytes();
             tree.insert(keybytes, streambytes).expect("write stream to disk");
         }
 
         // Write a single entry to stream "billing-service/events" for testing.
-        let keyspace = SledStorage::stream_keyspace("billing-service", &stream_name);
-        let entry_bytes = bincode::serialize(&StreamEntry{id: Some(String::from("testing")), data: vec![]}).expect("serialize stream entry");
-        db.open_tree(&keyspace).expect("open stream keyspace")
-            .insert(format!("{}{}", keyspace, "0").as_bytes(), entry_bytes).expect("write stream entry");
+        let keyspace = SledStorage::stream_keyspace_data("billing-service", &stream_name);
+        let entry_bytes = bincode::serialize(&StreamEntry{index: 0, data: vec![]}).expect("serialize stream entry");
+        db.open_tree(&keyspace).expect("open stream keyspace").insert(0u64.to_be_bytes(), entry_bytes).expect("write stream entry");
 
         index
     }

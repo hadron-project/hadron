@@ -5,15 +5,12 @@ LABEL maintainer="Anthony Dodd"
 WORKDIR /railgun
 
 # Force a registry update.
-# RUN cargo search --limit 1 --quiet # TODO: rm this. Only used where no network was available.
+RUN cargo search --limit 1 --quiet
 
 FROM base as builder-release
 COPY ./src src
 COPY ./Cargo.lock Cargo.lock
 COPY ./Cargo.toml Cargo.toml
-# COPY ./.cargo .cargo # TODO: rm this. Only used where no network was available.
-# COPY ./vendor vendor # TODO: rm this. Only used where no network was available.
-# COPY ./actix-raft actix-raft # TODO: rm this. Only used where no network was available.
 RUN cargo build --release
 
 FROM rust:${TAG} as release

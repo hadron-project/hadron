@@ -13,32 +13,38 @@ use std::{
 
 use actix::prelude::*;
 use actix_web_actors::ws;
+use actix_raft::messages::{ResponseMode};
 use bytes;
 use log::{debug, error, info, warn};
 use uuid;
 
 use crate::{
     NodeId,
+    app::{AppData, AppDataResponse, RgEntryNormal, RgClientPayload, RgClientPayloadError, RgClientPayloadResponse},
     auth::{Claims},
     proto::client::api::{
         self, ClientError,
-        client_frame::Payload as ClientPayload,
-        server_frame::Payload as ServerPayload,
+        client_frame::Payload as ClientFramePayload,
+        server_frame::Payload as ServerFramePayload,
     },
+    utils,
 };
+
+const ERR_MAILBOX_DURING_CLIENT_REQUEST: &str = "Encountered an actix MailboxError while handling a client request.";
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // WsClientServices //////////////////////////////////////////////////////////////////////////////
 
 /// All services needed by the `WsClient` actor.
 pub(super) struct WsClientServices {
+    client_payload: Recipient<RgClientPayload>,
     verify_token: Recipient<VerifyToken>,
 }
 
 impl WsClientServices {
     /// Create a new instance.
-    pub fn new(verify_token: Recipient<VerifyToken>) -> Self {
-        Self{verify_token}
+    pub fn new(client_payload: Recipient<RgClientPayload>, verify_token: Recipient<VerifyToken>) -> Self {
+        Self{client_payload, verify_token}
     }
 }
 
@@ -65,7 +71,7 @@ enum ClientState {
 /// TODO: add permissions cache here.
 struct ClientStateActive {
     /// The authN/authZ claims of the connection.
-    _claims: Claims,
+    claims: Claims,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -111,7 +117,7 @@ impl WsClient {
         // Issue a normal response if the connection is already active.
         if let ClientState::Active(_) = &self.state {
             warn!("Client {} sent a ConnectRequest even though the connection state is active.", self.connection_id);
-            return self.send_frame(ServerPayload::Connect(api::ConnectResponse{error: None, id: self.connection_id.clone()}), meta, ctx);
+            return self.send_frame(ServerFramePayload::Connect(api::ConnectResponse{error: None, id: self.connection_id.clone()}), meta, ctx);
         }
 
         // Call network service to validate the given token and extract its claims object.
@@ -120,20 +126,41 @@ impl WsClient {
             .and_then(|res, _, _| fut::result(res))
 
             // Transition to active state.
-            .and_then(|_claims, act, _| {
-                act.state = ClientState::Active(ClientStateActive{_claims});
+            .and_then(|claims, act, _| {
+                act.state = ClientState::Active(ClientStateActive{claims});
                 fut::ok(())
             })
 
             // Emit response.
             .then(move |res, act, ctx| {
                 match res {
-                    Ok(_) => act.send_frame(ServerPayload::Connect(api::ConnectResponse{error: None, id: act.connection_id.clone()}), meta, ctx),
-                    Err(err) => act.send_frame(ServerPayload::Connect(api::ConnectResponse{error: Some(err), id: String::new()}), meta, ctx),
+                    Ok(_) => act.send_frame(ServerFramePayload::Connect(api::ConnectResponse{error: None, id: act.connection_id.clone()}), meta, ctx),
+                    Err(err) => act.send_frame(ServerFramePayload::Connect(api::ConnectResponse{error: Some(err), id: String::new()}), meta, ctx),
                 }
                 fut::ok(())
             });
 
+        ctx.spawn(f);
+    }
+
+    /// Handle client `PubStreamRequest` frame.
+    fn handle_pub_stream(&mut self, req: api::PubStreamRequest, meta: api::FrameMeta, ctx: &mut ws::WebsocketContext<Self>) {
+        // Ensure client is in an active state.
+        let state = match &self.state {
+            ClientState::Initial => return self.send_frame(ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::new_handshake_required())), meta, ctx),
+            ClientState::Active(state) => state,
+        };
+
+        // Ensure client is authorized to publish to the target stream.
+        if let Err(_err) = state.claims.check_stream_pub_auth(&req) {
+            return self.send_frame(ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::new_insufficient_permissions())), meta, ctx);
+        }
+
+        // Everything checks out, so send the request over to Raft.
+        let data = AppData::PubStream(req);
+        let f = fut::wrap_future(self.services.client_payload.send(RgClientPayload::new(RgEntryNormal{data}, ResponseMode::Applied))
+            .map_err(|err| utils::client_error_from_mailbox_error(err, ERR_MAILBOX_DURING_CLIENT_REQUEST))
+            .and_then(|res| res)).then(move |res, act: &mut Self, ctx| act.send_pub_stream_response(res, meta, ctx));
         ctx.spawn(f);
     }
 
@@ -150,13 +177,45 @@ impl WsClient {
         }));
     }
 
+    /// Forward the given client request to the cluster's current leader.
+    fn forward_to_leader(&mut self, _req: RgClientPayload, _meta: api::FrameMeta, _leader: Option<NodeId>, _ctx: &mut ws::WebsocketContext<Self>) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
+        // NOTE/TODO: this is just stubbed logic for now.
+        error!("Forwarding client requests to cluster leader is not yet implemented.");
+        fut::ok(()) // TODO: finish this up.
+    }
+
     /// Send a frame to the connected client.
-    fn send_frame(&mut self, payload: ServerPayload, meta: api::FrameMeta, ctx: &mut ws::WebsocketContext<Self>) {
+    fn send_frame(&mut self, payload: ServerFramePayload, meta: api::FrameMeta, ctx: &mut ws::WebsocketContext<Self>) {
         use prost::Message;
         let frame = api::ServerFrame{payload: Some(payload), meta: Some(meta)};
         let mut data = bytes::BytesMut::with_capacity(frame.encoded_len());
         let _ = frame.encode(&mut data).map_err(|err| error!("Failed to serialize protobuf frame. {}", err));
         ctx.binary(data);
+    }
+
+    fn send_pub_stream_response(&mut self, res: Result<RgClientPayloadResponse, RgClientPayloadError>, meta: api::FrameMeta, ctx: &mut ws::WebsocketContext<Self>) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
+        let response = match res {
+            Err(err) => match err {
+                RgClientPayloadError::Internal => ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::new_internal())),
+                RgClientPayloadError::Application(app_err) => ServerFramePayload::PubStream(api::PubStreamResponse::new_err(app_err)),
+                RgClientPayloadError::ForwardToLeader{payload: req, leader} => return fut::Either::A(self.forward_to_leader(req, meta, leader, ctx)),
+            },
+            Ok(payload) => match payload {
+                RgClientPayloadResponse::Committed{..} => {
+                    error!("Received a Committed payload response from Raft, expected Applied. Internal error.");
+                    ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::new_internal()))
+                }
+                RgClientPayloadResponse::Applied{data, ..} => match data {
+                    AppDataResponse::PubStream{index} => ServerFramePayload::PubStream(api::PubStreamResponse::new(index)),
+                    _ => {
+                        error!("Expected a PubStream data response from Raft, got something else. Internal error.");
+                        ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::new_internal()))
+                    }
+                }
+            }
+        };
+        self.send_frame(response, meta, ctx);
+        fut::Either::B(fut::ok(()))
     }
 }
 
@@ -199,22 +258,22 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsClient {
                 // If the frame is a response frame, route it through to its matching request.
                 let meta = frame.meta.unwrap_or_default();
                 match frame.payload {
-                    Some(ClientPayload::Connect(payload)) => self.handle_connect(payload, meta, ctx),
-                    Some(ClientPayload::Disconnect(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::PubEphemeral(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::PubRpc(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::PubStream(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::SubEphemeral(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::SubRpc(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::SubStream(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::SubPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::UnsubStream(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::UnsubPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::EnsureEndpoint(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::EnsureStream(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::EnsurePipeline(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::AckStream(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientPayload::AckPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::Connect(payload)) => self.handle_connect(payload, meta, ctx),
+                    Some(ClientFramePayload::Disconnect(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::PubEphemeral(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::PubRpc(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::PubStream(payload)) => self.handle_pub_stream(payload, meta, ctx),
+                    Some(ClientFramePayload::SubEphemeral(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::SubRpc(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::SubStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::SubPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::UnsubStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::UnsubPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::EnsureEndpoint(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::EnsureStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::EnsurePipeline(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::AckStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::AckPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
                     None => {
                         warn!("Empty or unrecognized client frame payload received on connection {}.", self.connection_id);
                     }

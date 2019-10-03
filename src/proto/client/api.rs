@@ -230,16 +230,30 @@ pub struct PubStreamRequest {
     /// The name of the stream to publish to.
     #[prost(string, tag="2")]
     pub name: std::string::String,
-    /// The ID of the entry. Leave null if there is no associated ID.
-    #[prost(message, optional, tag="3")]
-    pub id: ::std::option::Option<StreamEntryId>,
     /// The data payload of the entry to publish.
-    #[prost(bytes, tag="4")]
+    ///
+    /// // The ID of the entry. Leave null if there is no associated ID.
+    /// StreamEntryId id = 4;
+    #[prost(bytes, tag="3")]
     pub data: std::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
 pub struct PubStreamResponse {
+    #[prost(oneof="pub_stream_response::Result", tags="1, 2")]
+    pub result: ::std::option::Option<pub_stream_response::Result>,
+}
+pub mod pub_stream_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Serialize, Deserialize)]
+    pub enum Result {
+        /// An error associated with this response.
+        #[prost(message, tag="1")]
+        Error(super::ClientError),
+        /// The index of the published stream entry.
+        #[prost(uint64, tag="2")]
+        Index(u64),
+    }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // SubEphemeralRequest & SubEphemeralResponse ////////////////////////////////////////////////////
@@ -373,4 +387,8 @@ pub enum ErrorCode {
     HandshakeRequired = 1,
     /// The given credentials are invalid.
     Unauthorized = 2,
+    /// The token being used by the client does not have sufficient permissions for the requested operation.
+    InsufficientPermissions = 3,
+    /// The target stream of the request is unknown.
+    TargetStreamUnknown = 4,
 }

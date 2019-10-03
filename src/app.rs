@@ -7,22 +7,48 @@ use actix::prelude::*;
 use actix_raft::{
     Raft,
     admin::{InitWithConfig},
-    messages::{AppendEntriesRequest, VoteRequest, InstallSnapshotRequest},
+    config::SnapshotPolicy,
+    messages::{
+        AppendEntriesRequest,
+        ClientPayload,
+        ClientPayloadResponse,
+        ClientError as ClientPayloadError,
+        Entry, EntryNormal, EntryPayload,
+        VoteRequest,
+        InstallSnapshotRequest,
+    },
 };
 use log::{error, info};
 
 use crate::{
     NodeId,
     config::Config,
-    db::{AppData, Storage},
+    db::Storage,
     networking::{
         Network, NetworkServices,
     },
-    proto::{client::api::ClientError, peer},
+    proto::{
+        client::api::{
+            AckPipelineRequest, AckStreamRequest, ClientError,
+            EnsurePipelineRequest, EnsureRpcEndpointRequest, EnsureStreamRequest,
+            PubStreamRequest, SubPipelineRequest, SubStreamRequest,
+            UnsubPipelineRequest, UnsubStreamRequest,
+        },
+        peer,
+    },
 };
 
 /// This application's concrete Raft type.
-type AppRaft = Raft<AppData, ClientError, Network, Storage>;
+type AppRaft = Raft<AppData, AppDataResponse, ClientError, Network, Storage>;
+pub type RgEntry = Entry<AppData>;
+pub type RgEntryPayload = EntryPayload<AppData>;
+pub type RgEntryNormal = EntryNormal<AppData>;
+pub type RgClientPayload = ClientPayload<AppData, AppDataResponse, ClientError>;
+pub type RgClientPayloadError = ClientPayloadError<AppData, AppDataResponse, ClientError>;
+pub type RgClientPayloadResponse = ClientPayloadResponse<AppDataResponse>;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// App ///////////////////////////////////////////////////////////////////////////////////////////
 
 /// The central Railgun actor.
 ///
@@ -64,7 +90,7 @@ impl App {
         let app = ctx.address();
 
         // Instantiate the Raft storage system & start it.
-        let storage = Storage::new(&config.db_path).unwrap_or_else(|err| {
+        let storage = Storage::new(&config.storage_db_path).unwrap_or_else(|err| {
             error!("Error initializing the system database. {}", err);
             std::process::exit(1);
         });
@@ -75,13 +101,17 @@ impl App {
         // Boot the network actor on a dedicated thread. Serves on dedicated threadpool.
         let (net_arb, net_cfg, net_app, net_nodeid) = (Arbiter::new(), config.clone(), app.clone(), nodeid.clone());
         let net_addr = Network::start_in_arbiter(&net_arb, move |net_ctx| {
-            Network::new(net_ctx, NetworkServices::new(net_app.clone().recipient(), net_app.clone().recipient()), net_nodeid, net_cfg)
+            let services = NetworkServices::new(app.clone().recipient(), net_app.clone().recipient(), net_app.clone().recipient());
+            Network::new(net_ctx, services, net_nodeid, net_cfg)
         });
         let metrics_receiver = net_addr.clone().recipient();
 
         // Boot the consensus actor on a dedicated thread.
-        let raft_cfg = actix_raft::Config::build(config.snapshot_dir())
-            .heartbeat_interval(1000).election_timeout_max(2500).election_timeout_min(2000)
+        let raft_cfg = actix_raft::Config::build(config.storage_snapshot_dir())
+            .heartbeat_interval(config.raft_heartbeat_interval_millis)
+            .election_timeout_max(config.raft_election_timeout_max)
+            .election_timeout_min(config.raft_election_timeout_min)
+            .snapshot_policy(SnapshotPolicy::Disabled)
             .validate().unwrap_or_else(|err| {
                 error!("Error building Raft config. {}", err);
                 std::process::exit(1);
@@ -90,7 +120,7 @@ impl App {
         let raft = AppRaft::new(nodeid.clone(), raft_cfg, net_addr.clone(), storage_addr.clone(), metrics_receiver);
         let raft_addr = AppRaft::start_in_arbiter(&raft_arb, move |_| raft);
 
-        info!("Railgun is firing all interfaces on port {}!", &config.port);
+        info!("Railgun is firing on all interfaces at port {}!", &config.port);
         App{
             id: nodeid,
             config,
@@ -199,6 +229,19 @@ impl Handler<UpdatePeerInfo> for App {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
+// ClientPayload /////////////////////////////////////////////////////////////////////////////////
+
+impl Handler<RgClientPayload> for App {
+    type Result = ResponseFuture<RgClientPayloadResponse, RgClientPayloadError>;
+
+    fn handle(&mut self, msg: RgClientPayload, _ctx: &mut Context<Self>) -> Self::Result {
+        Box::new(self.raft.send(msg)
+            .map_err(|_| ClientPayloadError::Application(ClientError::new_internal()))
+            .and_then(|res| res))
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
 // InboundRaftRequest ////////////////////////////////////////////////////////////////////////////
 
 /// A message type wrapping an inbound peer API request along with its metadata.
@@ -241,3 +284,107 @@ impl Handler<InboundRaftRequest> for App {
         }
     }
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// AppData ///////////////////////////////////////////////////////////////////////////////////////
+
+/// All data variants which are persisted via Raft.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum AppData {
+    PubStream(PubStreamRequest),
+    SubStream(SubStreamRequest),
+    SubPipeline(SubPipelineRequest),
+    UnsubStream(UnsubStreamRequest),
+    UnsubPipeline(UnsubPipelineRequest),
+    EnsureRpcEndpoint(EnsureRpcEndpointRequest),
+    EnsureStream(EnsureStreamRequest),
+    EnsurePipeline(EnsurePipelineRequest),
+    AckStream(AckStreamRequest),
+    AckPipeline(AckPipelineRequest),
+}
+
+impl actix_raft::AppData for AppData {}
+
+impl From<PubStreamRequest> for AppData {
+    fn from(src: PubStreamRequest) -> Self {
+        AppData::PubStream(src)
+    }
+}
+
+impl From<SubStreamRequest> for AppData {
+    fn from(src: SubStreamRequest) -> Self {
+        AppData::SubStream(src)
+    }
+}
+
+impl From<SubPipelineRequest> for AppData {
+    fn from(src: SubPipelineRequest) -> Self {
+        AppData::SubPipeline(src)
+    }
+}
+
+impl From<UnsubStreamRequest> for AppData {
+    fn from(src: UnsubStreamRequest) -> Self {
+        AppData::UnsubStream(src)
+    }
+}
+
+impl From<UnsubPipelineRequest> for AppData {
+    fn from(src: UnsubPipelineRequest) -> Self {
+        AppData::UnsubPipeline(src)
+    }
+}
+
+impl From<EnsureRpcEndpointRequest> for AppData {
+    fn from(src: EnsureRpcEndpointRequest) -> Self {
+        AppData::EnsureRpcEndpoint(src)
+    }
+}
+
+impl From<EnsureStreamRequest> for AppData {
+    fn from(src: EnsureStreamRequest) -> Self {
+        AppData::EnsureStream(src)
+    }
+}
+
+impl From<EnsurePipelineRequest> for AppData {
+    fn from(src: EnsurePipelineRequest) -> Self {
+        AppData::EnsurePipeline(src)
+    }
+}
+
+impl From<AckStreamRequest> for AppData {
+    fn from(src: AckStreamRequest) -> Self {
+        AppData::AckStream(src)
+    }
+}
+
+impl From<AckPipelineRequest> for AppData {
+    fn from(src: AckPipelineRequest) -> Self {
+        AppData::AckPipeline(src)
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// AppDataResponse ///////////////////////////////////////////////////////////////////////////////
+
+/// Data response variants from applying entries to the Raft state machine.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum AppDataResponse {
+    Noop,
+    PubStream {
+        /// The index of the published message on its stream.
+        index: u64,
+    },
+    SubStream,
+    SubPipeline,
+    UnsubStream,
+    UnsubPipeline,
+    EnsureRpcEndpoint,
+    EnsureStream,
+    EnsurePipeline,
+    AckStream,
+    AckPipeline,
+}
+
+impl actix_raft::AppDataResponse for AppDataResponse {}

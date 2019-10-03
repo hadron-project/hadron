@@ -26,7 +26,7 @@ use log::{debug, error};
 
 use crate::{
     NodeId,
-    app::{InboundRaftRequest, UpdatePeerInfo},
+    app::{InboundRaftRequest, UpdatePeerInfo, RgClientPayload},
     auth::{Claims, ClaimsV1},
     config::Config,
     networking::{
@@ -54,14 +54,19 @@ pub(self) const PEER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 /// All services needed by the `Network` actor.
 #[derive(Clone)]
 pub struct NetworkServices {
+    pub client_payload: Recipient<RgClientPayload>,
     pub update_peer_info: Recipient<UpdatePeerInfo>,
     pub inbound_raft_request: Recipient<InboundRaftRequest>,
 }
 
 impl NetworkServices {
     /// Create a new instance.
-    pub fn new(update_peer_info: Recipient<UpdatePeerInfo>, inbound_raft_request: Recipient<InboundRaftRequest>) -> Self {
-        Self{update_peer_info, inbound_raft_request}
+    pub fn new(
+        client_payload: Recipient<RgClientPayload>,
+        update_peer_info: Recipient<UpdatePeerInfo>,
+        inbound_raft_request: Recipient<InboundRaftRequest>,
+    ) -> Self {
+        Self{client_payload, update_peer_info, inbound_raft_request}
     }
 }
 
@@ -169,7 +174,8 @@ impl Network {
 
     fn handle_client_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
         debug!("Handling a new client connection request.");
-        ws::start(WsClient::new(WsClientServices::new(data.parent.clone().recipient()), data.node_id, data.config.client_liveness_threshold()), &req, stream)
+        let services = WsClientServices::new(data.services.client_payload.clone(), data.parent.clone().recipient());
+        ws::start(WsClient::new(services, data.node_id, data.config.client_liveness_threshold()), &req, stream)
     }
 
     pub(self) fn send_outbound_peer_request(&mut self, msg: OutboundPeerRequest, _: &mut Context<Self>) -> impl Future<Item=api::Response, Error=()> {

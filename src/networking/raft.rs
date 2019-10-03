@@ -13,7 +13,7 @@ use futures::future::err as fut_err;
 use log::{error};
 
 use crate::{
-    db::AppData,
+    app::AppData,
     networking::{Network, OutboundPeerRequest},
     proto::peer::api,
 };

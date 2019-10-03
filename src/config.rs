@@ -1,3 +1,7 @@
+//! TODO:
+//! - remove RG_ prefix.
+//! - prefix config vars with their config categroy.
+
 use std::{
     path,
     process,
@@ -19,8 +23,34 @@ pub struct Config {
     /// The port which this instance has been configured to communicate on.
     pub port: u16,
 
+    /// The server's logging config. Uses Rust's `env_logger` directives.
+    pub logging: String,
+
     //////////////////////////////////////////////////////////////////////////
-    // Discovery Config //////////////////////////////////////////////////////
+    // Raft Config ///////////////////////////////////////////////////////////
+
+    /// The rate at which Raft should send heartbeats to connected peers, in milliseconds.
+    pub raft_heartbeat_interval_millis: u16,
+
+    /// The maximum amount of time for a Raft node to wait before triggering an election.
+    pub raft_election_timeout_max: u16,
+
+    /// The minimum amount of time for a Raft node to wait before triggering an election.
+    pub raft_election_timeout_min: u16,
+
+    //////////////////////////////////////////////////////////////////////////
+    // Storage Config ////////////////////////////////////////////////////////
+
+    /// The path to the database on disk.
+    #[serde(default="db::default_db_path")]
+    pub storage_db_path: String,
+
+    /// The path to the configured snapshots dir.
+    #[serde(skip)]
+    storage_snapshot_dir: Option<String>,
+
+    //////////////////////////////////////////////////////////////////////////
+    // Clustering Config /////////////////////////////////////////////////////
 
     /// The number of seconds to wait before issuing the initial cluster formation commands.
     initial_cluster_formation_delay: u8,
@@ -29,17 +59,6 @@ pub struct Config {
     /// The discovery backend to use.
     #[serde(flatten)]
     pub discovery_backend: DiscoveryBackend,
-
-    //////////////////////////////////////////////////////////////////////////
-    // Storage Config ////////////////////////////////////////////////////////
-
-    /// The path to the database on disk.
-    #[serde(default="db::default_db_path")]
-    pub db_path: String,
-
-    /// The path to the configured snapshots dir.
-    #[serde(skip)]
-    snapshot_dir: Option<String>,
 
     //////////////////////////////////////////////////////////////////////////
     // Client Config /////////////////////////////////////////////////////////
@@ -80,7 +99,7 @@ impl Config {
                 config
             }
         };
-        config.snapshot_dir = Some(Config::build_snapshot_dir(config.db_path.clone()));
+        config.storage_snapshot_dir = Some(Config::build_snapshot_dir(config.storage_db_path.clone()));
         config._client_liveness_threshold = Some(Duration::from_secs(config.client_liveness_threshold as u64));
         config._initial_cluster_formation_delay = Some(Duration::from_secs(config.initial_cluster_formation_delay as u64));
         config
@@ -97,8 +116,8 @@ impl Config {
     }
 
     /// The path to the configured snapshots dir.
-    pub fn snapshot_dir(&self) -> String {
-        self.snapshot_dir.clone().unwrap_or_else(|| Config::build_snapshot_dir(self.db_path.clone()))
+    pub fn storage_snapshot_dir(&self) -> String {
+        self.storage_snapshot_dir.clone().unwrap_or_else(|| Config::build_snapshot_dir(self.storage_db_path.clone()))
     }
 
     //////////////////////////////////////////////////////////////////////////

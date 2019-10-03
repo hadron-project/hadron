@@ -109,6 +109,10 @@ enum ErrorCode {
   HANDSHAKE_REQUIRED = 1;
   // The given credentials are invalid.
   UNAUTHORIZED = 2;
+  // The token being used by the client does not have sufficient permissions for the requested operation.
+  INSUFFICIENT_PERMISSIONS = 3;
+  // The target stream of the request is unknown.
+  TARGET_STREAM_UNKNOWN = 4;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -181,13 +185,19 @@ message PubStreamRequest {
   string namespace = 1;
   // The name of the stream to publish to.
   string name = 2;
-  // The ID of the entry. Leave null if there is no associated ID.
-  StreamEntryId id = 3;
   // The data payload of the entry to publish.
-  bytes data = 4;
+  bytes data = 3;
+  // // The ID of the entry. Leave null if there is no associated ID.
+  // StreamEntryId id = 4;
 }
 
 message PubStreamResponse {
+  oneof result {
+    // An error associated with this response.
+    ClientError error = 1;
+    // The index of the published stream entry.
+    uint64 index = 2;
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
