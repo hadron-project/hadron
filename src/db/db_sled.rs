@@ -934,7 +934,7 @@ mod tests {
             let log = storage.log();
             let storage_addr = storage.start();
             let entry = Entry{term: 20, index: 99999, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events"), id: None, data: vec![],
+                namespace: String::from("default"), name: String::from("events"), data: vec![],
             })})};
             let msg = RgAppendEntryToLog::new(Arc::new(entry.clone()));
 
@@ -954,7 +954,6 @@ mod tests {
                     AppData::PubStream(data) => {
                         assert_eq!(data.namespace.as_str(), "default");
                         assert_eq!(data.name.as_str(), "events");
-                        assert_eq!(&data.id, &None);
                         assert_eq!(data.data.len(), 0);
                     }
                     _ => panic!("expected a populated PubStreamRequest entry"),
@@ -975,11 +974,11 @@ mod tests {
             let log = storage.log();
             let storage_addr = storage.start();
             let entry0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events0"), id: None, data: vec![],
+                namespace: String::from("default"), name: String::from("events0"), data: vec![],
             })})};
             log.insert(entry0.index.to_be_bytes(), bincode::serialize(&entry0).expect("serialize entry")).expect("append to log");
             let entry1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events1"), id: None, data: vec![],
+                namespace: String::from("default"), name: String::from("events1"), data: vec![],
             })})};
             log.insert(entry1.index.to_be_bytes(), bincode::serialize(&entry1).expect("serialize entry")).expect("append to log");
             let msg = RgGetLogEntries::new(0, 500);
@@ -1007,10 +1006,10 @@ mod tests {
             let log = storage.log();
             let storage_addr = storage.start();
             let msg0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events0"), id: None, data: vec![],
+                namespace: String::from("default"), name: String::from("events0"), data: vec![],
             })})};
             let msg1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events1"), id: None, data: vec![],
+                namespace: String::from("default"), name: String::from("events1"), data: vec![],
             })})};
             let msg = RgReplicateToLog::new(Arc::new(vec![msg0.clone(), msg1.clone()]));
 
@@ -1030,7 +1029,6 @@ mod tests {
                     AppData::PubStream(data) => {
                         assert_eq!(data.namespace.as_str(), "default");
                         assert_eq!(data.name.as_str(), "events0");
-                        assert_eq!(&data.id, &None);
                         assert_eq!(data.data.len(), 0);
                     }
                     _ => panic!("expected a populated PubStreamRequest entry"),
@@ -1044,7 +1042,6 @@ mod tests {
                     AppData::PubStream(data) => {
                         assert_eq!(data.namespace.as_str(), "default");
                         assert_eq!(data.name.as_str(), "events1");
-                        assert_eq!(&data.id, &None);
                         assert_eq!(data.data.len(), 0);
                     }
                     _ => panic!("expected a populated PubStreamRequest entry"),

@@ -1,7 +1,7 @@
 # Directory Ignores #
-actix-raft/target
 guide
 kubernetes
+rgclient
 target
 
 # File Ignores #

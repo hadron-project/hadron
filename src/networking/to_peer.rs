@@ -261,6 +261,7 @@ impl WsToPeer {
         actix::spawn(Client::new().ws(format!("ws://{}/internal/", &self.target)).connect()
             .then(move |res| match res {
                 Ok((_httpres, framed)) => {
+
                     // This is a bit complex. Here we are heap allocating the new stream+sink pair
                     // from the new connection so that we can refer to them more easily. Then we
                     // are sending them to the parent via the unbounded channel.

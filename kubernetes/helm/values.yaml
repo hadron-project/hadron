@@ -62,4 +62,4 @@ statefulSet:
   ## Client Config
   client:
     ## The threshold in seconds of not receiving a heartbeat from a client, after which it is reckoned to be dead.
-    livenessThreshold: 5
+    livenessThreshold: 10

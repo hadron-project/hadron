@@ -149,8 +149,8 @@ impl Network {
         let server = HttpServer::new(move || {
             App::new().data(data.clone())
                 // This endpoint is used for internal client communication.
+                .service(web::resource("/").to(Self::handle_client_connection))
                 .service(web::resource("/internal/").to(Self::handle_peer_connection))
-                .service(web::resource("").to(Self::handle_client_connection))
         })
         .bind(format!("0.0.0.0:{}", &self.config.port))
         .map_err(|err| {
