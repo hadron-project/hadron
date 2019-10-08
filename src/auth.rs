@@ -134,7 +134,7 @@ impl Claims {
                 if v.all {
                     return Ok(());
                 }
-                let has_match = v.grants.iter().filter(|e| &e.namespace == &req.namespace).any(|e| e.streams.iter().any(|s| s.matcher.has_match(&req.name)));
+                let has_match = v.grants.iter().filter(|e| &e.namespace == &req.namespace).any(|e| e.streams.iter().any(|s| s.matcher.has_match(&req.stream)));
                 if has_match {
                     Ok(()) // TODO: ensure role is all or write.
                 } else {

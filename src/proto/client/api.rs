@@ -31,7 +31,7 @@
 pub struct ClientFrame {
     #[prost(message, optional, tag="1")]
     pub meta: ::std::option::Option<FrameMeta>,
-    #[prost(oneof="client_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
+    #[prost(oneof="client_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18")]
     pub payload: ::std::option::Option<client_frame::Payload>,
 }
 pub mod client_frame {
@@ -61,14 +61,16 @@ pub mod client_frame {
         #[prost(message, tag="12")]
         UnsubPipeline(super::UnsubPipelineRequest),
         #[prost(message, tag="13")]
-        EnsureEndpoint(super::EnsureRpcEndpointRequest),
+        EnsureNamespace(super::EnsureNamespaceRequest),
         #[prost(message, tag="14")]
-        EnsureStream(super::EnsureStreamRequest),
+        EnsureEndpoint(super::EnsureRpcEndpointRequest),
         #[prost(message, tag="15")]
-        EnsurePipeline(super::EnsurePipelineRequest),
+        EnsureStream(super::EnsureStreamRequest),
         #[prost(message, tag="16")]
-        AckStream(super::AckStreamRequest),
+        EnsurePipeline(super::EnsurePipelineRequest),
         #[prost(message, tag="17")]
+        AckStream(super::AckStreamRequest),
+        #[prost(message, tag="18")]
         AckPipeline(super::AckPipelineRequest),
     }
 }
@@ -77,7 +79,7 @@ pub mod client_frame {
 pub struct ServerFrame {
     #[prost(message, optional, tag="1")]
     pub meta: ::std::option::Option<FrameMeta>,
-    #[prost(oneof="server_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
+    #[prost(oneof="server_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18")]
     pub payload: ::std::option::Option<server_frame::Payload>,
 }
 pub mod server_frame {
@@ -107,14 +109,16 @@ pub mod server_frame {
         #[prost(message, tag="12")]
         UnsubPipeline(super::UnsubPipelineResponse),
         #[prost(message, tag="13")]
-        EnsureEndpoint(super::EnsureRpcEndpointResponse),
+        EnsureNamespace(super::EnsureNamespaceResponse),
         #[prost(message, tag="14")]
-        EnsureStream(super::EnsureStreamResponse),
+        EnsureEndpoint(super::EnsureRpcEndpointResponse),
         #[prost(message, tag="15")]
-        EnsurePipeline(super::EnsurePipelineResponse),
+        EnsureStream(super::EnsureStreamResponse),
         #[prost(message, tag="16")]
-        AckStream(super::AckStreamResponse),
+        EnsurePipeline(super::EnsurePipelineResponse),
         #[prost(message, tag="17")]
+        AckStream(super::AckStreamResponse),
+        #[prost(message, tag="18")]
         AckPipeline(super::AckPipelineResponse),
     }
 }
@@ -178,12 +182,20 @@ pub struct ConnectRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
 pub struct ConnectResponse {
-    /// An error associated with this response. If this field is populated, no other fields should be used.
-    #[prost(message, optional, tag="1")]
-    pub error: ::std::option::Option<ClientError>,
-    /// The ID assigned to this connection by the server.
-    #[prost(string, tag="2")]
-    pub id: std::string::String,
+    #[prost(oneof="connect_response::Response", tags="1, 2")]
+    pub response: ::std::option::Option<connect_response::Response>,
+}
+pub mod connect_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Serialize, Deserialize)]
+    pub enum Response {
+        /// An error associated with this response. If this field is populated, no other fields should be used.
+        #[prost(message, tag="1")]
+        Error(super::ClientError),
+        /// The ID assigned to this connection by the server.
+        #[prost(string, tag="2")]
+        Id(std::string::String),
+    }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // DisconnectRequest & DisconnectResponse ////////////////////////////////////////////////////////
@@ -229,13 +241,13 @@ pub struct PubStreamRequest {
     pub namespace: std::string::String,
     /// The name of the stream to publish to.
     #[prost(string, tag="2")]
-    pub name: std::string::String,
+    pub stream: std::string::String,
     /// The data payload of the entry to publish.
     ///
     /// // The ID of the entry. Leave null if there is no associated ID.
     /// StreamEntryId id = 4;
     #[prost(bytes, tag="3")]
-    pub data: std::vec::Vec<u8>,
+    pub payload: std::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
@@ -322,6 +334,20 @@ pub struct UnsubPipelineRequest {
 pub struct UnsubPipelineResponse {
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
+// EnsureNamespaceRequest & EnsureRpcEndpointResponse ////////////////////////////////////////////
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize)]
+pub struct EnsureNamespaceRequest {
+    /// The name of the namespace to ensure.
+    #[prost(string, tag="1")]
+    pub name: std::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize)]
+pub struct EnsureNamespaceResponse {
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////
 // EnsureRpcEndpointRequest & EnsureRpcEndpointResponse //////////////////////////////////////////
 
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -338,10 +364,19 @@ pub struct EnsureRpcEndpointResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
 pub struct EnsureStreamRequest {
+    /// The namespace which the ensured stream should exist in.
+    #[prost(string, tag="1")]
+    pub namespace: std::string::String,
+    /// The name of the stream to ensure.
+    #[prost(string, tag="2")]
+    pub name: std::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
 pub struct EnsureStreamResponse {
+    /// An error associated with this response. Will be null if no error has taken place.
+    #[prost(message, optional, tag="1")]
+    pub error: ::std::option::Option<ClientError>,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // EnsurePipelineRequest & EnsurePipelineResponse ////////////////////////////////////////////////

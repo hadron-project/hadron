@@ -47,12 +47,13 @@ message ClientFrame {
     UnsubStreamRequest unsub_stream = 11;
     UnsubPipelineRequest unsub_pipeline = 12;
 
-    EnsureRpcEndpointRequest ensure_endpoint = 13;
-    EnsureStreamRequest ensure_stream = 14;
-    EnsurePipelineRequest ensure_pipeline = 15;
+    EnsureNamespaceRequest ensure_namespace = 13;
+    EnsureRpcEndpointRequest ensure_endpoint = 14;
+    EnsureStreamRequest ensure_stream = 15;
+    EnsurePipelineRequest ensure_pipeline = 16;
 
-    AckStreamRequest ack_stream = 16;
-    AckPipelineRequest ack_pipeline = 17;
+    AckStreamRequest ack_stream = 17;
+    AckPipelineRequest ack_pipeline = 18;
   }
 }
 
@@ -74,12 +75,13 @@ message ServerFrame {
     UnsubStreamResponse unsub_stream = 11;
     UnsubPipelineResponse unsub_pipeline = 12;
 
-    EnsureRpcEndpointResponse ensure_endpoint = 13;
-    EnsureStreamResponse ensure_stream = 14;
-    EnsurePipelineResponse ensure_pipeline = 15;
+    EnsureNamespaceResponse ensure_namespace = 13;
+    EnsureRpcEndpointResponse ensure_endpoint = 14;
+    EnsureStreamResponse ensure_stream = 15;
+    EnsurePipelineResponse ensure_pipeline = 16;
 
-    AckStreamResponse ack_stream = 16;
-    AckPipelineResponse ack_pipeline = 17;
+    AckStreamResponse ack_stream = 17;
+    AckPipelineResponse ack_pipeline = 18;
   }
 }
 
@@ -144,10 +146,12 @@ message ConnectRequest {
 
 // A response to a connection request.
 message ConnectResponse {
-  // An error associated with this response. If this field is populated, no other fields should be used.
-  ClientError error = 1;
-  // The ID assigned to this connection by the server.
-  string id = 2;
+  oneof response {
+    // An error associated with this response. If this field is populated, no other fields should be used.
+    ClientError error = 1;
+    // The ID assigned to this connection by the server.
+    string id = 2;
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -184,9 +188,9 @@ message PubStreamRequest {
   // The namespace of the stream to publish to.
   string namespace = 1;
   // The name of the stream to publish to.
-  string name = 2;
+  string stream = 2;
   // The data payload of the entry to publish.
-  bytes data = 3;
+  bytes payload = 3;
   // // The ID of the entry. Leave null if there is no associated ID.
   // StreamEntryId id = 4;
 }
@@ -255,6 +259,17 @@ message UnsubPipelineResponse {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
+// EnsureNamespaceRequest & EnsureRpcEndpointResponse ////////////////////////////////////////////
+
+message EnsureNamespaceRequest {
+  // The name of the namespace to ensure.
+  string name = 1;
+}
+
+message EnsureNamespaceResponse {
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
 // EnsureRpcEndpointRequest & EnsureRpcEndpointResponse //////////////////////////////////////////
 
 message EnsureRpcEndpointRequest {
@@ -267,9 +282,15 @@ message EnsureRpcEndpointResponse {
 // EnsureStreamRequest & EnsureStreamResponse ////////////////////////////////////////////////////
 
 message EnsureStreamRequest {
+  // The namespace which the ensured stream should exist in.
+  string namespace = 1;
+  // The name of the stream to ensure.
+  string name = 2;
 }
 
 message EnsureStreamResponse {
+  // An error associated with this response. Will be null if no error has taken place.
+  ClientError error = 1;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

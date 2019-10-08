@@ -15,7 +15,7 @@ use actix::prelude::*;
 use actix_web_actors::ws;
 use actix_raft::messages::{ResponseMode};
 use bytes;
-use log::{debug, error, info, warn};
+use log;
 use uuid;
 
 use crate::{
@@ -116,26 +116,29 @@ impl WsClient {
     fn handle_connect(&mut self, frame: api::ConnectRequest, meta: api::FrameMeta, ctx: &mut ws::WebsocketContext<Self>) {
         // Issue a normal response if the connection is already active.
         if let ClientState::Active(_) = &self.state {
-            warn!("Client {} sent a ConnectRequest even though the connection state is active.", self.connection_id);
-            return self.send_frame(ServerFramePayload::Connect(api::ConnectResponse{error: None, id: self.connection_id.clone()}), meta, ctx);
+            log::warn!("Client {} sent a ConnectRequest even though the connection state is active.", self.connection_id);
+            return self.send_frame(ServerFramePayload::Connect(api::ConnectResponse::new(self.connection_id.clone())), meta, ctx);
         }
 
         // Call network service to validate the given token and extract its claims object.
+        let liveness_threshold = Duration::from_secs(frame.liveness_threshold as u64);
         let f = fut::wrap_future(self.services.verify_token.send(VerifyToken(frame.token)))
             .map_err(|_, _: &mut Self, _| ClientError::new_internal())
             .and_then(|res, _, _| fut::result(res))
 
             // Transition to active state.
-            .and_then(|claims, act, _| {
+            .and_then(move |claims, act, ctx| {
                 act.state = ClientState::Active(ClientStateActive{claims});
+                act.liveness_threshold = liveness_threshold;
+                act.healthcheck(ctx);
                 fut::ok(())
             })
 
             // Emit response.
             .then(move |res, act, ctx| {
                 match res {
-                    Ok(_) => act.send_frame(ServerFramePayload::Connect(api::ConnectResponse{error: None, id: act.connection_id.clone()}), meta, ctx),
-                    Err(err) => act.send_frame(ServerFramePayload::Connect(api::ConnectResponse{error: Some(err), id: String::new()}), meta, ctx),
+                    Ok(_) => act.send_frame(ServerFramePayload::Connect(api::ConnectResponse::new(act.connection_id.clone())), meta, ctx),
+                    Err(err) => act.send_frame(ServerFramePayload::Connect(api::ConnectResponse::err(err)), meta, ctx),
                 }
                 fut::ok(())
             });
@@ -169,9 +172,11 @@ impl WsClient {
         if let Some(handle) = self.heartbeat_handle.take() {
             ctx.cancel_future(handle);
         }
+        log::debug!("Starting client healthcheck loop with liveness threshold {:?}", self.liveness_threshold);
         self.heartbeat_handle = Some(ctx.run_interval(self.liveness_threshold, |act, ctx| {
+            log::debug!("Running healthcheck loop on client {}.", &act.connection_id);
             if Instant::now().duration_since(act.heartbeat) > act.liveness_threshold {
-                info!("Client connection {} appears to be dead, disconnecting.", act.connection_id);
+                log::info!("Client connection {} appears to be dead, disconnecting.", act.connection_id);
                 ctx.stop();
             }
         }));
@@ -180,7 +185,7 @@ impl WsClient {
     /// Forward the given client request to the cluster's current leader.
     fn forward_to_leader(&mut self, _req: RgClientPayload, _meta: api::FrameMeta, _leader: Option<NodeId>, _ctx: &mut ws::WebsocketContext<Self>) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
         // NOTE/TODO: this is just stubbed logic for now.
-        error!("Forwarding client requests to cluster leader is not yet implemented.");
+        log::error!("Forwarding client requests to cluster leader is not yet implemented.");
         fut::ok(()) // TODO: finish this up.
     }
 
@@ -189,7 +194,7 @@ impl WsClient {
         use prost::Message;
         let frame = api::ServerFrame{payload: Some(payload), meta: Some(meta)};
         let mut data = bytes::BytesMut::with_capacity(frame.encoded_len());
-        let _ = frame.encode(&mut data).map_err(|err| error!("Failed to serialize protobuf frame. {}", err));
+        let _ = frame.encode(&mut data).map_err(|err| log::error!("Failed to serialize protobuf frame. {}", err));
         ctx.binary(data);
     }
 
@@ -202,13 +207,13 @@ impl WsClient {
             },
             Ok(payload) => match payload {
                 RgClientPayloadResponse::Committed{..} => {
-                    error!("Received a Committed payload response from Raft, expected Applied. Internal error.");
+                    log::error!("Received a Committed payload response from Raft, expected Applied. Internal error.");
                     ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::new_internal()))
                 }
                 RgClientPayloadResponse::Applied{data, ..} => match data {
                     AppDataResponse::PubStream{index} => ServerFramePayload::PubStream(api::PubStreamResponse::new(index)),
                     _ => {
-                        error!("Expected a PubStream data response from Raft, got something else. Internal error.");
+                        log::error!("Expected a PubStream data response from Raft, got something else. Internal error.");
                         ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::new_internal()))
                     }
                 }
@@ -222,12 +227,12 @@ impl WsClient {
 impl Actor for WsClient {
     type Context = ws::WebsocketContext<Self>;
 
-    /// Logic for starting this actor.
-    ///
-    /// Clients are responsible for driving the heartbeat / healtcheck system. The server will
-    /// simply check for liveness at the configured interval.
     fn started(&mut self, ctx: &mut Self::Context) {
         self.healthcheck(ctx);
+    }
+
+    fn stopped(&mut self, _: &mut Self::Context) {
+        log::debug!("Client {} is disconnecting.", &self.connection_id);
     }
 }
 
@@ -236,24 +241,25 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsClient {
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
         match msg {
             ws::Message::Nop => (),
-            ws::Message::Close(reason) => debug!("Connection with client {} is closing. {:?}", self.connection_id, reason),
+            ws::Message::Close(reason) => log::debug!("Connection with client {} is closing. {:?}", self.connection_id, reason),
             ws::Message::Ping(_) => {
-                // Heartbeat response received from connected client.
                 self.heartbeat = Instant::now();
+                ctx.pong("");
             }
-            ws::Message::Pong(_) => warn!("Protocol error. Unexpectedly received a pong frame from connected client."),
-            ws::Message::Text(_) => warn!("Protocol error. Unexpectedly received a text frame from connected client."),
+            ws::Message::Pong(_) => log::warn!("Protocol error. Unexpectedly received a pong frame from connected client."),
+            ws::Message::Text(_) => log::warn!("Protocol error. Unexpectedly received a text frame from connected client."),
             ws::Message::Binary(data) => {
                 // Decode the received frame.
-                debug!("Handling frame from connected client.");
+                log::debug!("Handling frame from connected client.");
                 use prost::Message;
                 let frame = match api::ClientFrame::decode(data) {
                     Ok(frame) => frame,
                     Err(err) => {
-                        error!("Error decoding binary frame from client connection {}. {}", self.connection_id, err);
+                        log::error!("Error decoding binary frame from client connection {}. {}", self.connection_id, err);
                         return;
                     }
                 };
+                self.heartbeat = Instant::now();
 
                 // If the frame is a response frame, route it through to its matching request.
                 let meta = frame.meta.unwrap_or_default();
@@ -269,13 +275,14 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsClient {
                     Some(ClientFramePayload::SubPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
                     Some(ClientFramePayload::UnsubStream(_payload)) => (), // self.handler(payload, meta, ctx),
                     Some(ClientFramePayload::UnsubPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::EnsureNamespace(payload)) => self.handle_ensure_namespace(payload, meta, ctx),
                     Some(ClientFramePayload::EnsureEndpoint(_payload)) => (), // self.handler(payload, meta, ctx),
-                    Some(ClientFramePayload::EnsureStream(_payload)) => (), // self.handler(payload, meta, ctx),
+                    Some(ClientFramePayload::EnsureStream(payload)) => self.handle_ensure_stream(payload, meta, ctx),
                     Some(ClientFramePayload::EnsurePipeline(_payload)) => (), // self.handler(payload, meta, ctx),
                     Some(ClientFramePayload::AckStream(_payload)) => (), // self.handler(payload, meta, ctx),
                     Some(ClientFramePayload::AckPipeline(_payload)) => (), // self.handler(payload, meta, ctx),
                     None => {
-                        warn!("Empty or unrecognized client frame payload received on connection {}.", self.connection_id);
+                        log::warn!("Empty or unrecognized client frame payload received on connection {}.", self.connection_id);
                     }
                 }
             }

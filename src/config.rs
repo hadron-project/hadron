@@ -106,6 +106,9 @@ impl Config {
     }
 
     /// The threshold in seconds of not receiving a heartbeat from a client, after which it is reckoned to be dead.
+    ///
+    /// This is the default value used for new client connections. Clients can override this
+    /// value as needed during the client handshake.
     pub fn client_liveness_threshold(&self) -> Duration {
         self._client_liveness_threshold.unwrap_or_else(|| Duration::from_secs(self.client_liveness_threshold as u64))
     }

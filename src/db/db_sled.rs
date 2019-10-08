@@ -400,8 +400,8 @@ impl SledStorage {
     /// Validate the contents of a PubStreamRequest before it hits the log.
     fn validate_pub_stream(&self, entry: &api::PubStreamRequest) -> Result<(), ClientError> {
         // Ensure the target stream exists.
-        if let None = self.indexed_streams.get(&format!("{}/{}", &entry.namespace, &entry.name)) {
-            return Err(ClientError::new_unknown_stream(&entry.namespace, &entry.name));
+        if let None = self.indexed_streams.get(&format!("{}/{}", &entry.namespace, &entry.stream)) {
+            return Err(ClientError::new_unknown_stream(&entry.namespace, &entry.stream));
         }
         Ok(())
     }
@@ -479,13 +479,13 @@ impl SledStorage {
     /// Apply the given PubStreamRequest to the state machine.
     fn apply_pub_stream(&mut self, req: &api::PubStreamRequest) -> Result<AppDataResponse, ClientError> {
         // Get a handle to the target stream object.
-        let stream = self.indexed_streams.get_mut(&format!("{}/{}", &req.namespace, &req.name)).ok_or_else(|| {
+        let stream = self.indexed_streams.get_mut(&format!("{}/{}", &req.namespace, &req.stream)).ok_or_else(|| {
             error!("Error while applying entry to state machine for a PubStreamRequest. Target stream does not exist in index.");
             ClientError::new_internal()
         })?;
 
         // Create a new stream entry and serialize it.
-        let entry = StreamEntry{index: stream.next_index, data: req.data.clone()};
+        let entry = StreamEntry{index: stream.next_index, data: req.payload.clone()};
         let entry_bytes = bincode::serialize(&entry).map_err(|err| {
             error!("Error serializing StreamEntry. {}", err);
             ClientError::new_internal()
@@ -934,7 +934,7 @@ mod tests {
             let log = storage.log();
             let storage_addr = storage.start();
             let entry = Entry{term: 20, index: 99999, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events"), data: vec![],
+                namespace: String::from("default"), stream: String::from("events"), payload: vec![],
             })})};
             let msg = RgAppendEntryToLog::new(Arc::new(entry.clone()));
 
@@ -953,8 +953,8 @@ mod tests {
                 EntryPayload::Normal(entry) => match &entry.data {
                     AppData::PubStream(data) => {
                         assert_eq!(data.namespace.as_str(), "default");
-                        assert_eq!(data.name.as_str(), "events");
-                        assert_eq!(data.data.len(), 0);
+                        assert_eq!(data.stream.as_str(), "events");
+                        assert_eq!(data.payload.len(), 0);
                     }
                     _ => panic!("expected a populated PubStreamRequest entry"),
                 }
@@ -974,11 +974,11 @@ mod tests {
             let log = storage.log();
             let storage_addr = storage.start();
             let entry0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events0"), data: vec![],
+                namespace: String::from("default"), stream: String::from("events0"), payload: vec![],
             })})};
             log.insert(entry0.index.to_be_bytes(), bincode::serialize(&entry0).expect("serialize entry")).expect("append to log");
             let entry1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events1"), data: vec![],
+                namespace: String::from("default"), stream: String::from("events1"), payload: vec![],
             })})};
             log.insert(entry1.index.to_be_bytes(), bincode::serialize(&entry1).expect("serialize entry")).expect("append to log");
             let msg = RgGetLogEntries::new(0, 500);
@@ -1006,10 +1006,10 @@ mod tests {
             let log = storage.log();
             let storage_addr = storage.start();
             let msg0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events0"), data: vec![],
+                namespace: String::from("default"), stream: String::from("events0"), payload: vec![],
             })})};
             let msg1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
-                namespace: String::from("default"), name: String::from("events1"), data: vec![],
+                namespace: String::from("default"), stream: String::from("events1"), payload: vec![],
             })})};
             let msg = RgReplicateToLog::new(Arc::new(vec![msg0.clone(), msg1.clone()]));
 
@@ -1028,8 +1028,8 @@ mod tests {
                 EntryPayload::Normal(entry) => match &entry.data {
                     AppData::PubStream(data) => {
                         assert_eq!(data.namespace.as_str(), "default");
-                        assert_eq!(data.name.as_str(), "events0");
-                        assert_eq!(data.data.len(), 0);
+                        assert_eq!(data.stream.as_str(), "events0");
+                        assert_eq!(data.payload.len(), 0);
                     }
                     _ => panic!("expected a populated PubStreamRequest entry"),
                 }
@@ -1041,8 +1041,8 @@ mod tests {
                 EntryPayload::Normal(entry) => match &entry.data {
                     AppData::PubStream(data) => {
                         assert_eq!(data.namespace.as_str(), "default");
-                        assert_eq!(data.name.as_str(), "events1");
-                        assert_eq!(data.data.len(), 0);
+                        assert_eq!(data.stream.as_str(), "events1");
+                        assert_eq!(data.payload.len(), 0);
                     }
                     _ => panic!("expected a populated PubStreamRequest entry"),
                 }
