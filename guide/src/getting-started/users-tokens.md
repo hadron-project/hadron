@@ -5,12 +5,16 @@ Railgun uses a simple but effective permissions model. There are users and there
 There are three different user roles:
 - `root`: this user has full control over the cluster, all namespaces and all resources.
 - `admin`: admins are limited to only specific namespaces, but may manage all resources of those namespaces, may grant other users permissions on those namespaces, and may create tokens for resources of those namespaces.
-- `viewer`: limited to view only access of specific namespaces or of the entire cluster. This is perfect for systems which simply need to gather metrics and the like.
 
-Users are not able to directly use the resources of Railgun, that is what tokens are for. Tokens represent a static set of permissions for the bearer of that token. The token ID is retained within Railgun and the token may be deleted. Token permissions are represented as a simple structure with the following fields:
-- `v`: the permissions version of the token.
-- `all`: a boolean value. If this value is `true`, then the `grants` field will be ignored, the token will be able to utilize any resources of the cluster, and can only be deleted by a `root` user.
-- `grants`: a list permissions granted per namespace. Each grant has the following structure:
+Users are not able to directly use the resources of Railgun, that is what tokens are for. Tokens represent a static set of permissions for the bearer of that token. The token ID is retained within Railgun and the token may be deleted, which revokes that tokens access to the cluster. Token permission claims are represented as three different types:
+- `Root`: a root token claim which represents full access to the cluster's resources.
+- `Metrics`: a metrics token claim which represents access only to the cluster monitoring system.
+- `Namespaces`: a namespaces token claim which represents a set of namespace specific grants.
+
+Namespace grants are modelled as two different types:
+- `Full`: a grant of full permissons on the target namespace.
+    - `namespace`: the namespace which the grant pertains to.
+- `Limited`: a grant of limited access to specific resources within the target namespace.
     - `namespace`: the namespace which the grant pertains to.
     - `can_create`: a boolean value. If `true`, this token can be used to create new endpoints, streams and pipelines in the associated namespace.
     - `messaging`: a `read/write/none` enum value.

@@ -423,7 +423,7 @@ impl Handler<VerifyToken> for Network {
         if msg.0.len() != 0 {
             Box::new(fut::err(ClientError::new_unauthorized()))
         } else {
-            Box::new(fut::ok(Claims::V1(ClaimsV1{all: true, grants: Vec::new()})))
+            Box::new(fut::ok(Claims::V1(ClaimsV1::Root)))
         }
     }
 }

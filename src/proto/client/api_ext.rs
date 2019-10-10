@@ -56,11 +56,24 @@ impl ClientError {
         }
     }
 
-    /// Create a new insntance representing a `TargetStreamUnknown` error.
+    /// Create a new instance representing an `InvalidInput` error.
+    pub fn new_invalid_input(message: String) -> Self {
+        Self{message, code: ErrorCode::InvalidInput as i32}
+    }
+
+    /// Create a new instance representing a `TargetStreamUnknown` error.
     pub fn new_unknown_stream(namespace: &str, name: &str) -> Self {
         Self{
             message: format!("The target stream {} in namespace {} does not appear to exist. You must create streams before interacting with them.", name, namespace),
             code: ErrorCode::TargetStreamUnknown as i32,
+        }
+    }
+
+    /// Create a new instance representing a `TargetStreamExists` error.
+    pub fn new_stream_already_exists() -> Self {
+        Self{
+            message: String::new(),
+            code: ErrorCode::TargetStreamExists as i32,
         }
     }
 }
@@ -80,6 +93,21 @@ impl api::ConnectResponse {
     /// Create a new error instance.
     pub fn err(err: ClientError) -> Self {
         Self{response: Some(api::connect_response::Response::Error(err))}
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// EnsureStreamResponse //////////////////////////////////////////////////////
+
+impl api::EnsureStreamResponse {
+    /// Create a new success instance.
+    pub fn new() -> Self {
+        Self{error: None}
+    }
+
+    /// Create a new error instance.
+    pub fn new_err(err: ClientError) -> Self {
+        Self{error: Some(err)}
     }
 }
 

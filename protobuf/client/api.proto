@@ -47,13 +47,12 @@ message ClientFrame {
     UnsubStreamRequest unsub_stream = 11;
     UnsubPipelineRequest unsub_pipeline = 12;
 
-    EnsureNamespaceRequest ensure_namespace = 13;
-    EnsureRpcEndpointRequest ensure_endpoint = 14;
-    EnsureStreamRequest ensure_stream = 15;
-    EnsurePipelineRequest ensure_pipeline = 16;
+    EnsureRpcEndpointRequest ensure_endpoint = 13;
+    EnsureStreamRequest ensure_stream = 14;
+    EnsurePipelineRequest ensure_pipeline = 15;
 
-    AckStreamRequest ack_stream = 17;
-    AckPipelineRequest ack_pipeline = 18;
+    AckStreamRequest ack_stream = 16;
+    AckPipelineRequest ack_pipeline = 17;
   }
 }
 
@@ -75,13 +74,12 @@ message ServerFrame {
     UnsubStreamResponse unsub_stream = 11;
     UnsubPipelineResponse unsub_pipeline = 12;
 
-    EnsureNamespaceResponse ensure_namespace = 13;
-    EnsureRpcEndpointResponse ensure_endpoint = 14;
-    EnsureStreamResponse ensure_stream = 15;
-    EnsurePipelineResponse ensure_pipeline = 16;
+    EnsureRpcEndpointResponse ensure_endpoint = 13;
+    EnsureStreamResponse ensure_stream = 14;
+    EnsurePipelineResponse ensure_pipeline = 15;
 
-    AckStreamResponse ack_stream = 17;
-    AckPipelineResponse ack_pipeline = 18;
+    AckStreamResponse ack_stream = 16;
+    AckPipelineResponse ack_pipeline = 17;
   }
 }
 
@@ -113,8 +111,12 @@ enum ErrorCode {
   UNAUTHORIZED = 2;
   // The token being used by the client does not have sufficient permissions for the requested operation.
   INSUFFICIENT_PERMISSIONS = 3;
+  // The given input is invalid.
+  INVALID_INPUT = 4;
   // The target stream of the request is unknown.
-  TARGET_STREAM_UNKNOWN = 4;
+  TARGET_STREAM_UNKNOWN = 5;
+  // The target stream already exists.
+  TARGET_STREAM_EXISTS = 6;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -256,17 +258,6 @@ message UnsubPipelineRequest {
 }
 
 message UnsubPipelineResponse {
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// EnsureNamespaceRequest & EnsureRpcEndpointResponse ////////////////////////////////////////////
-
-message EnsureNamespaceRequest {
-  // The name of the namespace to ensure.
-  string name = 1;
-}
-
-message EnsureNamespaceResponse {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

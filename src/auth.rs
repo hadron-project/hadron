@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 use crate::proto::client::api;
 
 const HIERARCHY_TOKEN: &str = ".";
-const UNAUTHORIZED_STREAM_ACCESS: &str = "The client token being used does not specify sufficient permissions for the request stream operation.";
+const UNAUTHORIZED_ACTION: &str = "The client token being used does not have sufficient permissions for the requested action.";
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // JWT Data Models ///////////////////////////////////////////////////////////////////////////////
@@ -11,30 +11,43 @@ const UNAUTHORIZED_STREAM_ACCESS: &str = "The client token being used does not s
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag="v")]
 pub enum Claims {
+    #[serde(rename="1")]
     V1(ClaimsV1),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ClaimsV1 {
-    /// A boolean indicating if the token has full permissions on the cluster.
-    pub all: bool,
-    /// The set of permissions for this token.
-    pub grants: Vec<Grant>,
+#[serde(tag="type")]
+pub enum ClaimsV1 {
+    /// A root token claim which represents full access to the cluster's resources.
+    Root,
+    /// A namespaces token claim which represents a set of namespace specific grants.
+    Namespaces(Vec<Grant>),
+    /// A metrics token claim which represents access only to the cluster monitoring system.
+    Metrics,
 }
 
 /// A set of permissions granted on a specific namespace.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Grant {
-    /// The namespace to which this grant applies.
-    pub namespace: String,
-    /// A boolean indicating if this token has permission to create resources in the associated namespace.
-    pub can_create: bool,
-    /// The token's access level to the namespace's ephemeral messaging.
-    pub messaging: MessagingAccess,
-    /// The permissions granted on the endpoints of the associated namespace.
-    pub endpoints: Vec<EndpointGrant>,
-    /// The permissions granted on the streams of the associated namespace.
-    pub streams: Vec<StreamGrant>,
+#[serde(tag="type")]
+pub enum Grant {
+    /// A grant of full permissons on the target namespace.
+    Full {
+        /// The namespace which this permissions grant applies to.
+        namespace: String,
+    },
+    /// A grant of limited access to specific resources within the target namespace.
+    Limited {
+        /// The namespace which this permissions grant applies to.
+        namespace: String,
+        /// A boolean indicating if this token has permission to create resources in the associated namespace.
+        can_create: bool,
+        /// The token's access level to the namespace's ephemeral messaging.
+        messaging: MessagingAccess,
+        /// The permissions granted on the endpoints of the associated namespace.
+        endpoints: Vec<EndpointGrant>,
+        /// The permissions granted on the streams of the associated namespace.
+        streams: Vec<StreamGrant>,
+    }
 }
 
 /// An enumeration of possible ephemeral messaging access levels.
@@ -127,20 +140,75 @@ pub enum UserRole {
 // Claims impl ///////////////////////////////////////////////////////////////////////////////////
 
 impl Claims {
-    /// Check if the given
-    pub fn check_stream_pub_auth(&self, req: &api::PubStreamRequest) -> Result<(), api::ClientError> {
+    /// Check this cliams instance for authorization to perform the given action.
+    pub fn check_ensure_stream_auth(&self, req: &api::EnsureStreamRequest) -> Result<(), api::ClientError> {
         match &self {
-            Claims::V1(v) => {
-                if v.all {
-                    return Ok(());
-                }
-                let has_match = v.grants.iter().filter(|e| &e.namespace == &req.namespace).any(|e| e.streams.iter().any(|s| s.matcher.has_match(&req.stream)));
-                if has_match {
-                    Ok(()) // TODO: ensure role is all or write.
-                } else {
-                    Err(api::ClientError{message: UNAUTHORIZED_STREAM_ACCESS.to_string(), code: api::ErrorCode::Unauthorized as i32})
+            Self::V1(v) => match v {
+                ClaimsV1::Root => Ok(()),
+                ClaimsV1::Metrics => Err(api::ClientError{message: UNAUTHORIZED_ACTION.to_string(), code: api::ErrorCode::Unauthorized as i32}),
+                ClaimsV1::Namespaces(grants) => {
+                    let has_match = grants.iter()
+                        .filter(|e| &e.namespace() == &req.namespace)
+                        .any(|e| match e {
+                            Grant::Full{..} => true,
+                            Grant::Limited{can_create, ..} => *can_create,
+                        });
+                    if has_match {
+                        Ok(())
+                    } else {
+                        Err(api::ClientError{message: UNAUTHORIZED_ACTION.to_string(), code: api::ErrorCode::Unauthorized as i32})
+                    }
                 }
             }
+        }
+    }
+
+    /// Check this cliams instance for authorization to perform the given action.
+    pub fn check_stream_pub_auth(&self, req: &api::PubStreamRequest) -> Result<(), api::ClientError> {
+        match &self {
+            Self::V1(v) => match v {
+                ClaimsV1::Root => Ok(()),
+                ClaimsV1::Metrics => Err(api::ClientError{message: UNAUTHORIZED_ACTION.to_string(), code: api::ErrorCode::Unauthorized as i32}),
+                ClaimsV1::Namespaces(grants) => {
+                    let has_match = grants.iter()
+                        .filter(|e| &e.namespace() == &req.namespace)
+                        .any(|e| match e {
+                            Grant::Full{..} => true,
+                            Grant::Limited{streams, ..} => streams.iter().any(|s| s.matcher.has_match(&req.stream) && s.access.can_publish()),
+                        });
+                    if has_match {
+                        Ok(())
+                    } else {
+                        Err(api::ClientError{message: UNAUTHORIZED_ACTION.to_string(), code: api::ErrorCode::Unauthorized as i32})
+                    }
+                }
+            }
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Grant impl ////////////////////////////////////////////////////////////////////////////////////
+
+impl Grant {
+    /// Get a reference to the namespace which this grant applies to.
+    pub fn namespace(&self) -> &str {
+        match self {
+            Self::Full{namespace} => namespace.as_str(),
+            Self::Limited{namespace, ..} => namespace.as_str(),
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// StreamAccess impl /////////////////////////////////////////////////////////////////////////////
+
+impl StreamAccess {
+    /// Check if this access level represents a sufficient grant to be able to publish.
+    pub fn can_publish(&self) -> bool {
+        match self {
+            Self::All | Self::Write => true,
+            Self::Read => false,
         }
     }
 }

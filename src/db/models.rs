@@ -1,7 +1,14 @@
 //! Data models for Railgun primitive objects.
 
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde::{Serialize, Deserialize};
 use sled;
+
+lazy_static! {
+    /// The regex pattern for stream names.
+    pub(super) static ref STREAM_NAME_PATTERN: Regex = Regex::new(r"[-_.a-zA-Z0-9]{1,100}").expect("Expected stream name pattern to compile.");
+}
 
 /// A multi-stage data workflow composed of endpoints and streams.
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]

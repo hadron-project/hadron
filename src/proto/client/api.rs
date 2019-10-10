@@ -31,7 +31,7 @@
 pub struct ClientFrame {
     #[prost(message, optional, tag="1")]
     pub meta: ::std::option::Option<FrameMeta>,
-    #[prost(oneof="client_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18")]
+    #[prost(oneof="client_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
     pub payload: ::std::option::Option<client_frame::Payload>,
 }
 pub mod client_frame {
@@ -61,16 +61,14 @@ pub mod client_frame {
         #[prost(message, tag="12")]
         UnsubPipeline(super::UnsubPipelineRequest),
         #[prost(message, tag="13")]
-        EnsureNamespace(super::EnsureNamespaceRequest),
-        #[prost(message, tag="14")]
         EnsureEndpoint(super::EnsureRpcEndpointRequest),
-        #[prost(message, tag="15")]
+        #[prost(message, tag="14")]
         EnsureStream(super::EnsureStreamRequest),
-        #[prost(message, tag="16")]
+        #[prost(message, tag="15")]
         EnsurePipeline(super::EnsurePipelineRequest),
-        #[prost(message, tag="17")]
+        #[prost(message, tag="16")]
         AckStream(super::AckStreamRequest),
-        #[prost(message, tag="18")]
+        #[prost(message, tag="17")]
         AckPipeline(super::AckPipelineRequest),
     }
 }
@@ -79,7 +77,7 @@ pub mod client_frame {
 pub struct ServerFrame {
     #[prost(message, optional, tag="1")]
     pub meta: ::std::option::Option<FrameMeta>,
-    #[prost(oneof="server_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18")]
+    #[prost(oneof="server_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
     pub payload: ::std::option::Option<server_frame::Payload>,
 }
 pub mod server_frame {
@@ -109,16 +107,14 @@ pub mod server_frame {
         #[prost(message, tag="12")]
         UnsubPipeline(super::UnsubPipelineResponse),
         #[prost(message, tag="13")]
-        EnsureNamespace(super::EnsureNamespaceResponse),
-        #[prost(message, tag="14")]
         EnsureEndpoint(super::EnsureRpcEndpointResponse),
-        #[prost(message, tag="15")]
+        #[prost(message, tag="14")]
         EnsureStream(super::EnsureStreamResponse),
-        #[prost(message, tag="16")]
+        #[prost(message, tag="15")]
         EnsurePipeline(super::EnsurePipelineResponse),
-        #[prost(message, tag="17")]
+        #[prost(message, tag="16")]
         AckStream(super::AckStreamResponse),
-        #[prost(message, tag="18")]
+        #[prost(message, tag="17")]
         AckPipeline(super::AckPipelineResponse),
     }
 }
@@ -334,20 +330,6 @@ pub struct UnsubPipelineRequest {
 pub struct UnsubPipelineResponse {
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// EnsureNamespaceRequest & EnsureRpcEndpointResponse ////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct EnsureNamespaceRequest {
-    /// The name of the namespace to ensure.
-    #[prost(string, tag="1")]
-    pub name: std::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct EnsureNamespaceResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
 // EnsureRpcEndpointRequest & EnsureRpcEndpointResponse //////////////////////////////////////////
 
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -424,6 +406,10 @@ pub enum ErrorCode {
     Unauthorized = 2,
     /// The token being used by the client does not have sufficient permissions for the requested operation.
     InsufficientPermissions = 3,
+    /// The given input is invalid.
+    InvalidInput = 4,
     /// The target stream of the request is unknown.
-    TargetStreamUnknown = 4,
+    TargetStreamUnknown = 5,
+    /// The target stream already exists.
+    TargetStreamExists = 6,
 }

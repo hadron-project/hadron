@@ -7,7 +7,7 @@ version = "0.1.0"
 [dependencies]
 actix = "0.8"
 actix-codec = "0.1"
-actix-raft = { git="https://github.com/railgun-rs/actix-raft", branch="v4" }
+actix-raft = { git="https://github.com/railgun-rs/actix-raft.git", branch="29-post-crash-single-node-init" }
 actix-web = "1.0"
 actix-web-actors = "1.0"
 awc = "0.2"
@@ -19,10 +19,12 @@ env_logger = "0.6"
 envy = "0.4"
 failure = "0.1"
 futures = "0.1"
+lazy_static = "1.4.0"
 log = "0.4"
 prost = "0.5"
+regex = "1.3.1"
 serde = { version="1", features=["derive"] }
-sled = "0.28"
+sled = { git="https://github.com/thedodd/sled", branch="impl-transactional-over-3-tuple-tree" }
 trust-dns-resolver = "0.11"
 uuid = { version="0.7", default-features=false, features=["v4"] }
 
