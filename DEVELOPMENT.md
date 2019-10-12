@@ -7,3 +7,14 @@ Railgun uses the Rust stable channel. Get started with development by [installin
 Building Railgun is as simple as `cargo build`, append `--release` for an optimized build.
 
 All testing and CI is built around the docker ecosystem. We're using [MicroK8s](https://microk8s.io/) for CI testing related to Kubernets, as well as [MiniKube](https://github.com/kubernetes/minikube) for local development and testing.
+
+```bash
+# Build the container under cargo-watch for rapid feedback.
+docker build --target builder-watch -t railgun-watch:latest .
+
+# Run the container. This will block.
+docker run --rm -it -v $PWD/src:/railgun/src -v $PWD/Cargo.lock:/railgun/Cargo.lock -v $PWD/Cargo.toml:/railgun/Cargo.toml -v $PWD/protobuf:/railgun/protobuf -v $PWD/build.rs:/railgun/build.rs --name railgun-watch railgun-watch
+
+# From a different shell.
+docker commit railgun-watch && docker build --target release-watch -t railgun .
+```

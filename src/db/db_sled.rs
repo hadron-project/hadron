@@ -207,7 +207,7 @@ impl SledStorage {
         log::info!("Finished indexing data.");
 
         let sled = SyncArbiter::start(3, move || SledActor); // TODO: probably use `num_cores` crate.
-        Ok(SledStorage{
+        let mut inst = SledStorage{
             id, sled, db, log,
             hs: state.hard_state, object_collections,
             last_log_index: state.last_log_index,
@@ -217,7 +217,9 @@ impl SledStorage {
             indexed_pipelines, indexed_streams,
             indexed_tokens, indexed_users,
             pending_streams: Default::default(),
-        })
+        };
+        inst.index_unapplied_logs(state.last_log_index, state.last_applied_log)?;
+        Ok(inst)
     }
 
     /// Initialize and restore any previous state from disk.
@@ -378,6 +380,32 @@ impl SledStorage {
             index.insert(key, stream_wrapper);
         }
         Ok(index)
+    }
+
+    fn index_unapplied_logs(&mut self, last_log: u64, last_applied: u64) -> Result<(), failure::Error> {
+        // Basic checks to avoid noop & panic conditions (though last_applied will never be > last_log).
+        if last_applied >= last_log {
+            return Ok(());
+        }
+
+        // Perform validation/indexing logic on unapplied logs. These should never fail as they
+        // have already been previously validated, this will simply ensure their data is indexed.
+        let (start, stop) = (last_applied.to_be_bytes(), last_log.to_be_bytes());
+        self.log.range(start..=stop).try_for_each(|res_entry| {
+            let (_, data) = res_entry?;
+            bincode::deserialize::<RgEntry>(&data)
+                .map_err(|err| {
+                    log::error!("{} {}", ERR_DESERIALIZE_ENTRY, err);
+                    ClientError::new_internal()
+                })
+                .and_then(|entry| match &entry.payload {
+                    RgEntryPayload::Blank
+                        | RgEntryPayload::SnapshotPointer(_)
+                        | RgEntryPayload::ConfigChange(_) => Ok(()),
+                    RgEntryPayload::Normal(inner_entry) => self.validate_pre_log_entry(inner_entry, entry.index),
+                })?;
+            Ok(())
+        })
     }
 
     /// Get the keyspace for a stream's data given its namespace & name.
