@@ -1,8 +1,7 @@
-use std::{error, fmt};
-
-use actix_raft::AppError;
+use std::{fmt, error};
 
 use crate::{
+    app::AppDataError,
     proto::client::api::{self, ClientError, ErrorCode},
 };
 
@@ -12,7 +11,7 @@ const ERR_UNAUTHORIZED: &str = "The given JWT is invalid.";
 const ERR_INSUFFICIENT_PERMISSIONS: &str = "The token being used by the client does not have sufficient permissions for the requested operation.";
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// ClienntError //////////////////////////////////////////////////////////////////////////////////
+// ClientError ///////////////////////////////////////////////////////////////////////////////////
 
 impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -21,8 +20,6 @@ impl fmt::Display for ClientError {
 }
 
 impl error::Error for ClientError {}
-
-impl AppError for ClientError {}
 
 impl ClientError {
     /// Create a new instance representing a `HandshakeRequired` error.
@@ -62,18 +59,25 @@ impl ClientError {
     }
 
     /// Create a new instance representing a `TargetStreamUnknown` error.
-    pub fn new_unknown_stream(namespace: &str, name: &str) -> Self {
+    pub fn new_unknown_stream(namespace: String, name: String) -> Self {
         Self{
-            message: format!("The target stream {} in namespace {} does not appear to exist. You must create streams before interacting with them.", name, namespace),
+            message: format!("The target stream {}/{} does not appear to exist. You must create streams before interacting with them.", namespace, name),
             code: ErrorCode::TargetStreamUnknown as i32,
         }
     }
+}
 
-    /// Create a new instance representing a `TargetStreamExists` error.
-    pub fn new_stream_already_exists() -> Self {
-        Self{
-            message: String::new(),
-            code: ErrorCode::TargetStreamExists as i32,
+impl From<AppDataError> for ClientError {
+    fn from(src: AppDataError) -> Self {
+        match src {
+            AppDataError::Internal => ClientError::new_internal(),
+            AppDataError::InvalidInput(msg) => ClientError::new_invalid_input(msg),
+            AppDataError::TargetStreamExists => {
+                // Why is this bad? This type of error should be translated into a success response for EnsureStream requests.
+                log::warn!("Transformed an AppDataError::TargetStreamExists error directly into a client error. This should not take place.");
+                ClientError::new_internal()
+            }
+            AppDataError::UnknownStream{namespace, name} => ClientError::new_unknown_stream(namespace, name),
         }
     }
 }

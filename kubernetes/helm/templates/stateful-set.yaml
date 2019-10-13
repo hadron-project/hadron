@@ -31,6 +31,7 @@ spec:
         - name: railgun
           image: railgun:latest
           imagePullPolicy: Never
+          command: ["/bin/railgun"]
           ports:
             - containerPort: {{.Values.statefulSet.server.port}}
           env:

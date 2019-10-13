@@ -19,10 +19,16 @@ use crate::{
 };
 
 /// The default timeout for Raft AppendEntries RPCs.
+///
+/// TODO: we should update this to come from runtime config for user control.
 pub(self) const RAFT_APPEND_ENTRIES_TIMEOUT: Duration = Duration::from_secs(5);
 /// The default timeout for Raft InstallSnapshot RPCs.
+///
+/// TODO: we should update this to come from runtime config for user control.
 pub(self) const RAFT_INSTALL_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The default timeout for Raft VoteRequest RPCs.
+///
+/// TODO: we should update this to be half of the election timeout min of runtime config.
 pub(self) const RAFT_VOTE_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

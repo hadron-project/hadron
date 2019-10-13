@@ -7,7 +7,7 @@ version = "0.1.0"
 [dependencies]
 actix = "0.8"
 actix-codec = "0.1"
-actix-raft = { git="https://github.com/railgun-rs/actix-raft.git", branch="29-post-crash-single-node-init" }
+actix-raft = "0.4"
 actix-web = "1.0"
 actix-web-actors = "1.0"
 awc = "0.2"

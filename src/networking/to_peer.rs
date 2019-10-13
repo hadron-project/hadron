@@ -101,16 +101,12 @@ struct StateConnected {
     /// The last successful heartbeat on this socket. Will reckon the peer as being dead after
     /// `PEER_HB_THRESHOLD` has been exceeded since last successful heartbeat.
     heartbeat: Instant,
-
     /// A handle to the currently running heartbeat loop.
     heartbeat_handle: Option<SpawnHandle>,
-
     /// The current outbound sink for sending data to the connected peer.
     outbound: SinkWrite<WsSink>,
-
     /// The handshake state of the connection.
     handshake: PeerHandshakeState,
-
     /// A map of all pending requests.
     requests_map: HashMap<String, (oneshot::Sender<Result<api::Response, ()>>, SpawnHandle)>,
 }
@@ -141,13 +137,15 @@ pub(super) struct WsToPeer {
     discovery_state: DiscoveryState,
     /// The state of the connection with the target peer.
     connection: ConnectionState,
+    /// A cached copy of this node's client routing info.
+    routing: api::RoutingInfo,
 }
 
 impl WsToPeer {
     /// Create a new instance.
-    pub fn new(services: WsToPeerServices, node_id: NodeId, target: SocketAddr) -> Self {
+    pub fn new(services: WsToPeerServices, node_id: NodeId, target: SocketAddr, routing: api::RoutingInfo) -> Self {
         Self{
-            node_id, services, target,
+            node_id, services, target, routing,
             peer_id: None,
             discovery_state: DiscoveryState::Observed,
             connection: ConnectionState::Initializing,
@@ -173,9 +171,8 @@ impl WsToPeer {
         // Create a frame for the next state of the handshake.
         use PeerHandshakeState::*;
         let request = match hs_state {
-            // TODO: finish up the routing info pattern. See the peer connection management doc.
             Initial => api::Request{segment: Some(api::request::Segment::Handshake(
-                api::Handshake{node_id: self.node_id, routing_info: String::with_capacity(0)}
+                api::Handshake{node_id: self.node_id, routing: Some(self.routing.clone())}
             ))},
             Done => return,
         };
@@ -223,10 +220,9 @@ impl WsToPeer {
         self.peer_id = Some(hs.node_id.clone());
 
         // Propagate handshake info to parent `Network` actor.
-        // TODO: finish up the routing info pattern. See the peer connection management doc.
         let f = self.services.peer_connection_live.send(PeerConnectionLive{
             peer_id: hs.node_id,
-            routing_info: hs.routing_info,
+            routing: hs.routing.unwrap_or_default(),
             addr: PeerAddr::ToPeer(ctx.address()),
         });
         ctx.spawn(fut::wrap_future(f.map_err(|_| ())));
@@ -332,6 +328,10 @@ impl WsToPeer {
                     .then(move |res, act, ctx| act.send_raft_response(res, meta, ctx));
                 ctx.spawn(f);
             }
+            Some(api::request::Segment::Routing(routing_info)) => {
+                // TODO: impl this.
+                error!("Received updated routing info from peer, but handler is not implemented inn WsToPeer. {:?}", routing_info)
+            },
             None => warn!("Empty request segment received in WsToPeer."),
         }
     }

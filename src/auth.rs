@@ -3,7 +3,6 @@ use serde::{Serialize, Deserialize};
 use crate::proto::client::api;
 
 const HIERARCHY_TOKEN: &str = ".";
-const UNAUTHORIZED_ACTION: &str = "The client token being used does not have sufficient permissions for the requested action.";
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // JWT Data Models ///////////////////////////////////////////////////////////////////////////////
@@ -145,7 +144,7 @@ impl Claims {
         match &self {
             Self::V1(v) => match v {
                 ClaimsV1::Root => Ok(()),
-                ClaimsV1::Metrics => Err(api::ClientError{message: UNAUTHORIZED_ACTION.to_string(), code: api::ErrorCode::Unauthorized as i32}),
+                ClaimsV1::Metrics => Err(api::ClientError::new_insufficient_permissions()),
                 ClaimsV1::Namespaces(grants) => {
                     let has_match = grants.iter()
                         .filter(|e| &e.namespace() == &req.namespace)
@@ -156,7 +155,7 @@ impl Claims {
                     if has_match {
                         Ok(())
                     } else {
-                        Err(api::ClientError{message: UNAUTHORIZED_ACTION.to_string(), code: api::ErrorCode::Unauthorized as i32})
+                        Err(api::ClientError::new_insufficient_permissions())
                     }
                 }
             }
@@ -168,7 +167,7 @@ impl Claims {
         match &self {
             Self::V1(v) => match v {
                 ClaimsV1::Root => Ok(()),
-                ClaimsV1::Metrics => Err(api::ClientError{message: UNAUTHORIZED_ACTION.to_string(), code: api::ErrorCode::Unauthorized as i32}),
+                ClaimsV1::Metrics => Err(api::ClientError::new_insufficient_permissions()),
                 ClaimsV1::Namespaces(grants) => {
                     let has_match = grants.iter()
                         .filter(|e| &e.namespace() == &req.namespace)
@@ -179,7 +178,7 @@ impl Claims {
                     if has_match {
                         Ok(())
                     } else {
-                        Err(api::ClientError{message: UNAUTHORIZED_ACTION.to_string(), code: api::ErrorCode::Unauthorized as i32})
+                        Err(api::ClientError::new_insufficient_permissions())
                     }
                 }
             }

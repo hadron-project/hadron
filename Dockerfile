@@ -9,20 +9,10 @@ WORKDIR /railgun
 FROM base as builder-watch
 RUN cargo install cargo-watch --version 7.2.1
 
-COPY ./src src
-COPY ./Cargo.lock Cargo.lock
-COPY ./Cargo.toml Cargo.toml
-COPY ./build.rs build.rs
-COPY ./protobuf protobuf
-RUN cargo build --release
+# NOTE WELL: in order for this to be useful, the continer running this stage's command should
+# have src, Cargo.toml, Cargo.lock, build.rs & protobuf volume mounted into the container.
 
-CMD ["cargo", "watch", "-i", "src/proto/*", "-s", "cargo build --release"]
-
-##############################################################################
-# release-watch ##############################################################
-FROM rust:${TAG} as release-watch
-COPY --from=builder-watch /railgun/target/release/railgun /bin/railgun
-CMD ["/bin/railgun"]
+CMD ["cargo", "watch", "-i", "src/proto/*", "-s", "cargo build --release && mv /railgun/target/release/railgun /bin/railgun"]
 
 ##############################################################################
 # builder-release ############################################################

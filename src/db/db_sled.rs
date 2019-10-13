@@ -34,13 +34,13 @@ use uuid;
 
 use crate::{
     NodeId,
-    app::{AppData, AppDataResponse, RgEntry, RgEntryNormal, RgEntryPayload},
+    app::{AppData, AppDataError, AppDataResponse, RgEntry, RgEntryNormal, RgEntryPayload},
     auth::User,
     db::models::{
         STREAM_NAME_PATTERN,
         Pipeline, Stream, StreamEntry, StreamType, StreamVisibility, StreamWrapper,
     },
-    proto::client::api::{self, ClientError},
+    proto::client::api,
     utils,
 };
 
@@ -98,16 +98,16 @@ const ERR_MISSING_ENTRY: &str = "Unable to access expected log entry.";
 /// An error from an endpoint's index being malformed.
 const ERR_MALFORMED_ENDPOINT_INDEX: &str = "Malformed index for endpoint.";
 
-type RgAppendEntryToLog = AppendEntryToLog<AppData, ClientError>;
-type RgApplyEntryToStateMachine = ApplyEntryToStateMachine<AppData, AppDataResponse, ClientError>;
-type RgCreateSnapshot = CreateSnapshot<ClientError>;
-type RgGetCurrentSnapshot = GetCurrentSnapshot<ClientError>;
-type RgGetInitialState = GetInitialState<ClientError>;
-type RgGetLogEntries = GetLogEntries<AppData, ClientError>;
-type RgInstallSnapshot = InstallSnapshot<ClientError>;
-type RgReplicateToLog = ReplicateToLog<AppData, ClientError>;
-type RgReplicateToStateMachine = ReplicateToStateMachine<AppData, ClientError>;
-type RgSaveHardState = SaveHardState<ClientError>;
+type RgAppendEntryToLog = AppendEntryToLog<AppData, AppDataError>;
+type RgApplyEntryToStateMachine = ApplyEntryToStateMachine<AppData, AppDataResponse, AppDataError>;
+type RgCreateSnapshot = CreateSnapshot<AppDataError>;
+type RgGetCurrentSnapshot = GetCurrentSnapshot<AppDataError>;
+type RgGetInitialState = GetInitialState<AppDataError>;
+type RgGetLogEntries = GetLogEntries<AppData, AppDataError>;
+type RgInstallSnapshot = InstallSnapshot<AppDataError>;
+type RgReplicateToLog = ReplicateToLog<AppData, AppDataError>;
+type RgReplicateToStateMachine = ReplicateToStateMachine<AppData, AppDataError>;
+type RgSaveHardState = SaveHardState<AppDataError>;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // SledStorage ///////////////////////////////////////////////////////////////////////////////////
@@ -396,7 +396,7 @@ impl SledStorage {
             bincode::deserialize::<RgEntry>(&data)
                 .map_err(|err| {
                     log::error!("{} {}", ERR_DESERIALIZE_ENTRY, err);
-                    ClientError::new_internal()
+                    AppDataError::Internal
                 })
                 .and_then(|entry| match &entry.payload {
                     RgEntryPayload::Blank
@@ -442,7 +442,7 @@ impl Actor for SledStorage {
     type Context = Context<Self>;
 }
 
-impl RaftStorage<AppData, AppDataResponse, ClientError> for SledStorage {
+impl RaftStorage<AppData, AppDataResponse, AppDataError> for SledStorage {
     type Actor = Self;
     type Context = Context<Self>;
 }
@@ -451,14 +451,14 @@ impl RaftStorage<AppData, AppDataResponse, ClientError> for SledStorage {
 // RaftStorage RgAppendEntryToLog ////////////////////////////////////////////
 
 impl Handler<RgAppendEntryToLog> for SledStorage {
-    type Result = ResponseActFuture<Self, (), ClientError>;
+    type Result = ResponseActFuture<Self, (), AppDataError>;
 
     fn handle(&mut self, msg: RgAppendEntryToLog, _ctx: &mut Self::Context) -> Self::Result {
         // Validate the given payload before writing it to the log.
         match &msg.entry.payload {
             RgEntryPayload::SnapshotPointer(_) => {
                 log::error!("Received a request to write a snapshot pointer to the log. This should never happen.");
-                return Box::new(fut::err(ClientError::new_internal()));
+                return Box::new(fut::err(AppDataError::Internal));
             }
             RgEntryPayload::Blank | RgEntryPayload::ConfigChange(_) => (), // No validation needed on these variants.
             RgEntryPayload::Normal(entry) => if let Err(err) = self.validate_pre_log_entry(entry, msg.entry.index) {
@@ -469,11 +469,11 @@ impl Handler<RgAppendEntryToLog> for SledStorage {
         // Entry checks out, send it over to be written to the log.
         let res = bincode::serialize(&*msg.entry).map_err(|err| {
             log::error!("Error serializing log entry: {}", err);
-            ClientError::new_internal()
+            AppDataError::Internal
         }).and_then(|data| {
             self.log.insert(msg.entry.index.to_be_bytes(), data.as_slice()).map_err(|err| {
                 log::error!("Error serializing log entry: {}", err);
-                ClientError::new_internal()
+                AppDataError::Internal
             })
         }).map(|_| {
             self.last_log_index = msg.entry.index;
@@ -485,7 +485,7 @@ impl Handler<RgAppendEntryToLog> for SledStorage {
 
 impl SledStorage {
     /// Validate the contents of the given entry before writing it to the log.
-    fn validate_pre_log_entry(&mut self, entry: &RgEntryNormal, index: u64) -> Result<(), ClientError> {
+    fn validate_pre_log_entry(&mut self, entry: &RgEntryNormal, index: u64) -> Result<(), AppDataError> {
         match &entry.data {
             AppData::PubStream(data) => self.validate_pub_stream(data),
             AppData::SubStream(data) => self.validate_sub_stream(data),
@@ -501,69 +501,69 @@ impl SledStorage {
     }
 
     /// Validate the contents of a PubStreamRequest before it hits the log.
-    fn validate_pub_stream(&self, entry: &api::PubStreamRequest) -> Result<(), ClientError> {
+    fn validate_pub_stream(&self, entry: &api::PubStreamRequest) -> Result<(), AppDataError> {
         // Ensure the target stream exists.
         log::debug!("Validating pub stream request. {:?}", entry);
         if let None = self.indexed_streams.get(&format!("{}/{}", &entry.namespace, &entry.stream)) {
-            return Err(ClientError::new_unknown_stream(&entry.namespace, &entry.stream));
+            return Err(AppDataError::new_unknown_stream(entry.namespace.clone(), entry.stream.clone()));
         }
         Ok(())
     }
 
     /// Validate the contents of a SubStreamRequest before it hits the log.
-    fn validate_sub_stream(&self, _entry: &api::SubStreamRequest) -> Result<(), ClientError> {
+    fn validate_sub_stream(&self, _entry: &api::SubStreamRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a SubPipelineRequest before it hits the log.
-    fn validate_sub_pipeline(&self, _entry: &api::SubPipelineRequest) -> Result<(), ClientError> {
+    fn validate_sub_pipeline(&self, _entry: &api::SubPipelineRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a UnsubStreamRequest before it hits the log.
-    fn validate_unsub_stream(&self, _entry: &api::UnsubStreamRequest) -> Result<(), ClientError> {
+    fn validate_unsub_stream(&self, _entry: &api::UnsubStreamRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a UnsubPipelineRequest before it hits the log.
-    fn validate_unsub_pipeline(&self, _entry: &api::UnsubPipelineRequest) -> Result<(), ClientError> {
+    fn validate_unsub_pipeline(&self, _entry: &api::UnsubPipelineRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a EnsureRpcEndpointRequest before it hits the log.
-    fn validate_ensure_rpc_endpoint(&self, _entry: &api::EnsureRpcEndpointRequest) -> Result<(), ClientError> {
+    fn validate_ensure_rpc_endpoint(&self, _entry: &api::EnsureRpcEndpointRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a EnsureStreamRequest before it hits the log.
-    fn validate_ensure_stream(&mut self, entry: &api::EnsureStreamRequest, index: u64) -> Result<(), ClientError> {
+    fn validate_ensure_stream(&mut self, entry: &api::EnsureStreamRequest, index: u64) -> Result<(), AppDataError> {
         log::debug!("Validating ensure stream request. {:?}", entry);
         if !STREAM_NAME_PATTERN.is_match(&entry.name) {
-            return Err(ClientError::new_invalid_input(String::from("Stream names must match the pattern `[-_.a-zA-Z0-9]{1,100}`.")));
+            return Err(AppDataError::new_invalid_input(String::from("Stream names must match the pattern `[-_.a-zA-Z0-9]{1,100}`.")));
         }
         let fullname = format!("{}/{}", &entry.namespace, &entry.name);
         if let Some(_) = self.indexed_streams.get(&fullname) {
-            return Err(ClientError::new_stream_already_exists());
+            return Err(AppDataError::TargetStreamExists);
         }
         if self.pending_streams.values().any(|e| e == &fullname) {
-            return Err(ClientError::new_stream_already_exists());
+            return Err(AppDataError::TargetStreamExists);
         }
         self.pending_streams.insert(index, fullname);
         Ok(())
     }
 
     /// Validate the contents of a EnsurePipelineRequest before it hits the log.
-    fn validate_ensure_pipeline(&self, _entry: &api::EnsurePipelineRequest) -> Result<(), ClientError> {
+    fn validate_ensure_pipeline(&self, _entry: &api::EnsurePipelineRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a AckStreamRequest before it hits the log.
-    fn validate_ack_stream(&self, _entry: &api::AckStreamRequest) -> Result<(), ClientError> {
+    fn validate_ack_stream(&self, _entry: &api::AckStreamRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a AckPipelineRequest before it hits the log.
-    fn validate_ack_pipeline(&self, _entry: &api::AckPipelineRequest) -> Result<(), ClientError> {
+    fn validate_ack_pipeline(&self, _entry: &api::AckPipelineRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 }
@@ -572,21 +572,21 @@ impl SledStorage {
 // RaftStorage RgReplicateToLog //////////////////////////////////////////////
 
 impl Handler<RgReplicateToLog> for SledStorage {
-    type Result = ResponseActFuture<Self, (), ClientError>;
+    type Result = ResponseActFuture<Self, (), AppDataError>;
 
     fn handle(&mut self, msg: RgReplicateToLog, _ctx: &mut Self::Context) -> Self::Result {
         let mut batch = sled::Batch::default();
         let res = msg.entries.iter().try_for_each(|entry| {
             let data = bincode::serialize(entry).map_err(|err| {
                 log::error!("Error serializing log entry: {}", err);
-                ClientError::new_internal()
+                AppDataError::Internal
             })?;
             batch.insert(&entry.index.to_be_bytes(), data.as_slice());
             Ok(())
         }).and_then(|_| {
             self.log.apply_batch(batch).map_err(|err| {
                 log::error!("Error applying batch of Raft log entries to storage: {}", err);
-                ClientError::new_internal()
+                AppDataError::Internal
             })
         });
         Box::new(fut::result(res))
@@ -597,7 +597,7 @@ impl Handler<RgReplicateToLog> for SledStorage {
 // RaftStorage RgApplyEntryToStateMachine & RgReplicateToStateMachine ////////
 
 impl Handler<RgApplyEntryToStateMachine> for SledStorage {
-    type Result = ResponseActFuture<Self, AppDataResponse, ClientError>;
+    type Result = ResponseActFuture<Self, AppDataResponse, AppDataError>;
 
     fn handle(&mut self, msg: RgApplyEntryToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
         Box::new(fut::result(self.apply_entry_to_state_machine(&*msg.payload)))
@@ -605,7 +605,7 @@ impl Handler<RgApplyEntryToStateMachine> for SledStorage {
 }
 
 impl Handler<RgReplicateToStateMachine> for SledStorage {
-    type Result = ResponseActFuture<Self, (), ClientError>;
+    type Result = ResponseActFuture<Self, (), AppDataError>;
 
     fn handle(&mut self, msg: RgReplicateToStateMachine, _ctx: &mut Self::Context) -> Self::Result {
         let res = msg.payload.iter().try_for_each(|entry| {
@@ -617,11 +617,11 @@ impl Handler<RgReplicateToStateMachine> for SledStorage {
 
 impl SledStorage {
     /// Apply the given entry to the state machine.
-    fn apply_entry_to_state_machine(&mut self, entry: &RgEntry) -> Result<AppDataResponse, ClientError> {
+    fn apply_entry_to_state_machine(&mut self, entry: &RgEntry) -> Result<AppDataResponse, AppDataError> {
         let res = match &entry.payload {
             RgEntryPayload::SnapshotPointer(_) => {
                 log::error!("Received a request to write a snapshot pointer to state machine. This should never happen.");
-                return Err(ClientError::new_internal());
+                return Err(AppDataError::Internal);
             }
             RgEntryPayload::Blank => self.update_lal(entry.index).map(|_| AppDataResponse::Noop),
             RgEntryPayload::ConfigChange(config) => self.apply_entry_config_change(config, entry.index),
@@ -648,20 +648,20 @@ impl SledStorage {
     }
 
     /// Apply the given PubStreamRequest to the state machine.
-    fn apply_pub_stream(&mut self, req: &api::PubStreamRequest, log_index: u64) -> Result<AppDataResponse, ClientError> {
+    fn apply_pub_stream(&mut self, req: &api::PubStreamRequest, log_index: u64) -> Result<AppDataResponse, AppDataError> {
         log::debug!("Applying pub stream request for {:?}.", &req);
 
         // Get a handle to the target stream object.
         let stream = self.indexed_streams.get_mut(&format!("{}/{}", &req.namespace, &req.stream)).ok_or_else(|| {
             log::error!("Error while applying entry to state machine for a PubStreamRequest. Target stream does not exist in index.");
-            ClientError::new_internal()
+            AppDataError::Internal
         })?;
 
         // Create a new stream entry and serialize it.
         let entry = StreamEntry{index: stream.next_index, data: req.payload.clone()};
         let entry_bytes = bincode::serialize(&entry).map_err(|err| {
             log::error!("Error serializing StreamEntry. {}", err);
-            ClientError::new_internal()
+            AppDataError::Internal
         })?;
 
         // Update the value of the stream's next index.
@@ -675,7 +675,7 @@ impl SledStorage {
             Ok(())
         }).map_err(|err| {
             log::error!("Error writing stream entry. {}", err);
-            ClientError::new_internal()
+            AppDataError::Internal
         })?;
 
         Ok(AppDataResponse::PubStream{index: entry.index})
@@ -685,18 +685,18 @@ impl SledStorage {
     ///
     /// When this routine starts, we know that the stream ns/name has been reserved in the
     /// `pending_streams` index, which will be cleared after this routine.
-    fn apply_ensure_stream(&mut self, req: &api::EnsureStreamRequest, log_index: u64) -> Result<AppDataResponse, ClientError> {
+    fn apply_ensure_stream(&mut self, req: &api::EnsureStreamRequest, log_index: u64) -> Result<AppDataResponse, AppDataError> {
         log::debug!("Applying ensure stream request for {:?}.", &req);
 
         // Open new trees for the new stream.
         let fullname = format!("{}/{}", req.namespace, req.name);
         let data = self.db.open_tree(Self::stream_keyspace_data(&req.namespace, &req.name)).map_err(|err| {
             log::error!("Error opening tree for new stream's data. {}", err);
-            ClientError::new_internal()
+            AppDataError::Internal
         })?;
         let meta = self.db.open_tree(Self::stream_keyspace_metadata(&req.namespace, &req.name)).map_err(|err| {
             log::error!("Error opening tree for new stream's metadata. {}", err);
-            ClientError::new_internal()
+            AppDataError::Internal
         })?;
 
         // Build stream object & serialize.
@@ -708,7 +708,7 @@ impl SledStorage {
         };
         let stream_bytes = bincode::serialize(&stream).map_err(|err| {
             log::error!("{} {}", ERR_SERIALIZE_STREAM, err);
-            ClientError::new_internal()
+            AppDataError::Internal
         })?;
 
         // Initialize next index value for new stream & update LAL.
@@ -719,7 +719,7 @@ impl SledStorage {
             Ok(())
         }).map_err(|err| {
             log::error!("Error creating new stream. {}", err);
-            ClientError::new_internal()
+            AppDataError::Internal
         })?;
 
         // Add new stream to index.
@@ -728,7 +728,7 @@ impl SledStorage {
     }
 
     /// Apply the new config to storage.
-    fn apply_entry_config_change(&mut self, config: &EntryConfigChange, log_index: u64) -> Result<AppDataResponse, ClientError> {
+    fn apply_entry_config_change(&mut self, config: &EntryConfigChange, log_index: u64) -> Result<AppDataResponse, AppDataError> {
         // Serialize data.
         self.hs = HardState{
             current_term: self.hs.current_term,
@@ -737,7 +737,7 @@ impl SledStorage {
         };
         let hs = bincode::serialize(&self.hs).map_err(|err| {
             log::error!("{} {:?}", ERR_SERIALIZE_HARD_STATE, err);
-            ClientError::new_internal()
+            AppDataError::Internal
         })?;
 
         // Write to disk.
@@ -747,7 +747,7 @@ impl SledStorage {
             Ok(())
         }).map_err(|err| {
             log::error!("{} {:?}", ERR_WRITING_HARD_STATE, err);
-            ClientError::new_internal()
+            AppDataError::Internal
         })?;
 
         Ok(AppDataResponse::Noop)
@@ -757,11 +757,11 @@ impl SledStorage {
     ///
     /// This should only be used for routines which do not need to atomically update other values
     /// in storage.
-    fn update_lal(&self, log_index: u64) -> Result<(), ClientError> {
+    fn update_lal(&self, log_index: u64) -> Result<(), AppDataError> {
         self.db.insert(RAFT_LAL_KEY, &log_index.to_be_bytes())
             .map_err(|err| {
                 log::error!("Error updating last applied log value. {}", err);
-                ClientError::new_internal()
+                AppDataError::Internal
             })
             .map(|_| ())
     }
@@ -771,7 +771,7 @@ impl SledStorage {
 // RaftStorage RgGetInitialState /////////////////////////////////////////////
 
 impl Handler<RgGetInitialState> for SledStorage {
-    type Result = Result<InitialState, ClientError>;
+    type Result = Result<InitialState, AppDataError>;
 
     fn handle(&mut self, _msg: RgGetInitialState, _ctx: &mut Self::Context) -> Self::Result {
         Ok(InitialState{
@@ -784,31 +784,31 @@ impl Handler<RgGetInitialState> for SledStorage {
 }
 
 impl Handler<RgGetLogEntries> for SledStorage {
-    type Result = ResponseActFuture<Self, Vec<RgEntry>, ClientError>;
+    type Result = ResponseActFuture<Self, Vec<RgEntry>, AppDataError>;
 
     fn handle(&mut self, msg: RgGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
         Box::new(fut::wrap_future(self.sled.send(SyncGetLogEntries(msg, self.log.clone())))
-            .map_err(|err, _: &mut Self, _| utils::proto_client_error_from_mailbox_error(err, ERR_DURING_DB_MSG))
+            .map_err(|err, _: &mut Self, _| utils::app_data_error_from_mailbox_error(err, ERR_DURING_DB_MSG))
             .and_then(|res, _, _| fut::result(res))
         )
     }
 }
 
 impl Handler<RgSaveHardState> for SledStorage {
-    type Result = ResponseActFuture<Self, (), ClientError>;
+    type Result = ResponseActFuture<Self, (), AppDataError>;
 
     fn handle(&mut self, msg: RgSaveHardState, _ctx: &mut Self::Context) -> Self::Result {
         // Serialize data.
         self.hs = msg.hs.clone();
         let res = bincode::serialize(&msg.hs).map_err(|err| {
             log::error!("{} {:?}", ERR_SERIALIZE_HARD_STATE, err);
-            ClientError::new_internal()
+            AppDataError::Internal
         })
         // Write to disk.
         .and_then(|hs| {
             self.db.insert(RAFT_HARDSTATE_KEY, hs).map_err(|err| {
                 log::error!("{} {:?}", ERR_WRITING_HARD_STATE, err);
-                ClientError::new_internal()
+                AppDataError::Internal
             })
             .map(|_| ())
         });
@@ -817,7 +817,7 @@ impl Handler<RgSaveHardState> for SledStorage {
 }
 
 impl Handler<RgCreateSnapshot> for SledStorage {
-    type Result = ResponseActFuture<Self, CurrentSnapshotData, ClientError>;
+    type Result = ResponseActFuture<Self, CurrentSnapshotData, AppDataError>;
 
     fn handle(&mut self, _msg: RgCreateSnapshot, _ctx: &mut Self::Context) -> Self::Result {
         unimplemented!() // TODO: impl
@@ -825,7 +825,7 @@ impl Handler<RgCreateSnapshot> for SledStorage {
 }
 
 impl Handler<RgGetCurrentSnapshot> for SledStorage {
-    type Result = ResponseActFuture<Self, Option<CurrentSnapshotData>, ClientError>;
+    type Result = ResponseActFuture<Self, Option<CurrentSnapshotData>, AppDataError>;
 
     fn handle(&mut self, _msg: RgGetCurrentSnapshot, _ctx: &mut Self::Context) -> Self::Result {
         unimplemented!() // TODO: impl
@@ -833,7 +833,7 @@ impl Handler<RgGetCurrentSnapshot> for SledStorage {
 }
 
 impl Handler<RgInstallSnapshot> for SledStorage {
-    type Result = ResponseActFuture<Self, (), ClientError>;
+    type Result = ResponseActFuture<Self, (), AppDataError>;
 
     fn handle(&mut self, _msg: RgInstallSnapshot, _ctx: &mut Self::Context) -> Self::Result {
         unimplemented!() // TODO: impl
@@ -853,11 +853,11 @@ impl Actor for SledActor {
 struct SyncGetLogEntries(RgGetLogEntries, sled::Tree);
 
 impl Message for SyncGetLogEntries {
-    type Result = Result<Vec<RgEntry>, ClientError>;
+    type Result = Result<Vec<RgEntry>, AppDataError>;
 }
 
 impl Handler<SyncGetLogEntries> for SledActor {
-    type Result = Result<Vec<RgEntry>, ClientError>;
+    type Result = Result<Vec<RgEntry>, AppDataError>;
 
     fn handle(&mut self, msg: SyncGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
         let start = msg.0.start.to_be_bytes();
@@ -865,11 +865,11 @@ impl Handler<SyncGetLogEntries> for SledActor {
         let entries = msg.1.range(start..stop).values().try_fold(vec![], |mut acc, res| {
             let data = res.map_err(|err| {
                 log::error!("Error from sled in GetLogEntries. {}", err);
-                ClientError::new_internal()
+                AppDataError::Internal
             })?;
             let entry = bincode::deserialize(&data).map_err(|err| {
                 log::error!("Error deserializing entry in  GetLogEntries. {}", err);
-                ClientError::new_internal()
+                AppDataError::Internal
             })?;
             acc.push(entry);
             Ok(acc)
@@ -879,7 +879,7 @@ impl Handler<SyncGetLogEntries> for SledActor {
 }
 
 impl Handler<RgCreateSnapshot> for SledActor {
-    type Result = Result<CurrentSnapshotData, ClientError>;
+    type Result = Result<CurrentSnapshotData, AppDataError>;
 
     fn handle(&mut self, _msg: RgCreateSnapshot, _ctx: &mut Self::Context) -> Self::Result {
         unimplemented!() // TODO: impl
@@ -887,7 +887,7 @@ impl Handler<RgCreateSnapshot> for SledActor {
 }
 
 impl Handler<RgGetCurrentSnapshot> for SledActor {
-    type Result = Result<Option<CurrentSnapshotData>, ClientError>;
+    type Result = Result<Option<CurrentSnapshotData>, AppDataError>;
 
     fn handle(&mut self, _msg: RgGetCurrentSnapshot, _ctx: &mut Self::Context) -> Self::Result {
         unimplemented!() // TODO: impl
@@ -895,7 +895,7 @@ impl Handler<RgGetCurrentSnapshot> for SledActor {
 }
 
 impl Handler<RgInstallSnapshot> for SledActor {
-    type Result = Result<(), ClientError>;
+    type Result = Result<(), AppDataError>;
 
     fn handle(&mut self, _msg: RgInstallSnapshot, _ctx: &mut Self::Context) -> Self::Result {
         unimplemented!() // TODO: impl

@@ -1,6 +1,9 @@
 use prost_build;
 
 fn main() {
+    // NOTE WELL: peer protobuf and client protobuf definitions & code are strictly separated
+    // to ensure that implementing client drivers stays clean and simple.
+
     // Compile peer communications protobuf code.
     let _ = prost_build::Config::new()
         .out_dir("src/proto/peer")

@@ -33,7 +33,7 @@ pub mod frame {
 /// A request from a peer node.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Request {
-    #[prost(oneof="request::Segment", tags="1, 2")]
+    #[prost(oneof="request::Segment", tags="1, 2, 3")]
     pub segment: ::std::option::Option<request::Segment>,
 }
 pub mod request {
@@ -43,12 +43,14 @@ pub mod request {
         Handshake(super::Handshake),
         #[prost(message, tag="2")]
         Raft(super::RaftRequest),
+        #[prost(message, tag="3")]
+        Routing(super::RoutingInfo),
     }
 }
 /// A response to an earlier sent request.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Response {
-    #[prost(oneof="response::Segment", tags="1, 2, 3")]
+    #[prost(oneof="response::Segment", tags="1, 2, 3, 4")]
     pub segment: ::std::option::Option<response::Segment>,
 }
 pub mod response {
@@ -60,7 +62,54 @@ pub mod response {
         Handshake(super::Handshake),
         #[prost(message, tag="3")]
         Raft(super::RaftResponse),
+        #[prost(message, tag="4")]
+        Routing(super::RoutingInfo),
     }
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Components ////////////////////////////////////////////////////////////////////////////////////
+
+/// A description of a client's state for data routing.
+///
+/// This data is used for ephemeral messaging, RPCs & stream consumer routing. Ephemeral
+/// messaging & RPC routing info is ephemeral, and held only in memory. Stream consumer
+/// information is propagated up to the app level, but only durable consumer information is
+/// persisted on disk via Raft.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientInfo {
+    #[prost(message, repeated, tag="1")]
+    pub messaging: ::std::vec::Vec<MessagingSub>,
+    #[prost(message, repeated, tag="2")]
+    pub rpc: ::std::vec::Vec<RpcSub>,
+    #[prost(message, repeated, tag="3")]
+    pub streams: ::std::vec::Vec<StreamSub>,
+    #[prost(message, repeated, tag="4")]
+    pub pipelines: ::std::vec::Vec<PipelineSub>,
+}
+/// A node's client routing info.
+///
+/// The ID of the node to which this info pertains is established during the peer handshake.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RoutingInfo {
+    /// A mapping of all clients curently connected to this node, by ID.
+    #[prost(map="string, message", tag="2")]
+    pub client_info: ::std::collections::HashMap<std::string::String, ClientInfo>,
+}
+/// Details of a client ephemeral messaging subscription.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MessagingSub {
+}
+/// Details of a client RPC subscription.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RpcSub {
+}
+/// Details of a client Stream subscription.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamSub {
+}
+/// Details of a client Pipeline subscription.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineSub {
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Handshake /////////////////////////////////////////////////////////////////////////////////////
@@ -68,10 +117,12 @@ pub mod response {
 /// A handshake frame holding all data needed for a successful handshake between peers.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Handshake {
+    /// The ID of the node sending this frame.
     #[prost(uint64, tag="1")]
     pub node_id: u64,
-    #[prost(string, tag="2")]
-    pub routing_info: std::string::String,
+    /// The sending node's client routing info.
+    #[prost(message, optional, tag="2")]
+    pub routing: ::std::option::Option<RoutingInfo>,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Raft Request & Response ///////////////////////////////////////////////////////////////////////
@@ -110,17 +161,17 @@ pub mod raft_response {
         InstallSnapshot(std::vec::Vec<u8>),
     }
 }
-/// A peer error variant.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Error {
-    /// An internal error has taken place. The request should be safe to retry, if related to a request.
-    Internal = 0,
-}
 /// A frame indicating that the peer connection must disconnect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Disconnect {
     /// The disconnect frame has been sent because the connection is no longer valid..
     ConnectionInvalid = 0,
+}
+/// A peer error variant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Error {
+    /// An internal error has taken place. The request should be safe to retry, if related to a request.
+    Internal = 0,
 }

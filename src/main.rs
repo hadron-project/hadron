@@ -9,7 +9,7 @@ use railgun::{App, Config};
 
 fn main() {
     // Build the system arbiter.
-    let sys = actix::System::new("railgun");
+    let sys = actix::System::builder().stop_on_panic(true).name("railgun").build();
 
     // Parse runtime config.
     let config = Arc::new(Config::new());

@@ -27,6 +27,7 @@ message Request {
   oneof segment {
     Handshake handshake = 1;
     RaftRequest raft = 2;
+    RoutingInfo routing = 3;
   }
 }
 
@@ -36,13 +37,24 @@ message Response {
     Error error = 1;
     Handshake handshake = 2;
     RaftResponse raft = 3;
+    RoutingInfo routing = 4;
   }
 }
 
-// A peer error variant.
-enum Error {
-  // An internal error has taken place. The request should be safe to retry, if related to a request.
-  Internal = 0;
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Components ////////////////////////////////////////////////////////////////////////////////////
+
+// A description of a client's state for data routing.
+//
+// This data is used for ephemeral messaging, RPCs & stream consumer routing. Ephemeral
+// messaging & RPC routing info is ephemeral, and held only in memory. Stream consumer
+// information is propagated up to the app level, but only durable consumer information is
+// persisted on disk via Raft.
+message ClientInfo {
+  repeated MessagingSub messaging = 1;
+  repeated RpcSub rpc = 2;
+  repeated StreamSub streams = 3;
+  repeated PipelineSub pipelines = 4;
 }
 
 // A frame indicating that the peer connection must disconnect.
@@ -51,13 +63,41 @@ enum Disconnect {
   ConnectionInvalid = 0;
 }
 
+// A peer error variant.
+enum Error {
+  // An internal error has taken place. The request should be safe to retry, if related to a request.
+  Internal = 0;
+}
+
+// A node's client routing info.
+//
+// The ID of the node to which this info pertains is established during the peer handshake.
+message RoutingInfo {
+  // A mapping of all clients curently connected to this node, by ID.
+  map<string, ClientInfo> client_info = 2;
+}
+
+// Details of a client ephemeral messaging subscription.
+message MessagingSub {}
+
+// Details of a client RPC subscription.
+message RpcSub {}
+
+// Details of a client Stream subscription.
+message StreamSub {}
+
+// Details of a client Pipeline subscription.
+message PipelineSub {}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Handshake /////////////////////////////////////////////////////////////////////////////////////
 
 // A handshake frame holding all data needed for a successful handshake between peers.
 message Handshake {
+  // The ID of the node sending this frame.
   uint64 node_id = 1;
-  string routing_info = 2;
+  // The sending node's client routing info.
+  RoutingInfo routing = 2;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

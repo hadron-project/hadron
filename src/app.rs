@@ -1,11 +1,12 @@
 use std::{
-    collections::BTreeMap,
+    collections::HashMap,
+    error, fmt,
     sync::Arc,
 };
 
 use actix::prelude::*;
 use actix_raft::{
-    Raft,
+    Raft, RaftMetrics,
     admin::{InitWithConfig},
     config::SnapshotPolicy,
     messages::{
@@ -29,7 +30,7 @@ use crate::{
     },
     proto::{
         client::api::{
-            AckPipelineRequest, AckStreamRequest, ClientError,
+            AckPipelineRequest, AckStreamRequest,
             EnsurePipelineRequest, EnsureRpcEndpointRequest, EnsureStreamRequest,
             PubStreamRequest, SubPipelineRequest, SubStreamRequest,
             UnsubPipelineRequest, UnsubStreamRequest,
@@ -39,12 +40,12 @@ use crate::{
 };
 
 /// This application's concrete Raft type.
-type AppRaft = Raft<AppData, AppDataResponse, ClientError, Network, Storage>;
+type AppRaft = Raft<AppData, AppDataResponse, AppDataError, Network, Storage>;
 pub type RgEntry = Entry<AppData>;
 pub type RgEntryPayload = EntryPayload<AppData>;
 pub type RgEntryNormal = EntryNormal<AppData>;
-pub type RgClientPayload = ClientPayload<AppData, AppDataResponse, ClientError>;
-pub type RgClientPayloadError = ClientPayloadError<AppData, AppDataResponse, ClientError>;
+pub type RgClientPayload = ClientPayload<AppData, AppDataResponse, AppDataError>;
+pub type RgClientPayloadError = ClientPayloadError<AppData, AppDataResponse, AppDataError>;
 pub type RgClientPayloadResponse = ClientPayloadResponse<AppDataResponse>;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -69,12 +70,18 @@ pub type RgClientPayloadResponse = ClientPayloadResponse<AppDataResponse>;
 /// this system, but gives actors direct access to the network stack for sending messages to peers
 /// and clients.
 pub struct App {
+    /// The ID of this node.
     id: NodeId,
+    /// Runtime config.
     config: Arc<Config>,
+    /// The address of the storage actor.
     _storage: Addr<Storage>,
+    /// The address of the network actor.
     _network: Addr<Network>,
+    /// The address of the Raft actor.
     raft: Addr<AppRaft>,
-    peers: BTreeMap<NodeId, String>,
+    /// Information on all currently connected node's and their connected clients.
+    peers: HashMap<NodeId, peer::api::RoutingInfo>,
 }
 
 impl App {
@@ -88,6 +95,7 @@ impl App {
 
         // The address of self for spawned child actors to communicate back to this actor.
         let app = ctx.address();
+        let raft_metrics_receiver = app.clone().recipient();
 
         // Instantiate the Raft storage system & start it.
         let storage = Storage::new(&config.storage_db_path).unwrap_or_else(|err| {
@@ -104,7 +112,6 @@ impl App {
             let services = NetworkServices::new(app.clone().recipient(), net_app.clone().recipient(), net_app.clone().recipient());
             Network::new(net_ctx, services, net_nodeid, net_cfg)
         });
-        let metrics_receiver = net_addr.clone().recipient();
 
         // Boot the consensus actor on a dedicated thread.
         let raft_cfg = actix_raft::Config::build(config.storage_snapshot_dir())
@@ -117,7 +124,7 @@ impl App {
                 std::process::exit(1);
             });
         let raft_arb = Arbiter::new();
-        let raft = AppRaft::new(nodeid.clone(), raft_cfg, net_addr.clone(), storage_addr.clone(), metrics_receiver);
+        let raft = AppRaft::new(nodeid.clone(), raft_cfg, net_addr.clone(), storage_addr.clone(), raft_metrics_receiver);
         let raft_addr = AppRaft::start_in_arbiter(&raft_arb, move |_| raft);
 
         info!("Railgun is firing on all interfaces at port {}!", &config.port);
@@ -127,7 +134,7 @@ impl App {
             _storage: storage_addr,
             _network: net_addr,
             raft: raft_addr,
-            peers: BTreeMap::new(),
+            peers: Default::default(),
         }
     }
 }
@@ -208,7 +215,7 @@ impl App {
 pub enum UpdatePeerInfo {
     Update{
         peer: NodeId,
-        routing_info: String,
+        routing: peer::api::RoutingInfo,
     },
     Remove(NodeId),
 }
@@ -221,8 +228,8 @@ impl Handler<UpdatePeerInfo> for App {
             UpdatePeerInfo::Remove(id) => {
                 self.peers.remove(&id);
             }
-            UpdatePeerInfo::Update{peer, routing_info} => {
-                self.peers.insert(peer, routing_info);
+            UpdatePeerInfo::Update{peer, routing} => {
+                self.peers.insert(peer, routing);
             }
         }
     }
@@ -236,7 +243,7 @@ impl Handler<RgClientPayload> for App {
 
     fn handle(&mut self, msg: RgClientPayload, _ctx: &mut Context<Self>) -> Self::Result {
         Box::new(self.raft.send(msg)
-            .map_err(|_| ClientPayloadError::Application(ClientError::new_internal()))
+            .map_err(|_| ClientPayloadError::Application(AppDataError::Internal))
             .and_then(|res| res))
     }
 }
@@ -282,6 +289,18 @@ impl Handler<InboundRaftRequest> for App {
                 Box::new(fut::err(peer::api::Error::Internal))
             }
         }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// RaftMetrics ///////////////////////////////////////////////////////////////////////////////////
+
+impl Handler<RaftMetrics> for App {
+    type Result = ();
+
+    fn handle(&mut self, msg: RaftMetrics, _ctx: &mut Context<Self>) -> Self::Result {
+        // TODO: finish this up with prometheus and general metrics integrations.
+        log::debug!("{:?}", msg)
     }
 }
 
@@ -388,3 +407,46 @@ pub enum AppDataResponse {
 }
 
 impl actix_raft::AppDataResponse for AppDataResponse {}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// AppDataError //////////////////////////////////////////////////////////////////////////////////
+
+/// An error coming from the data storage layer.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum AppDataError {
+    /// An error which has taken place internal to the storage engine.
+    Internal,
+    /// The given client input is invalid, as described in the enclosed string.
+    InvalidInput(String),
+    /// The target stream is unknown.
+    UnknownStream {
+        /// The namespace of the targetted stream.
+        namespace: String,
+        /// The name of the targetted stream.
+        name: String,
+    },
+    /// The target stream already exists.
+    TargetStreamExists,
+}
+
+impl AppDataError {
+    /// Construct a new `UnknownStream` instance.
+    pub fn new_invalid_input(description: String) -> Self {
+        Self::InvalidInput(description)
+    }
+
+    /// Construct a new `UnknownStream` instance.
+    pub fn new_unknown_stream(namespace: String, name: String) -> Self {
+        Self::UnknownStream{namespace, name}
+    }
+}
+
+impl fmt::Display for AppDataError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl error::Error for AppDataError {}
+
+impl actix_raft::AppError for AppDataError {}

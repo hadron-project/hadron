@@ -20,7 +20,7 @@ use uuid;
 
 use crate::{
     NodeId,
-    app::{AppData, AppDataResponse, RgEntryNormal, RgClientPayload, RgClientPayloadError, RgClientPayloadResponse},
+    app::{AppData, AppDataError, AppDataResponse, RgEntryNormal, RgClientPayload, RgClientPayloadError, RgClientPayloadResponse},
     auth::{Claims},
     proto::client::api::{
         self, ClientError, FrameMeta,
@@ -131,10 +131,10 @@ impl WsClient {
     /// Forward the given client request to the cluster's current leader.
     fn forward_to_leader(
         &mut self, _req: RgClientPayload, meta: FrameMeta, _leader: Option<NodeId>, _ctx: &mut WsClientCtx,
-    ) -> impl ActorFuture<Actor=Self, Item=(FrameMeta, AppDataResponse), Error=(FrameMeta, ClientError)> {
+    ) -> impl ActorFuture<Actor=Self, Item=(FrameMeta, AppDataResponse), Error=(FrameMeta, AppDataError)> {
         // NOTE/TODO: this is just stubbed logic for now.
         log::error!("Forwarding client requests to cluster leader is not yet implemented.");
-        fut::err((meta, ClientError::new_internal())) // TODO: finish this up.
+        fut::err((meta, AppDataError::Internal)) // TODO: finish this up.
     }
 
     /// Send a frame to the connected client.
@@ -153,17 +153,17 @@ impl WsClient {
     /// an error to be returned.
     fn unpack_client_payload_app_data(
         &mut self, res: Result<RgClientPayloadResponse, RgClientPayloadError>, meta: FrameMeta, ctx: &mut WsClientCtx,
-    ) -> impl ActorFuture<Actor=Self, Item=(FrameMeta, AppDataResponse), Error=(FrameMeta, ClientError)> {
+    ) -> impl ActorFuture<Actor=Self, Item=(FrameMeta, AppDataResponse), Error=(FrameMeta, AppDataError)> {
         match res {
             Err(err) => match err {
-                RgClientPayloadError::Internal => fut::Either::A(fut::err((meta, ClientError::new_internal()))),
+                RgClientPayloadError::Internal => fut::Either::A(fut::err((meta, AppDataError::Internal))),
                 RgClientPayloadError::Application(app_err) => fut::Either::A(fut::err((meta, app_err))),
                 RgClientPayloadError::ForwardToLeader{payload: req, leader} => return fut::Either::B(self.forward_to_leader(req, meta, leader, ctx)),
             },
             Ok(payload) => match payload {
                 RgClientPayloadResponse::Committed{..} => {
                     log::error!("Received a Committed payload response from Raft, expected Applied. Internal error.");
-                    fut::Either::A(fut::err((meta, ClientError::new_internal())))
+                    fut::Either::A(fut::err((meta, AppDataError::Internal)))
                 }
                 RgClientPayloadResponse::Applied{data, ..} => fut::Either::A(fut::ok((meta, data))),
             }
@@ -255,12 +255,11 @@ impl WsClient {
     // Response Handlers /////////////////////////////////////////////////////
 
     /// Send EnsureStream response.
-    fn send_ensure_stream_response(&mut self, res: Result<(FrameMeta, AppDataResponse), (FrameMeta, ClientError)>, ctx: &mut WsClientCtx) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
+    fn send_ensure_stream_response(&mut self, res: Result<(FrameMeta, AppDataResponse), (FrameMeta, AppDataError)>, ctx: &mut WsClientCtx) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
         let (meta, res) = match res {
-            Err((meta, err)) => if err.code == (api::ErrorCode::TargetStreamExists as i32) {
-                (meta, ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new()))
-            } else {
-                (meta, ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new_err(err)))
+            Err((meta, err)) => match err {
+                AppDataError::TargetStreamExists => (meta, ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new())),
+                _ => (meta, ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new_err(ClientError::from(err)))),
             }
             Ok((meta, data)) => match data {
                 AppDataResponse::EnsureStream => (meta, ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new())),
@@ -275,9 +274,9 @@ impl WsClient {
     }
 
     /// Send PubStream response.
-    fn send_pub_stream_response(&mut self, res: Result<(FrameMeta, AppDataResponse), (FrameMeta, ClientError)>, ctx: &mut WsClientCtx) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
+    fn send_pub_stream_response(&mut self, res: Result<(FrameMeta, AppDataResponse), (FrameMeta, AppDataError)>, ctx: &mut WsClientCtx) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
         let (meta, res) = match res {
-            Err((meta, err)) => (meta, ServerFramePayload::PubStream(api::PubStreamResponse::new_err(err))),
+            Err((meta, err)) => (meta, ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::from(err)))),
             Ok((meta, data)) => match data {
                 AppDataResponse::PubStream{index} => (meta, ServerFramePayload::PubStream(api::PubStreamResponse::new(index))),
                 _ => {

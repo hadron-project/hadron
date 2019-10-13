@@ -161,17 +161,14 @@ pub struct StreamEntryId {
 #[derive(Clone, PartialEq, ::prost::Message)]
 #[derive(Serialize, Deserialize)]
 pub struct ConnectRequest {
-    /// The optional ID of the connection.
-    ///
-    /// Normally the server will generate connection IDs, but during reconnect scenarios, a
-    /// connection ID from a previously lost connection may be supplied.
-    #[prost(string, tag="1")]
-    pub id: std::string::String,
     /// The JWT credentials being used for this connection.
-    #[prost(string, tag="2")]
+    #[prost(string, tag="1")]
     pub token: std::string::String,
     /// The configured liveness threshold for this client connection.
-    #[prost(uint32, tag="3")]
+    ///
+    /// The server will treat this as a duration in seconds since the client's last heartbeat, after
+    /// which the client connection will be closed by the server.
+    #[prost(uint32, tag="2")]
     pub liveness_threshold: u32,
 }
 /// A response to a connection request.
@@ -410,6 +407,4 @@ pub enum ErrorCode {
     InvalidInput = 4,
     /// The target stream of the request is unknown.
     TargetStreamUnknown = 5,
-    /// The target stream already exists.
-    TargetStreamExists = 6,
 }

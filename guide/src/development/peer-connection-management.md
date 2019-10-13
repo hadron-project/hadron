@@ -38,7 +38,7 @@ In this section, there are two nodes which are performing the handshake protocol
     - If it does, NodeA will send a disconnect frame to NodeB incidating the reason, drop the connection, and will do nothing else.
     - If it does not, the handshake will be considered complete. NodeA will now reckon this connection as being live and will then update its routing table and connection info.
 
-The routing information exchanged during the handshake is comprised of each peer's connected peer IPs and routing information on any connected clients.
+The routing information exchanged during the handshake is comprised of each peer's connected clients and any information needed to make message routing and subscription decisions.
 
 #### reconnect
 Inevitibly, nodes within Railgun clusters will fail, sometimes partially, sometimes critically. This is often due to transient network issues, but is sometimes due to critical hardware failures. When such conditions arise, the actors responsible for holding open the connections to their peers will attempt to perform a reconnect by default. Only the initiator of the original connection will perform the reconnect protocol. The reconnect protocol is as follows:

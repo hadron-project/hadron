@@ -115,8 +115,6 @@ enum ErrorCode {
   INVALID_INPUT = 4;
   // The target stream of the request is unknown.
   TARGET_STREAM_UNKNOWN = 5;
-  // The target stream already exists.
-  TARGET_STREAM_EXISTS = 6;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -135,15 +133,13 @@ message StreamEntryId {
 
 // A request to connect to the cluster.
 message ConnectRequest {
-  // The optional ID of the connection.
-  //
-  // Normally the server will generate connection IDs, but during reconnect scenarios, a
-  // connection ID from a previously lost connection may be supplied.
-  string id = 1;
   // The JWT credentials being used for this connection.
-  string token = 2;
+  string token = 1;
   // The configured liveness threshold for this client connection.
-  uint32 liveness_threshold = 3;
+  //
+  // The server will treat this as a duration in seconds since the client's last heartbeat, after
+  // which the client connection will be closed by the server.
+  uint32 liveness_threshold = 2;
 }
 
 // A response to a connection request.

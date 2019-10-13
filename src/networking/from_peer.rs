@@ -76,13 +76,15 @@ pub(super) struct WsFromPeer {
     peer_id: Option<NodeId>,
     /// A map of all pending requests.
     requests_map: HashMap<String, (oneshot::Sender<Result<api::Response, ()>>, SpawnHandle)>,
+    /// A cached copy of this node's client routing info.
+    routing: api::RoutingInfo,
 }
 
 impl WsFromPeer {
     /// Create a new instance.
-    pub fn new(services: WsFromPeerServices, node_id: NodeId) -> Self {
+    pub fn new(services: WsFromPeerServices, node_id: NodeId, routing: api::RoutingInfo) -> Self {
         Self{
-            node_id, services,
+            node_id, services, routing,
             heartbeat: Instant::now(),
             state: PeerHandshakeState::Initial,
             peer_id: None,
@@ -118,10 +120,9 @@ impl WsFromPeer {
         self.peer_id = Some(hs.node_id);
 
         // Propagate handshake info to parent `Network` actor.
-        // TODO: finish up the routing info pattern. See the peer connection management doc.
         let f = self.services.peer_connection_live.send(PeerConnectionLive{
             peer_id: hs.node_id,
-            routing_info: hs.routing_info,
+            routing: hs.routing.unwrap_or_default(),
             addr: PeerAddr::FromPeer(ctx.address()),
         });
         ctx.spawn(fut::wrap_future(f.map_err(|_| ())).map(move |_, act: &mut Self, ctx| act.handshake_response(meta, ctx)));
@@ -131,7 +132,7 @@ impl WsFromPeer {
     fn handshake_response(&mut self, meta: api::Meta, ctx: &mut ws::WebsocketContext<Self>) {
         // Respond to the caller with a handshake frame.
         // TODO: finish up the routing info pattern. See the peer connection management doc.
-        let hs_out = api::Handshake{node_id: self.node_id, routing_info: String::with_capacity(0)};
+        let hs_out = api::Handshake{node_id: self.node_id, routing: Some(self.routing.clone())};
         let frame = api::Frame{meta: Some(meta), payload: Some(api::frame::Payload::Response(api::Response{
             segment: Some(api::response::Segment::Handshake(hs_out)),
         }))};
@@ -172,7 +173,11 @@ impl WsFromPeer {
                     .and_then(|res, _, _| fut::result(res))
                     .then(move |res, act, ctx| act.send_raft_response(res, meta, ctx));
                 ctx.spawn(f);
-             }
+            }
+            Some(api::request::Segment::Routing(routing_info)) => {
+                // TODO: impl this.
+                error!("Received updated routing info from peer, but handler is not implemented inn WsFromPeer. {:?}", routing_info)
+            },
             None => warn!("Empty request segment received in WsFromPeer."),
         }
     }

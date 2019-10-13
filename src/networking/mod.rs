@@ -1,6 +1,5 @@
 mod client;
 mod from_peer;
-mod metrics;
 mod raft;
 mod to_peer;
 
@@ -97,8 +96,6 @@ struct WsToPeerState {
 // PeerAddr //////////////////////////////////////////////////////////////////////////////////////
 
 /// A wrapper around the two possible peer connection actor types.
-///
-/// TODO: peer connections need to register themselves.
 enum PeerAddr {
     ToPeer(Addr<WsToPeer>),
     FromPeer(Addr<WsFromPeer>),
@@ -112,12 +109,21 @@ enum PeerAddr {
 /// See the README.md in this directory for additional information on actor responsibilities.
 pub struct Network {
     services: NetworkServices,
+    /// The ID of this node.
     node_id: NodeId,
+    /// Runtime config.
     config: Arc<Config>,
+    /// The network server. Will always be populated once this actor starts.
     server: Option<Server>,
+    /// A mapping of discovered peer IPs, which will eventually graduate to routing table entries.
     socketaddr_to_peer: HashMap<SocketAddr, WsToPeerState>,
+    /// A routing table of all connected peers, by ID.
     routing_table: HashMap<NodeId, PeerAddr>,
-    _discovery: Addr<Discovery>,
+    /// The address of the discovery actor.
+    #[allow(dead_code)]
+    discovery: Addr<Discovery>,
+    /// The source of truth on all of this node's connected clients and their routing info.
+    routing: peer::api::RoutingInfo,
 }
 
 impl Network {
@@ -130,7 +136,7 @@ impl Network {
 
         // Boot the configured discovery system on a new dedicated thread.
         let (recipient, innercfg) = (ctx.address().recipient(), config.clone());
-        let _discovery = Discovery::create(|innerctx|
+        let discovery = Discovery::create(|innerctx|
             Discovery::new(innerctx, recipient, innercfg)
         );
 
@@ -139,7 +145,7 @@ impl Network {
             server: None,
             socketaddr_to_peer: HashMap::new(),
             routing_table: HashMap::new(),
-            _discovery,
+            discovery, routing: Default::default(),
         }
     }
 
@@ -150,7 +156,7 @@ impl Network {
             App::new().data(data.clone())
                 // This endpoint is used for internal client communication.
                 .service(web::resource("/").to(Self::handle_client_connection))
-                .service(web::resource("/internal/").to(Self::handle_peer_connection))
+                .service(web::resource("/internal/").to_async(Self::handle_peer_connection))
         })
         .bind(format!("0.0.0.0:{}", &self.config.port))
         .map_err(|err| {
@@ -163,13 +169,17 @@ impl Network {
     }
 
     /// Handler for opening new peer WebSocket connections.
-    fn handle_peer_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
+    fn handle_peer_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> impl Future<Item=HttpResponse, Error=Error> {
         debug!("Handling a new peer connection request.");
         let services = WsFromPeerServices::new(data.parent.clone().recipient(),
             data.services.inbound_raft_request.clone(),
             data.parent.clone().recipient(),
         );
-        ws::start(WsFromPeer::new(services, data.node_id), &req, stream)
+        data.parent.clone().send(GetRoutingInfo)
+            .map_err(From::from).and_then(|res| res.map_err(From::from))
+            .and_then(move |routing_info| {
+                ws::start(WsFromPeer::new(services, data.node_id, routing_info), &req, stream)
+            })
     }
 
     fn handle_client_connection(req: HttpRequest, stream: web::Payload, data: web::Data<ServerState>) -> Result<HttpResponse, Error> {
@@ -248,7 +258,7 @@ impl Handler<ObservedPeersChangeset> for Network {
         tospawn.into_iter().for_each(|socketaddr| {
             debug!("Spawning a new outbound peer connection to '{}'.", &socketaddr);
             let services = WsToPeerServices::new(ctx.address().recipient(), self.services.inbound_raft_request.clone(), ctx.address().recipient());
-            let addr = WsToPeer::new(services, self.node_id, socketaddr).start();
+            let addr = WsToPeer::new(services, self.node_id, socketaddr, self.routing.clone()).start();
             let discovery_state = DiscoveryState::Observed;
             self.socketaddr_to_peer.insert(socketaddr, WsToPeerState{addr, discovery_state});
         });
@@ -345,8 +355,7 @@ pub struct PeerConnectionLive {
     peer_id: NodeId,
 
     /// Routing info coming from the newly connected peer.
-    #[allow(dead_code)]
-    routing_info: String,
+    routing: api::RoutingInfo,
 
     /// The address of the actor which is responsible for the new connection.
     addr: PeerAddr,
@@ -381,7 +390,7 @@ impl Handler<PeerConnectionLive> for Network {
         self.routing_table.keys().for_each(|peer| debug!("Is connected to: {}", peer));
 
         // Update app instance with new connection info.
-        let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Update{peer: msg.peer_id, routing_info: msg.routing_info})
+        let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Update{peer: msg.peer_id, routing: msg.routing})
             .map_err(|err| error!("Error sending `UpdatePeerInfo::Update` from `Network` actor. {}", err));
     }
 }
@@ -424,6 +433,55 @@ impl Handler<VerifyToken> for Network {
             Box::new(fut::err(ClientError::new_unauthorized()))
         } else {
             Box::new(fut::ok(Claims::V1(ClaimsV1::Root)))
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// GetRoutingInfo ////////////////////////////////////////////////////////////////////////////////
+
+/// A request to get the `Network` actor's latest routing info.
+pub(self) struct GetRoutingInfo;
+
+impl Message for GetRoutingInfo {
+    type Result = Result<peer::api::RoutingInfo, ()>;
+}
+
+impl Handler<GetRoutingInfo> for Network {
+    type Result = Result<peer::api::RoutingInfo, ()>;
+
+    fn handle(&mut self, _: GetRoutingInfo, _: &mut Self::Context) -> Self::Result {
+        Ok(self.routing.clone())
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// ClientConnectionLive //////////////////////////////////////////////////////////////////////////
+
+/// A message indicating that a new client connection has been established, or that an old one has been disconnected.
+pub(self) enum ClientConnectionUpdate {
+    /// An update indicating that a new client connection has been established to this node.
+    #[allow(dead_code)]
+    Connected(String),
+    /// An update indicating that the specified client connection has been disconnected.
+    #[allow(dead_code)]
+    Disconnected(String),
+}
+
+impl Message for ClientConnectionUpdate {
+    type Result = ();
+}
+
+impl Handler<ClientConnectionUpdate> for Network {
+    type Result = ();
+
+    fn handle(&mut self, msg: ClientConnectionUpdate, _: &mut Self::Context) {
+        // TODO:
+        // - need to update router.
+        // - need to flood this node's updated routing info to all peers.
+        match msg {
+            ClientConnectionUpdate::Connected(_) => (),
+            ClientConnectionUpdate::Disconnected(_) => (),
         }
     }
 }
