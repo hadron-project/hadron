@@ -66,3 +66,8 @@
 //! - when clients become available to start consuming from a lagging consumer, messages will be delivered from the consumer groups buffer, if available, or a new query will be submitted to the storage layer to fetch more entries (if entries are available on the stream, which can be checked in this actor based on cached data from the storage layer's update stream).
 //! - the buffer is used to guard against excessive querying.
 //! - once the consumer group is back within MaxInFlight range of the stream's greatest index, the consumer group will go back into line rate, at which point it will be able to start delivering messages directly from the storage layer's update stream (or buffer them as needed).
+//!
+//! NOTE: for atomic ack+pub handling, ack's will need to return a response so that published index data can be used by clients if needed.
+//!
+//! NOTE: need to get Nack in place as well. Will probably use a new (Stream/Pipeline)DeliveryResponse type which is oneof Ack or Nack.
+//!
