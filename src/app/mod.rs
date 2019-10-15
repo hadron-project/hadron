@@ -25,11 +25,9 @@ use crate::{
     NodeId,
     config::Config,
     db::Storage,
-    networking::{
-        Network, NetworkServices,
-    },
+    networking::{Network, NetworkServices},
     proto::{
-        client::api::{
+        client::{
             AckPipelineRequest, AckStreamRequest,
             EnsurePipelineRequest, EnsureRpcEndpointRequest, EnsureStreamRequest,
             PubStreamRequest, SubPipelineRequest, SubStreamRequest,
@@ -81,7 +79,7 @@ pub struct App {
     /// The address of the Raft actor.
     raft: Addr<AppRaft>,
     /// Information on all currently connected node's and their connected clients.
-    peers: HashMap<NodeId, peer::api::RoutingInfo>,
+    peers: HashMap<NodeId, peer::RoutingInfo>,
 }
 
 impl App {
@@ -173,7 +171,7 @@ impl App {
 pub enum UpdatePeerInfo {
     Update{
         peer: NodeId,
-        routing: peer::api::RoutingInfo,
+        routing: peer::RoutingInfo,
     },
     Remove(NodeId),
 }

@@ -43,6 +43,7 @@ pub mod request {
         Handshake(super::Handshake),
         #[prost(message, tag="2")]
         Raft(super::RaftRequest),
+        /// ForwardedClientRequest forwarded = 4;
         #[prost(message, tag="3")]
         Routing(super::RoutingInfo),
     }
@@ -62,6 +63,7 @@ pub mod response {
         Handshake(super::Handshake),
         #[prost(message, tag="3")]
         Raft(super::RaftResponse),
+        /// ForwardedClientResponse forwarded = 5;
         #[prost(message, tag="4")]
         Routing(super::RoutingInfo),
     }
@@ -159,6 +161,32 @@ pub mod raft_response {
         Vote(std::vec::Vec<u8>),
         #[prost(bytes, tag="3")]
         InstallSnapshot(std::vec::Vec<u8>),
+    }
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Forwarded Client Request & Response ///////////////////////////////////////////////////////////
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ForwardedClientRequest {
+    #[prost(message, optional, tag="1")]
+    pub meta: ::std::option::Option<super::client::FrameMeta>,
+    #[prost(bytes, tag="2")]
+    pub payload: std::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ForwardedClientResponse {
+    #[prost(message, optional, tag="1")]
+    pub meta: ::std::option::Option<super::client::FrameMeta>,
+    #[prost(oneof="forwarded_client_response::Response", tags="2, 3")]
+    pub response: ::std::option::Option<forwarded_client_response::Response>,
+}
+pub mod forwarded_client_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Response {
+        #[prost(bytes, tag="2")]
+        Data(std::vec::Vec<u8>),
+        #[prost(bytes, tag="3")]
+        Error(std::vec::Vec<u8>),
     }
 }
 /// A frame indicating that the peer connection must disconnect.

@@ -1,6 +1,4 @@
-use crate::proto::peer::{
-    api::{Disconnect, Frame, frame, Meta},
-};
+use crate::proto::peer::{Disconnect, Frame, frame, Meta};
 
 impl Frame {
     /// Create a new disconnect frame.

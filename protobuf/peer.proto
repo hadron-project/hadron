@@ -1,5 +1,7 @@
 syntax = "proto3";
-package api;
+package peer;
+
+import "client.proto";
 
 // Metadata related to an API frame.
 message Meta {
@@ -28,6 +30,7 @@ message Request {
     Handshake handshake = 1;
     RaftRequest raft = 2;
     RoutingInfo routing = 3;
+    // ForwardedClientRequest forwarded = 4;
   }
 }
 
@@ -38,6 +41,7 @@ message Response {
     Handshake handshake = 2;
     RaftResponse raft = 3;
     RoutingInfo routing = 4;
+    // ForwardedClientResponse forwarded = 5;
   }
 }
 
@@ -118,5 +122,21 @@ message RaftResponse {
     bytes append_entries = 1;
     bytes vote = 2;
     bytes install_snapshot = 3;
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Forwarded Client Request & Response ///////////////////////////////////////////////////////////
+
+message ForwardedClientRequest {
+  client.FrameMeta meta = 1;
+  bytes payload = 2;
+}
+
+message ForwardedClientResponse {
+  client.FrameMeta meta = 1;
+  oneof response {
+    bytes data = 2;
+    bytes error = 3;
   }
 }

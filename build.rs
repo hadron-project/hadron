@@ -6,22 +6,22 @@ fn main() {
 
     // Compile peer communications protobuf code.
     let _ = prost_build::Config::new()
-        .out_dir("src/proto/peer")
+        .out_dir("src/proto")
         .compile_protos(&[
-            "protobuf/peer/api.proto",
+            "protobuf/peer.proto",
         ], &[
-            "protobuf/peer",
+            "protobuf",
         ])
         .map_err(|err| panic!("Failed to compile peer protobuf code. {}", err));
 
     // Compile client communications protobuf code.
     let _ = prost_build::Config::new()
-        .out_dir("src/proto/client")
+        .out_dir("src/proto")
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .compile_protos(&[
-            "protobuf/client/api.proto",
+            "protobuf/client.proto",
         ], &[
-            "protobuf/client",
+            "protobuf",
         ])
         .map_err(|err| panic!("Failed to compile client protobuf code. {}", err));
 }

@@ -40,7 +40,7 @@ use crate::{
         STREAM_NAME_PATTERN,
         Pipeline, Stream, StreamEntry, StreamType, StreamVisibility, StreamWrapper,
     },
-    proto::client::api,
+    proto::client,
     utils,
 };
 
@@ -501,7 +501,7 @@ impl SledStorage {
     }
 
     /// Validate the contents of a PubStreamRequest before it hits the log.
-    fn validate_pub_stream(&self, entry: &api::PubStreamRequest) -> Result<(), AppDataError> {
+    fn validate_pub_stream(&self, entry: &client::PubStreamRequest) -> Result<(), AppDataError> {
         // Ensure the target stream exists.
         log::debug!("Validating pub stream request. {:?}", entry);
         if let None = self.indexed_streams.get(&format!("{}/{}", &entry.namespace, &entry.stream)) {
@@ -511,32 +511,32 @@ impl SledStorage {
     }
 
     /// Validate the contents of a SubStreamRequest before it hits the log.
-    fn validate_sub_stream(&self, _entry: &api::SubStreamRequest) -> Result<(), AppDataError> {
+    fn validate_sub_stream(&self, _entry: &client::SubStreamRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a SubPipelineRequest before it hits the log.
-    fn validate_sub_pipeline(&self, _entry: &api::SubPipelineRequest) -> Result<(), AppDataError> {
+    fn validate_sub_pipeline(&self, _entry: &client::SubPipelineRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a UnsubStreamRequest before it hits the log.
-    fn validate_unsub_stream(&self, _entry: &api::UnsubStreamRequest) -> Result<(), AppDataError> {
+    fn validate_unsub_stream(&self, _entry: &client::UnsubStreamRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a UnsubPipelineRequest before it hits the log.
-    fn validate_unsub_pipeline(&self, _entry: &api::UnsubPipelineRequest) -> Result<(), AppDataError> {
+    fn validate_unsub_pipeline(&self, _entry: &client::UnsubPipelineRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a EnsureRpcEndpointRequest before it hits the log.
-    fn validate_ensure_rpc_endpoint(&self, _entry: &api::EnsureRpcEndpointRequest) -> Result<(), AppDataError> {
+    fn validate_ensure_rpc_endpoint(&self, _entry: &client::EnsureRpcEndpointRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a EnsureStreamRequest before it hits the log.
-    fn validate_ensure_stream(&mut self, entry: &api::EnsureStreamRequest, index: u64) -> Result<(), AppDataError> {
+    fn validate_ensure_stream(&mut self, entry: &client::EnsureStreamRequest, index: u64) -> Result<(), AppDataError> {
         log::debug!("Validating ensure stream request. {:?}", entry);
         if !STREAM_NAME_PATTERN.is_match(&entry.name) {
             return Err(AppDataError::new_invalid_input(String::from("Stream names must match the pattern `[-_.a-zA-Z0-9]{1,100}`.")));
@@ -553,17 +553,17 @@ impl SledStorage {
     }
 
     /// Validate the contents of a EnsurePipelineRequest before it hits the log.
-    fn validate_ensure_pipeline(&self, _entry: &api::EnsurePipelineRequest) -> Result<(), AppDataError> {
+    fn validate_ensure_pipeline(&self, _entry: &client::EnsurePipelineRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a AckStreamRequest before it hits the log.
-    fn validate_ack_stream(&self, _entry: &api::AckStreamRequest) -> Result<(), AppDataError> {
+    fn validate_ack_stream(&self, _entry: &client::AckStreamRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 
     /// Validate the contents of a AckPipelineRequest before it hits the log.
-    fn validate_ack_pipeline(&self, _entry: &api::AckPipelineRequest) -> Result<(), AppDataError> {
+    fn validate_ack_pipeline(&self, _entry: &client::AckPipelineRequest) -> Result<(), AppDataError> {
         Ok(())
     }
 }
@@ -648,7 +648,7 @@ impl SledStorage {
     }
 
     /// Apply the given PubStreamRequest to the state machine.
-    fn apply_pub_stream(&mut self, req: &api::PubStreamRequest, log_index: u64) -> Result<AppDataResponse, AppDataError> {
+    fn apply_pub_stream(&mut self, req: &client::PubStreamRequest, log_index: u64) -> Result<AppDataResponse, AppDataError> {
         log::debug!("Applying pub stream request for {:?}.", &req);
 
         // Get a handle to the target stream object.
@@ -685,7 +685,7 @@ impl SledStorage {
     ///
     /// When this routine starts, we know that the stream ns/name has been reserved in the
     /// `pending_streams` index, which will be cleared after this routine.
-    fn apply_ensure_stream(&mut self, req: &api::EnsureStreamRequest, log_index: u64) -> Result<AppDataResponse, AppDataError> {
+    fn apply_ensure_stream(&mut self, req: &client::EnsureStreamRequest, log_index: u64) -> Result<AppDataResponse, AppDataError> {
         log::debug!("Applying ensure stream request for {:?}.", &req);
 
         // Open new trees for the new stream.
@@ -932,7 +932,7 @@ mod tests {
     use crate::{
         auth::UserRole,
         db::models::{StreamType, StreamVisibility},
-        proto::client::api,
+        proto::client,
     };
     use actix_raft::messages::{Entry, EntryPayload, EntryNormal};
     use std::sync::Arc;
@@ -1085,7 +1085,7 @@ mod tests {
             let storage = SledStorage::new(&db_path).expect("instantiate storage");
             let log = storage.log();
             let storage_addr = storage.start();
-            let entry = Entry{term: 20, index: 99999, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
+            let entry = Entry{term: 20, index: 99999, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(client::PubStreamRequest{
                 namespace: String::from("default"), stream: String::from("events"), payload: vec![],
             })})};
             let msg = RgAppendEntryToLog::new(Arc::new(entry.clone()));
@@ -1125,11 +1125,11 @@ mod tests {
             let storage = SledStorage::new(&db_path).expect("instantiate storage");
             let log = storage.log();
             let storage_addr = storage.start();
-            let entry0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
+            let entry0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(client::PubStreamRequest{
                 namespace: String::from("default"), stream: String::from("events0"), payload: vec![],
             })})};
             log.insert(entry0.index.to_be_bytes(), bincode::serialize(&entry0).expect("serialize entry")).expect("append to log");
-            let entry1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
+            let entry1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(client::PubStreamRequest{
                 namespace: String::from("default"), stream: String::from("events1"), payload: vec![],
             })})};
             log.insert(entry1.index.to_be_bytes(), bincode::serialize(&entry1).expect("serialize entry")).expect("append to log");
@@ -1157,10 +1157,10 @@ mod tests {
             let storage = SledStorage::new(&db_path).expect("instantiate storage");
             let log = storage.log();
             let storage_addr = storage.start();
-            let msg0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
+            let msg0 = Entry{term: 1, index: 0, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(client::PubStreamRequest{
                 namespace: String::from("default"), stream: String::from("events0"), payload: vec![],
             })})};
-            let msg1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(api::PubStreamRequest{
+            let msg1 = Entry{term: 1, index: 1, payload: EntryPayload::Normal(EntryNormal{data: AppData::from(client::PubStreamRequest{
                 namespace: String::from("default"), stream: String::from("events1"), payload: vec![],
             })})};
             let msg = RgReplicateToLog::new(Arc::new(vec![msg0.clone(), msg1.clone()]));

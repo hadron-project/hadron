@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-use crate::proto::client::api;
+use crate::proto::client;
 
 const HIERARCHY_TOKEN: &str = ".";
 
@@ -140,11 +140,11 @@ pub enum UserRole {
 
 impl Claims {
     /// Check this cliams instance for authorization to perform the given action.
-    pub fn check_ensure_stream_auth(&self, req: &api::EnsureStreamRequest) -> Result<(), api::ClientError> {
+    pub fn check_ensure_stream_auth(&self, req: &client::EnsureStreamRequest) -> Result<(), client::ClientError> {
         match &self {
             Self::V1(v) => match v {
                 ClaimsV1::Root => Ok(()),
-                ClaimsV1::Metrics => Err(api::ClientError::new_insufficient_permissions()),
+                ClaimsV1::Metrics => Err(client::ClientError::new_insufficient_permissions()),
                 ClaimsV1::Namespaces(grants) => {
                     let has_match = grants.iter()
                         .filter(|e| &e.namespace() == &req.namespace)
@@ -155,7 +155,7 @@ impl Claims {
                     if has_match {
                         Ok(())
                     } else {
-                        Err(api::ClientError::new_insufficient_permissions())
+                        Err(client::ClientError::new_insufficient_permissions())
                     }
                 }
             }
@@ -163,11 +163,11 @@ impl Claims {
     }
 
     /// Check this cliams instance for authorization to perform the given action.
-    pub fn check_stream_pub_auth(&self, req: &api::PubStreamRequest) -> Result<(), api::ClientError> {
+    pub fn check_stream_pub_auth(&self, req: &client::PubStreamRequest) -> Result<(), client::ClientError> {
         match &self {
             Self::V1(v) => match v {
                 ClaimsV1::Root => Ok(()),
-                ClaimsV1::Metrics => Err(api::ClientError::new_insufficient_permissions()),
+                ClaimsV1::Metrics => Err(client::ClientError::new_insufficient_permissions()),
                 ClaimsV1::Namespaces(grants) => {
                     let has_match = grants.iter()
                         .filter(|e| &e.namespace() == &req.namespace)
@@ -178,7 +178,7 @@ impl Claims {
                     if has_match {
                         Ok(())
                     } else {
-                        Err(api::ClientError::new_insufficient_permissions())
+                        Err(client::ClientError::new_insufficient_permissions())
                     }
                 }
             }

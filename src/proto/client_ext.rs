@@ -2,7 +2,7 @@ use std::{fmt, error};
 
 use crate::{
     app::AppDataError,
-    proto::client::api::{self, ClientError, ErrorCode},
+    proto::client::{self, ClientError, ErrorCode},
 };
 
 const ERR_HANDSHAKE_REQUIRED: &str = "Client handshake required. Send the ConnectRequest frame.";
@@ -88,22 +88,22 @@ impl From<AppDataError> for ClientError {
 //////////////////////////////////////////////////////////////////////////////
 // Connect ///////////////////////////////////////////////////////////////////
 
-impl api::ConnectResponse {
+impl client::ConnectResponse {
     /// Create a new instance.
     pub fn new(id: String) -> Self {
-        Self{response: Some(api::connect_response::Response::Id(id))}
+        Self{response: Some(client::connect_response::Response::Id(id))}
     }
 
     /// Create a new error instance.
     pub fn err(err: ClientError) -> Self {
-        Self{response: Some(api::connect_response::Response::Error(err))}
+        Self{response: Some(client::connect_response::Response::Error(err))}
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////
 // EnsureStreamResponse //////////////////////////////////////////////////////
 
-impl api::EnsureStreamResponse {
+impl client::EnsureStreamResponse {
     /// Create a new success instance.
     pub fn new() -> Self {
         Self{error: None}
@@ -118,14 +118,14 @@ impl api::EnsureStreamResponse {
 //////////////////////////////////////////////////////////////////////////////
 // PubStream /////////////////////////////////////////////////////////////////
 
-impl api::PubStreamResponse {
+impl client::PubStreamResponse {
     /// Create a new success instance.
     pub fn new(idx: u64) -> Self {
-        Self{result: Some(api::pub_stream_response::Result::Index(idx))}
+        Self{result: Some(client::pub_stream_response::Result::Index(idx))}
     }
 
     /// Create a new error instance.
     pub fn new_err(err: ClientError) -> Self {
-        Self{result: Some(api::pub_stream_response::Result::Error(err))}
+        Self{result: Some(client::pub_stream_response::Result::Error(err))}
     }
 }

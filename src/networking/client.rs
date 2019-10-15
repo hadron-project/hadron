@@ -22,7 +22,7 @@ use crate::{
     NodeId,
     app::{AppData, AppDataError, AppDataResponse, RgEntryNormal, RgClientPayload, RgClientPayloadError, RgClientPayloadResponse},
     auth::{Claims},
-    proto::client::api::{
+    proto::client::{
         self, ClientError, FrameMeta,
         client_frame::Payload as ClientFramePayload,
         server_frame::Payload as ServerFramePayload,
@@ -140,7 +140,7 @@ impl WsClient {
     /// Send a frame to the connected client.
     fn send_frame(&mut self, payload: ServerFramePayload, meta: FrameMeta, ctx: &mut WsClientCtx) {
         use prost::Message;
-        let frame = api::ServerFrame{payload: Some(payload), meta: Some(meta)};
+        let frame = client::ServerFrame{payload: Some(payload), meta: Some(meta)};
         let mut data = bytes::BytesMut::with_capacity(frame.encoded_len());
         let _ = frame.encode(&mut data).map_err(|err| log::error!("Failed to serialize protobuf frame. {}", err));
         ctx.binary(data);
@@ -174,11 +174,11 @@ impl WsClient {
     // Request Handlers //////////////////////////////////////////////////////
 
     /// Handle client `ConnectRequest` frame.
-    fn handle_connect(&mut self, frame: api::ConnectRequest, meta: FrameMeta, ctx: &mut WsClientCtx) {
+    fn handle_connect(&mut self, frame: client::ConnectRequest, meta: FrameMeta, ctx: &mut WsClientCtx) {
         // Issue a normal response if the connection is already active.
         if let ClientState::Active(_) = &self.state {
             log::warn!("Client {} sent a ConnectRequest even though the connection state is active.", self.connection_id);
-            return self.send_frame(ServerFramePayload::Connect(api::ConnectResponse::new(self.connection_id.clone())), meta, ctx);
+            return self.send_frame(ServerFramePayload::Connect(client::ConnectResponse::new(self.connection_id.clone())), meta, ctx);
         }
 
         // Call network service to validate the given token and extract its claims object.
@@ -198,8 +198,8 @@ impl WsClient {
             // Emit response.
             .then(move |res, act, ctx| {
                 match res {
-                    Ok(_) => act.send_frame(ServerFramePayload::Connect(api::ConnectResponse::new(act.connection_id.clone())), meta, ctx),
-                    Err(err) => act.send_frame(ServerFramePayload::Connect(api::ConnectResponse::err(err)), meta, ctx),
+                    Ok(_) => act.send_frame(ServerFramePayload::Connect(client::ConnectResponse::new(act.connection_id.clone())), meta, ctx),
+                    Err(err) => act.send_frame(ServerFramePayload::Connect(client::ConnectResponse::err(err)), meta, ctx),
                 }
                 fut::ok(())
             });
@@ -208,16 +208,16 @@ impl WsClient {
     }
 
     /// Handle client `EnsureStream` frame.
-    fn handle_ensure_stream(&mut self, req: api::EnsureStreamRequest, meta: FrameMeta, ctx: &mut WsClientCtx) {
+    fn handle_ensure_stream(&mut self, req: client::EnsureStreamRequest, meta: FrameMeta, ctx: &mut WsClientCtx) {
         // Ensure client is in an active state.
         let state = match &self.state {
-            ClientState::Initial => return self.send_frame(ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new_err(ClientError::new_handshake_required())), meta, ctx),
+            ClientState::Initial => return self.send_frame(ServerFramePayload::EnsureStream(client::EnsureStreamResponse::new_err(ClientError::new_handshake_required())), meta, ctx),
             ClientState::Active(state) => state,
         };
 
         // Ensure client is authorized to publish to the target stream.
         if let Err(err) = state.claims.check_ensure_stream_auth(&req) {
-            return self.send_frame(ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new_err(err)), meta, ctx);
+            return self.send_frame(ServerFramePayload::EnsureStream(client::EnsureStreamResponse::new_err(err)), meta, ctx);
         }
 
         // Everything checks out, so send the request over to Raft.
@@ -230,16 +230,16 @@ impl WsClient {
     }
 
     /// Handle client `PubStreamRequest` frame.
-    fn handle_pub_stream(&mut self, req: api::PubStreamRequest, meta: FrameMeta, ctx: &mut WsClientCtx) {
+    fn handle_pub_stream(&mut self, req: client::PubStreamRequest, meta: FrameMeta, ctx: &mut WsClientCtx) {
         // Ensure client is in an active state.
         let state = match &self.state {
-            ClientState::Initial => return self.send_frame(ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::new_handshake_required())), meta, ctx),
+            ClientState::Initial => return self.send_frame(ServerFramePayload::PubStream(client::PubStreamResponse::new_err(ClientError::new_handshake_required())), meta, ctx),
             ClientState::Active(state) => state,
         };
 
         // Ensure client is authorized to publish to the target stream.
         if let Err(err) = state.claims.check_stream_pub_auth(&req) {
-            return self.send_frame(ServerFramePayload::PubStream(api::PubStreamResponse::new_err(err)), meta, ctx);
+            return self.send_frame(ServerFramePayload::PubStream(client::PubStreamResponse::new_err(err)), meta, ctx);
         }
 
         // Everything checks out, so send the request over to Raft.
@@ -258,14 +258,14 @@ impl WsClient {
     fn send_ensure_stream_response(&mut self, res: Result<(FrameMeta, AppDataResponse), (FrameMeta, AppDataError)>, ctx: &mut WsClientCtx) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
         let (meta, res) = match res {
             Err((meta, err)) => match err {
-                AppDataError::TargetStreamExists => (meta, ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new())),
-                _ => (meta, ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new_err(ClientError::from(err)))),
+                AppDataError::TargetStreamExists => (meta, ServerFramePayload::EnsureStream(client::EnsureStreamResponse::new())),
+                _ => (meta, ServerFramePayload::EnsureStream(client::EnsureStreamResponse::new_err(ClientError::from(err)))),
             }
             Ok((meta, data)) => match data {
-                AppDataResponse::EnsureStream => (meta, ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new())),
+                AppDataResponse::EnsureStream => (meta, ServerFramePayload::EnsureStream(client::EnsureStreamResponse::new())),
                 _ => {
                     log::error!("Expected an EnsureStream data response from Raft, got something else. Internal error.");
-                    (meta, ServerFramePayload::EnsureStream(api::EnsureStreamResponse::new_err(ClientError::new_internal())))
+                    (meta, ServerFramePayload::EnsureStream(client::EnsureStreamResponse::new_err(ClientError::new_internal())))
                 }
             }
         };
@@ -276,12 +276,12 @@ impl WsClient {
     /// Send PubStream response.
     fn send_pub_stream_response(&mut self, res: Result<(FrameMeta, AppDataResponse), (FrameMeta, AppDataError)>, ctx: &mut WsClientCtx) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
         let (meta, res) = match res {
-            Err((meta, err)) => (meta, ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::from(err)))),
+            Err((meta, err)) => (meta, ServerFramePayload::PubStream(client::PubStreamResponse::new_err(ClientError::from(err)))),
             Ok((meta, data)) => match data {
-                AppDataResponse::PubStream{index} => (meta, ServerFramePayload::PubStream(api::PubStreamResponse::new(index))),
+                AppDataResponse::PubStream{index} => (meta, ServerFramePayload::PubStream(client::PubStreamResponse::new(index))),
                 _ => {
                     log::error!("Expected a PubStream data response from Raft, got something else. Internal error.");
-                    (meta, ServerFramePayload::PubStream(api::PubStreamResponse::new_err(ClientError::new_internal())))
+                    (meta, ServerFramePayload::PubStream(client::PubStreamResponse::new_err(ClientError::new_internal())))
                 }
             }
         };
@@ -318,7 +318,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsClient {
                 // Decode the received frame.
                 log::debug!("Handling frame from connected client.");
                 use prost::Message;
-                let frame = match api::ClientFrame::decode(data) {
+                let frame = match client::ClientFrame::decode(data) {
                     Ok(frame) => frame,
                     Err(err) => {
                         log::error!("Error decoding binary frame from client connection {}. {}", self.connection_id, err);
