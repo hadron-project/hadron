@@ -24,13 +24,13 @@ message Frame {
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Frame Variants ////////////////////////////////////////////////////////////////////////////////
 
-// A request from a peer node.
+// A request frame sent between cluster peers.
 message Request {
   oneof segment {
     Handshake handshake = 1;
     RaftRequest raft = 2;
     RoutingInfo routing = 3;
-    // ForwardedClientRequest forwarded = 4;
+    ForwardedClientRequest forwarded = 4;
   }
 }
 
@@ -41,7 +41,7 @@ message Response {
     Handshake handshake = 2;
     RaftResponse raft = 3;
     RoutingInfo routing = 4;
-    // ForwardedClientResponse forwarded = 5;
+    ForwardedClientResponse forwarded = 5;
   }
 }
 
@@ -71,6 +71,10 @@ enum Disconnect {
 enum Error {
   // An internal error has taken place. The request should be safe to retry, if related to a request.
   Internal = 0;
+  /// The request has hit a timeout.
+  Timeout = 1;
+  /// The target peer no longer has an active connection.
+  TargetPeerDisconnected = 2;
 }
 
 // A node's client routing info.
@@ -129,14 +133,28 @@ message RaftResponse {
 // Forwarded Client Request & Response ///////////////////////////////////////////////////////////
 
 message ForwardedClientRequest {
-  client.FrameMeta meta = 1;
-  bytes payload = 2;
+  // This must be a bincode serialization of an `RgClientPayload`, else will cause an internal error.
+  //
+  // NOTE WELL: though the Raft encapsulating types are unlikely to change, care must be taken to
+  // ensure that all versions of Railgun running in the cluster are able to properly encode/decode
+  // this value. The standard serde backwards compatibility rules apply here.
+  bytes payload = 1;
 }
 
+// A response to a client payload forwarding request.
 message ForwardedClientResponse {
-  client.FrameMeta meta = 1;
-  oneof response {
-    bytes data = 2;
-    bytes error = 3;
+  oneof result {
+    // This must be a bincode serialization of an `AppDataResponse`, else will cause an internal error.
+    //
+    // NOTE WELL: care must be taken to ensure that all versions of Railgun running in the cluster
+    // are able to properly encode/decode this value. The standard serde backwards compatibility
+    // rules apply here.
+    bytes data = 1;
+    // This must be a bincode serialization of an `AppDataError`, else will cause an internal error.
+    //
+    // NOTE WELL: care must be taken to ensure that all versions of Railgun running in the cluster
+    // are able to properly encode/decode this value. The standard serde backwards compatibility
+    // rules apply here.
+    bytes error = 2;
   }
 }

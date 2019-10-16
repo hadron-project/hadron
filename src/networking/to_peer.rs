@@ -11,6 +11,7 @@ use std::{
 
 use actix::{
     prelude::*,
+    fut::FutureResult,
     io::{WriteHandler, SinkWrite},
 };
 use actix_web::client::Client;
@@ -28,11 +29,14 @@ use prost;
 
 use crate::{
     NodeId,
-    app::InboundRaftRequest,
+    app::{AppDataResponse, AppDataError, InboundRaftRequest},
     networking::network::{
         PEER_HB_INTERVAL, PEER_HB_THRESHOLD, PEER_HANDSHAKE_TIMEOUT,
-        ClosingPeerConnection, DisconnectPeer, OutboundPeerRequest,
-        PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
+        forwarding::ForwardedRequest,
+        peers::{
+            ClosingPeerConnection, DisconnectPeer, OutboundPeerRequest,
+            PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
+        },
     },
     proto::peer,
     utils,
@@ -50,6 +54,7 @@ type WsStream = Box<dyn Stream<Item=Frame, Error=WsProtocolError> + 'static>;
 /// All services needed by the `WsToPeer` actor.
 pub(super) struct WsToPeerServices {
     pub closing_peer_connection: Recipient<ClosingPeerConnection>,
+    pub forwarded_request: Recipient<ForwardedRequest>,
     pub inbound_raft_request: Recipient<InboundRaftRequest>,
     pub peer_connection_live: Recipient<PeerConnectionLive>,
 }
@@ -58,10 +63,11 @@ impl WsToPeerServices {
     /// Create a new instance.
     pub fn new(
         closing_peer_connection: Recipient<ClosingPeerConnection>,
+        forwarded_request: Recipient<ForwardedRequest>,
         inbound_raft_request: Recipient<InboundRaftRequest>,
         peer_connection_live: Recipient<PeerConnectionLive>,
     ) -> Self {
-        Self{closing_peer_connection, inbound_raft_request, peer_connection_live}
+        Self{closing_peer_connection, forwarded_request, inbound_raft_request, peer_connection_live}
     }
 }
 
@@ -109,7 +115,7 @@ struct StateConnected {
     /// The handshake state of the connection.
     handshake: PeerHandshakeState,
     /// A map of all pending requests.
-    requests_map: HashMap<String, (oneshot::Sender<Result<peer::Response, ()>>, SpawnHandle)>,
+    requests_map: HashMap<String, oneshot::Sender<peer::Response>>,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -180,7 +186,7 @@ impl WsToPeer {
 
         // Spawn the outbound request.
         let request = OutboundPeerRequest{request, target_node: 0, timeout: PEER_HANDSHAKE_TIMEOUT};
-        let f = self.send_outbound_peer_request(request, ctx)
+        let f = self.handle_outbound_peer_request(request, ctx)
             .map(|res, act, ctx| act.handshake_response(res, ctx))
             .map_err(|_, act, ctx| act.handshake(ctx));
         ctx.spawn(f);
@@ -249,6 +255,26 @@ impl WsToPeer {
                 act.reconnect(ctx); // Begin the reconnect process.
             }
         }));
+    }
+
+    /// Handle forwarded client requests.
+    fn handle_forwarded_request(&mut self, msg: peer::ForwardedClientRequest, meta: peer::Meta, ctx: &mut Context<Self>) {
+        log::debug!("Handling forwarded request.");
+        let payload = match utils::bin_decode_client_payload(msg.payload) {
+            Ok(payload) => payload,
+            Err(err) => {
+                let f = self.send_forwarded_response(Err(err), meta, ctx);
+                ctx.spawn(f);
+                return;
+            }
+        };
+        ctx.spawn(fut::wrap_future(self.services.forwarded_request.send(ForwardedRequest::new(payload))
+            .map_err(|err| {
+                log::error!("Error while handling forwarding request. {}", err);
+                AppDataError::Internal
+            })
+            .and_then(|res| res))
+            .then(move |res, act: &mut Self, ctx| act.send_forwarded_response(res, meta, ctx)));
     }
 
     /// Attempt to build a new connection to the target peer.
@@ -331,14 +357,15 @@ impl WsToPeer {
             }
             Some(peer::request::Segment::Routing(routing_info)) => {
                 // TODO: impl this.
-                error!("Received updated routing info from peer, but handler is not implemented inn WsToPeer. {:?}", routing_info)
+                error!("Received updated routing info from peer, but handler is not implemented in WsToPeer. {:?}", routing_info)
             },
+            Some(peer::request::Segment::Forwarded(forwarded)) => self.handle_forwarded_request(forwarded, meta, ctx),
             None => warn!("Empty request segment received in WsToPeer."),
         }
     }
 
     /// Route a response payload received from the socket to its matching request future.
-    fn route_response(&mut self, res: peer::Response, meta: peer::Meta, ctx: &mut Context<Self>) {
+    fn route_response(&mut self, res: peer::Response, meta: peer::Meta, _: &mut Context<Self>) {
         let state = match &mut self.connection {
             ConnectionState::Connected(state) => state,
             _ => return,
@@ -346,10 +373,9 @@ impl WsToPeer {
 
         // Extract components from request map, send the future's value & cancel its timeout.
         match state.requests_map.remove(&meta.id) {
-            None => (),
-            Some((tx, timeouthandle)) => {
-                let _ = tx.send(Ok(res));
-                ctx.cancel_future(timeouthandle);
+            None => (), // If there is no handler awaiting the response, drop it.
+            Some(tx) => {
+                let _ = tx.send(res);
             }
         }
     }
@@ -359,6 +385,23 @@ impl WsToPeer {
         let buf = utils::encode_peer_frame(&frame);
         self.write_outbound_message(ctx, ws::Message::Binary(buf.into()));
         fut::ok(())
+    }
+
+    /// Send the given forwarding response to the connected peer.
+    fn send_forwarded_response(&mut self, res: Result<AppDataResponse, AppDataError>, meta: peer::Meta, ctx: &mut Context<Self>) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
+        let forwarded_res = match res {
+            Ok(data) => peer::forwarded_client_response::Result::Data(utils::bin_encode_app_data_response(&data)),
+            Err(err) => peer::forwarded_client_response::Result::Error(utils::bin_encode_app_data_error(&err)),
+        };
+        let frame = peer::Frame{
+            meta: Some(meta),
+            payload: Some(peer::frame::Payload::Response(peer::Response{
+                segment: Some(peer::response::Segment::Forwarded(peer::ForwardedClientResponse{
+                    result: Some(forwarded_res),
+                })),
+            })),
+        };
+        self.send_frame(frame, ctx)
     }
 
     /// Send the given Raft response/error result to the connected peer.
@@ -373,49 +416,6 @@ impl WsToPeer {
             })),
         };
         self.send_frame(frame, ctx)
-    }
-
-    /// Send the given outbound peer request and await a response.
-    fn send_outbound_peer_request(&mut self, msg: OutboundPeerRequest, ctx: &mut Context<Self>) -> impl ActorFuture<Actor=Self, Item=peer::Response, Error=()> {
-        let state = match &mut self.connection {
-            ConnectionState::Connected(state) => state,
-            _ => return fut::Either::A(fut::err(())),
-        };
-
-        // Build the outbound request frame.
-        let requestid = uuid::Uuid::new_v4().to_string();
-        let frame = peer::Frame{
-            meta: Some(peer::Meta{id: requestid.clone()}),
-            payload: Some(peer::frame::Payload::Request(msg.request)),
-        };
-
-        // Spawn the request's timeout handler & retain the spawnhandle.
-        let closed_requestid = requestid.clone();
-        let timeout = ctx.run_later(msg.timeout, move |closed_self, _closed_ctx| {
-            let state = match &mut closed_self.connection {
-                ConnectionState::Connected(state) => state,
-                _ => return,
-            };
-            if let Some((_, _)) = state.requests_map.remove(&closed_requestid) {
-                debug!("Request '{}' timedout.", &closed_requestid);
-            }
-        });
-
-        // Create the request/response channel & add components to request map.
-        let (tx, rx) = oneshot::channel();
-        state.requests_map.insert(requestid, (tx, timeout));
-
-        // Serialize the request data and write it over the outbound socket.
-        let buf = utils::encode_peer_frame(&frame);
-        self.write_outbound_message(ctx, ws::Message::Binary(buf.into()));
-
-        // Return a future to the caller which will receive the response when it comes back from
-        // the peer, else it will timeout.
-        fut::Either::B(fut::wrap_future(rx.map_err(|err| error!("Error from OutboundPeerRequest receiver. {}", err))
-            .and_then(|res| match res {
-                Ok(response) => Ok(response),
-                Err(_) => Err(()),
-            })))
     }
 
     /// Write an outbound message to the connected peer.
@@ -517,7 +517,7 @@ impl Handler<NewConnection> for WsToPeer {
             heartbeat_handle: None,
             outbound: SinkWrite::new(msg.sink, ctx),
             handshake: PeerHandshakeState::Initial,
-            requests_map: HashMap::new(),
+            requests_map: Default::default(),
         });
 
         // Start the connection healthcheck protocol & initialize the peer handshake.
@@ -618,8 +618,64 @@ impl Handler<OutboundPeerRequest> for WsToPeer {
     type Result = ResponseActFuture<Self, peer::Response, ()>;
 
     /// Handle requests to send outbound messages to the connected peer.
+    ///
+    /// NOTE: the error type here will always be `()` because cancellations & timeouts will be
+    /// turned into error responses.
     fn handle(&mut self, msg: OutboundPeerRequest, ctx: &mut Self::Context) -> Self::Result {
-        Box::new(self.send_outbound_peer_request(msg, ctx))
+        Box::new(self.handle_outbound_peer_request(msg, ctx))
+    }
+}
+
+impl WsToPeer {
+    /// Send the given outbound peer request and await a response.
+    ///
+    /// NOTE: the error type here will always be `()` because cancellations & timeouts will be
+    /// turned into error responses.
+    fn handle_outbound_peer_request(&mut self, msg: OutboundPeerRequest, ctx: &mut Context<Self>) -> impl ActorFuture<Actor=Self, Item=peer::Response, Error=()> {
+        let state = match &mut self.connection {
+            ConnectionState::Connected(state) => state,
+            _ => return fut::Either::A(fut::err(())), // If the peer is not connected, the request will timeout. Drop.
+        };
+
+        // Build the outbound request frame.
+        let requestid = uuid::Uuid::new_v4().to_string();
+        let frame = peer::Frame{
+            meta: Some(peer::Meta{id: requestid.clone()}),
+            payload: Some(peer::frame::Payload::Request(msg.request)),
+        };
+
+        // Build the response channel and retain the sender.
+        let (tx, rx) = oneshot::channel();
+        state.requests_map.insert(requestid.clone(), tx);
+
+        // Build the response chain.
+        let res = fut::wrap_future(rx
+            .map_err(|cancelled_err| {
+                log::error!("Outbound peer request was unexpectedly cancelled. {}", cancelled_err);
+                peer::Error::Internal
+            }))
+            .timeout(msg.timeout, peer::Error::Timeout)
+            .then(move |res, act: &mut Self, _| -> FutureResult<peer::Response, (), Self> {
+                match res {
+                    Ok(val) => fut::ok(val),
+                    Err(err) => {
+                        let state = match &mut act.connection {
+                            ConnectionState::Connected(state) => state,
+                            _ => return fut::ok(peer::Response::new_error(err)),
+                        };
+                        let _ = state.requests_map.remove(&requestid); // May still be present on error path. Don't leak.
+                        fut::ok(peer::Response::new_error(err))
+                    },
+                }
+            });
+
+        // Serialize the request data and write it over the outbound socket.
+        let buf = utils::encode_peer_frame(&frame);
+        self.write_outbound_message(ctx, ws::Message::Binary(buf.into()));
+
+        // Return a future to the caller which will receive the response when it comes back from
+        // the peer, else it will timeout.
+        fut::Either::B(res)
     }
 }
 

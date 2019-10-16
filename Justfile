@@ -27,7 +27,7 @@ run-docker-watch:
 
 # Commit the accumulated set of changes in the Railgun watcher container as a new minimal Railgun image in release mode.
 commit-docker-watch:
-    docker commit railgun-watch && docker build --cache-from railgun-watch --target release-watch -t railgun .
+    docker commit railgun-watch railgun
 
 # Kill the Railgun watch container.
 kill-docker-watch:

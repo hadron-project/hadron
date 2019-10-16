@@ -397,14 +397,16 @@ pub struct AckPipelineResponse {
 pub enum ErrorCode {
     /// An internal error.
     Internal = 0,
+    /// The request hit a timeout.
+    Timeout = 1,
     /// The server needs the client to perform the connection handshake before proceeding.
-    HandshakeRequired = 1,
+    HandshakeRequired = 2,
     /// The given credentials are invalid.
-    Unauthorized = 2,
+    Unauthorized = 3,
     /// The token being used by the client does not have sufficient permissions for the requested operation.
-    InsufficientPermissions = 3,
+    InsufficientPermissions = 4,
     /// The given input is invalid.
-    InvalidInput = 4,
+    InvalidInput = 5,
     /// The target stream of the request is unknown.
-    TargetStreamUnknown = 5,
+    TargetStreamUnknown = 6,
 }

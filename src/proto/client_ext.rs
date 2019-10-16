@@ -7,6 +7,7 @@ use crate::{
 
 const ERR_HANDSHAKE_REQUIRED: &str = "Client handshake required. Send the ConnectRequest frame.";
 const ERR_INTERNAL: &str = "Internal server error.";
+const ERR_TIMEOUT: &str = "The request hit a timeout.";
 const ERR_UNAUTHORIZED: &str = "The given JWT is invalid.";
 const ERR_INSUFFICIENT_PERMISSIONS: &str = "The token being used by the client does not have sufficient permissions for the requested operation.";
 
@@ -22,13 +23,6 @@ impl fmt::Display for ClientError {
 impl error::Error for ClientError {}
 
 impl ClientError {
-    /// Create a new instance representing a `HandshakeRequired` error.
-    pub fn new_handshake_required() -> Self {
-        Self{
-            message: ERR_HANDSHAKE_REQUIRED.to_string(),
-            code: ErrorCode::HandshakeRequired as i32,
-        }
-    }
     /// Create a new instance representing an `Internal` error.
     pub fn new_internal() -> Self {
         Self{
@@ -36,7 +30,20 @@ impl ClientError {
             code: ErrorCode::Internal as i32,
         }
     }
-
+    /// Create a new instance representing a `Timeout` error.
+    pub fn new_timeout() -> Self {
+        Self{
+            message: ERR_TIMEOUT.to_string(),
+            code: ErrorCode::Timeout as i32,
+        }
+    }
+    /// Create a new instance representing a `HandshakeRequired` error.
+    pub fn new_handshake_required() -> Self {
+        Self{
+            message: ERR_HANDSHAKE_REQUIRED.to_string(),
+            code: ErrorCode::HandshakeRequired as i32,
+        }
+    }
     /// Create a new instance representing an `Unauthorized` error.
     pub fn new_unauthorized() -> Self {
         Self{
@@ -44,7 +51,6 @@ impl ClientError {
             code: ErrorCode::Unauthorized as i32,
         }
     }
-
     /// Create a new instance representing an `InsufficientPermissions` error.
     pub fn new_insufficient_permissions() -> Self {
         Self{
@@ -52,12 +58,10 @@ impl ClientError {
             code: ErrorCode::InsufficientPermissions as i32,
         }
     }
-
     /// Create a new instance representing an `InvalidInput` error.
     pub fn new_invalid_input(message: String) -> Self {
         Self{message, code: ErrorCode::InvalidInput as i32}
     }
-
     /// Create a new instance representing a `TargetStreamUnknown` error.
     pub fn new_unknown_stream(namespace: String, name: String) -> Self {
         Self{
@@ -78,6 +82,7 @@ impl From<AppDataError> for ClientError {
                 ClientError::new_internal()
             }
             AppDataError::UnknownStream{namespace, name} => ClientError::new_unknown_stream(namespace, name),
+            AppDataError::ForwardingTimeout => ClientError::new_timeout(),
         }
     }
 }

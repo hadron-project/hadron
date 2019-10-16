@@ -1,5 +1,5 @@
 mod raft;
-pub use raft::InboundRaftRequest;
+mod metrics;
 
 use std::{
     collections::HashMap,
@@ -20,6 +20,9 @@ use actix_raft::{
     },
 };
 use log::{error, info};
+use futures::sync::mpsc;
+
+pub use raft::InboundRaftRequest;
 
 use crate::{
     NodeId,
@@ -93,7 +96,6 @@ impl App {
 
         // The address of self for spawned child actors to communicate back to this actor.
         let app = ctx.address();
-        let raft_metrics_receiver = app.clone().recipient();
 
         // Instantiate the Raft storage system & start it.
         let storage = Storage::new(&config.storage_db_path).unwrap_or_else(|err| {
@@ -105,11 +107,13 @@ impl App {
         let storage_addr = Storage::start_in_arbiter(&storage_arb, move |_| storage);
 
         // Boot the network actor on a dedicated thread. Serves on dedicated threadpool.
+        let (leader_updates_tx, _leader_updates_rx) = mpsc::unbounded();
         let (net_arb, net_cfg, net_app, net_nodeid) = (Arbiter::new(), config.clone(), app.clone(), nodeid.clone());
         let net_addr = Network::start_in_arbiter(&net_arb, move |net_ctx| {
             let services = NetworkServices::new(app.clone().recipient(), net_app.clone().recipient(), net_app.clone().recipient());
-            Network::new(net_ctx, services, net_nodeid, net_cfg)
+            Network::new(net_ctx, services, net_nodeid, net_cfg, leader_updates_tx)
         });
+        let raft_metrics_receiver = net_addr.clone().recipient();
 
         // Boot the consensus actor on a dedicated thread.
         let raft_cfg = actix_raft::Config::build(config.storage_snapshot_dir())
@@ -314,6 +318,8 @@ pub enum AppDataError {
     },
     /// The target stream already exists.
     TargetStreamExists,
+    /// The associated request hit a timeout while being forwarded.
+    ForwardingTimeout,
 }
 
 impl AppDataError {

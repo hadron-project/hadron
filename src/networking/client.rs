@@ -22,6 +22,7 @@ use crate::{
     NodeId,
     app::{AppData, AppDataError, AppDataResponse, RgEntryNormal, RgClientPayload, RgClientPayloadError, RgClientPayloadResponse},
     auth::{Claims},
+    networking::network::forwarding::ForwardToLeader,
     proto::client::{
         self, ClientError, FrameMeta,
         client_frame::Payload as ClientFramePayload,
@@ -39,13 +40,14 @@ type WsClientCtx = ws::WebsocketContext<WsClient>;
 /// All services needed by the `WsClient` actor.
 pub(super) struct WsClientServices {
     client_payload: Recipient<RgClientPayload>,
+    forward_to_leader: Recipient<ForwardToLeader>,
     verify_token: Recipient<VerifyToken>,
 }
 
 impl WsClientServices {
     /// Create a new instance.
-    pub fn new(client_payload: Recipient<RgClientPayload>, verify_token: Recipient<VerifyToken>) -> Self {
-        Self{client_payload, verify_token}
+    pub fn new(client_payload: Recipient<RgClientPayload>, forward_to_leader: Recipient<ForwardToLeader>, verify_token: Recipient<VerifyToken>) -> Self {
+        Self{client_payload, forward_to_leader, verify_token}
     }
 }
 
@@ -130,11 +132,18 @@ impl WsClient {
 
     /// Forward the given client request to the cluster's current leader.
     fn forward_to_leader(
-        &mut self, _req: RgClientPayload, meta: FrameMeta, _leader: Option<NodeId>, _ctx: &mut WsClientCtx,
+        &mut self, req: RgClientPayload, meta: FrameMeta, leader: Option<NodeId>, _ctx: &mut WsClientCtx,
     ) -> impl ActorFuture<Actor=Self, Item=(FrameMeta, AppDataResponse), Error=(FrameMeta, AppDataError)> {
-        // NOTE/TODO: this is just stubbed logic for now.
-        log::error!("Forwarding client requests to cluster leader is not yet implemented.");
-        fut::err((meta, AppDataError::Internal)) // TODO: finish this up.
+        fut::wrap_future(self.services.forward_to_leader.send(ForwardToLeader::new(req, leader))
+            .map_err(move |err| {
+                log::error!("Error forwarding client request to leader. Service recipient closed. {}", err);
+                AppDataError::Internal
+            })
+            .and_then(|res| res)
+            .then(move |res| match res {
+                Ok(val) => Ok((meta, val)),
+                Err(err) => Err((meta, err)),
+            }))
     }
 
     /// Send a frame to the connected client.

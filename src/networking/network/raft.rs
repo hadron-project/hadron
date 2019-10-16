@@ -14,7 +14,7 @@ use log::{error};
 
 use crate::{
     app::AppData,
-    networking::network::{Network, OutboundPeerRequest},
+    networking::network::{Network, peers::OutboundPeerRequest},
     proto::peer,
 };
 

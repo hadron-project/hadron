@@ -10,7 +10,7 @@ statefulSet:
   name: railgun
 
   serviceName: railgun
-  replicas: 1
+  replicas: 3
 
   pod:
     annotations: {}

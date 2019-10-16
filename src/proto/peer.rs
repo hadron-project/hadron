@@ -30,10 +30,10 @@ pub mod frame {
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Frame Variants ////////////////////////////////////////////////////////////////////////////////
 
-/// A request from a peer node.
+/// A request frame sent between cluster peers.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Request {
-    #[prost(oneof="request::Segment", tags="1, 2, 3")]
+    #[prost(oneof="request::Segment", tags="1, 2, 3, 4")]
     pub segment: ::std::option::Option<request::Segment>,
 }
 pub mod request {
@@ -43,15 +43,16 @@ pub mod request {
         Handshake(super::Handshake),
         #[prost(message, tag="2")]
         Raft(super::RaftRequest),
-        /// ForwardedClientRequest forwarded = 4;
         #[prost(message, tag="3")]
         Routing(super::RoutingInfo),
+        #[prost(message, tag="4")]
+        Forwarded(super::ForwardedClientRequest),
     }
 }
 /// A response to an earlier sent request.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Response {
-    #[prost(oneof="response::Segment", tags="1, 2, 3, 4")]
+    #[prost(oneof="response::Segment", tags="1, 2, 3, 4, 5")]
     pub segment: ::std::option::Option<response::Segment>,
 }
 pub mod response {
@@ -63,9 +64,10 @@ pub mod response {
         Handshake(super::Handshake),
         #[prost(message, tag="3")]
         Raft(super::RaftResponse),
-        /// ForwardedClientResponse forwarded = 5;
         #[prost(message, tag="4")]
         Routing(super::RoutingInfo),
+        #[prost(message, tag="5")]
+        Forwarded(super::ForwardedClientResponse),
     }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -168,24 +170,36 @@ pub mod raft_response {
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ForwardedClientRequest {
-    #[prost(message, optional, tag="1")]
-    pub meta: ::std::option::Option<super::client::FrameMeta>,
-    #[prost(bytes, tag="2")]
+    /// This must be a bincode serialization of an `RgClientPayload`, else will cause an internal error.
+    ///
+    /// NOTE WELL: though the Raft encapsulating types are unlikely to change, care must be taken to
+    /// ensure that all versions of Railgun running in the cluster are able to properly encode/decode
+    /// this value. The standard serde backwards compatibility rules apply here.
+    #[prost(bytes, tag="1")]
     pub payload: std::vec::Vec<u8>,
 }
+/// A response to a client payload forwarding request.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ForwardedClientResponse {
-    #[prost(message, optional, tag="1")]
-    pub meta: ::std::option::Option<super::client::FrameMeta>,
-    #[prost(oneof="forwarded_client_response::Response", tags="2, 3")]
-    pub response: ::std::option::Option<forwarded_client_response::Response>,
+    #[prost(oneof="forwarded_client_response::Result", tags="1, 2")]
+    pub result: ::std::option::Option<forwarded_client_response::Result>,
 }
 pub mod forwarded_client_response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Response {
-        #[prost(bytes, tag="2")]
+    pub enum Result {
+        /// This must be a bincode serialization of an `AppDataResponse`, else will cause an internal error.
+        ///
+        /// NOTE WELL: care must be taken to ensure that all versions of Railgun running in the cluster
+        /// are able to properly encode/decode this value. The standard serde backwards compatibility
+        /// rules apply here.
+        #[prost(bytes, tag="1")]
         Data(std::vec::Vec<u8>),
-        #[prost(bytes, tag="3")]
+        /// This must be a bincode serialization of an `AppDataError`, else will cause an internal error.
+        ///
+        /// NOTE WELL: care must be taken to ensure that all versions of Railgun running in the cluster
+        /// are able to properly encode/decode this value. The standard serde backwards compatibility
+        /// rules apply here.
+        #[prost(bytes, tag="2")]
         Error(std::vec::Vec<u8>),
     }
 }
@@ -202,4 +216,8 @@ pub enum Disconnect {
 pub enum Error {
     /// An internal error has taken place. The request should be safe to retry, if related to a request.
     Internal = 0,
+    //// The request has hit a timeout.
+    Timeout = 1,
+    //// The target peer no longer has an active connection.
+    TargetPeerDisconnected = 2,
 }

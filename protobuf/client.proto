@@ -105,16 +105,18 @@ message ClientError {
 enum ErrorCode {
   // An internal error.
   INTERNAL = 0;
+  // The request hit a timeout.
+  TIMEOUT = 1;
   // The server needs the client to perform the connection handshake before proceeding.
-  HANDSHAKE_REQUIRED = 1;
+  HANDSHAKE_REQUIRED = 2;
   // The given credentials are invalid.
-  UNAUTHORIZED = 2;
+  UNAUTHORIZED = 3;
   // The token being used by the client does not have sufficient permissions for the requested operation.
-  INSUFFICIENT_PERMISSIONS = 3;
+  INSUFFICIENT_PERMISSIONS = 4;
   // The given input is invalid.
-  INVALID_INPUT = 4;
+  INVALID_INPUT = 5;
   // The target stream of the request is unknown.
-  TARGET_STREAM_UNKNOWN = 5;
+  TARGET_STREAM_UNKNOWN = 6;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

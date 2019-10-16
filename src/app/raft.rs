@@ -1,6 +1,5 @@
 use actix::prelude::*;
 use actix_raft::{
-    RaftMetrics,
     messages::{
         AppendEntriesRequest,
         ClientError as ClientPayloadError,
@@ -116,17 +115,5 @@ impl Handler<InboundRaftRequest> for App {
                 Box::new(fut::err(peer::Error::Internal))
             }
         }
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// RaftMetrics ///////////////////////////////////////////////////////////////////////////////////
-
-impl Handler<RaftMetrics> for App {
-    type Result = ();
-
-    fn handle(&mut self, msg: RaftMetrics, _ctx: &mut Context<Self>) -> Self::Result {
-        // TODO: finish this up with prometheus and general metrics integrations.
-        log::debug!("{:?}", msg)
     }
 }
