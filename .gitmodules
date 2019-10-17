@@ -1,0 +1,4 @@
+[submodule "rgclient"]
+	path = rgclient
+	url = git@gitlab.com:docql/rgclient.git
+	branch = master

@@ -13,16 +13,22 @@ use futures::future::err as fut_err;
 use log::{error};
 
 use crate::{
-    db::AppData,
-    networking::{Network, OutboundPeerRequest},
-    proto::peer::api,
+    app::AppData,
+    networking::network::{Network, peers::OutboundPeerRequest},
+    proto::peer,
 };
 
 /// The default timeout for Raft AppendEntries RPCs.
+///
+/// TODO: we should update this to come from runtime config for user control.
 pub(self) const RAFT_APPEND_ENTRIES_TIMEOUT: Duration = Duration::from_secs(5);
 /// The default timeout for Raft InstallSnapshot RPCs.
+///
+/// TODO: we should update this to come from runtime config for user control.
 pub(self) const RAFT_INSTALL_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The default timeout for Raft VoteRequest RPCs.
+///
+/// TODO: we should update this to be half of the election timeout min of runtime config.
 pub(self) const RAFT_VOTE_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,19 +49,19 @@ impl Handler<RgAppendEntriesRequest> for Network {
             }
             Ok(payload) => payload,
         };
-        let request = api::Request{segment: Some(api::request::Segment::Raft(api::RaftRequest{
-            payload: Some(api::raft_request::Payload::AppendEntries(payload)),
+        let request = peer::Request{segment: Some(peer::request::Segment::Raft(peer::RaftRequest{
+            payload: Some(peer::raft_request::Payload::AppendEntries(payload)),
         }))};
         let outbound = OutboundPeerRequest{request, target_node: msg.target, timeout: RAFT_APPEND_ENTRIES_TIMEOUT};
 
         Box::new(self.send_outbound_peer_request(outbound, ctx)
             .and_then(|frame| {
                 let raft_frame = match frame.segment {
-                    Some(api::response::Segment::Raft(raft_frame)) => raft_frame,
+                    Some(peer::response::Segment::Raft(raft_frame)) => raft_frame,
                     _ => return Err(()),
                 };
                 let data = match raft_frame.payload {
-                    Some(api::raft_response::Payload::AppendEntries(data)) => data,
+                    Some(peer::raft_response::Payload::AppendEntries(data)) => data,
                     _ => return Err(()),
                 };
                 let res: AppendEntriesResponse = bincode::deserialize(&data).map_err(|err| {
@@ -78,19 +84,19 @@ impl Handler<InstallSnapshotRequest> for Network {
             }
             Ok(payload) => payload,
         };
-        let request = api::Request{segment: Some(api::request::Segment::Raft(api::RaftRequest{
-            payload: Some(api::raft_request::Payload::InstallSnapshot(payload)),
+        let request = peer::Request{segment: Some(peer::request::Segment::Raft(peer::RaftRequest{
+            payload: Some(peer::raft_request::Payload::InstallSnapshot(payload)),
         }))};
         let outbound = OutboundPeerRequest{request, target_node: msg.target, timeout: RAFT_INSTALL_SNAPSHOT_TIMEOUT};
 
         Box::new(self.send_outbound_peer_request(outbound, ctx)
             .and_then(|frame| {
                 let raft_frame = match frame.segment {
-                    Some(api::response::Segment::Raft(raft_frame)) => raft_frame,
+                    Some(peer::response::Segment::Raft(raft_frame)) => raft_frame,
                     _ => return Err(()),
                 };
                 let data = match raft_frame.payload {
-                    Some(api::raft_response::Payload::InstallSnapshot(data)) => data,
+                    Some(peer::raft_response::Payload::InstallSnapshot(data)) => data,
                     _ => return Err(()),
                 };
                 let res: InstallSnapshotResponse = bincode::deserialize(&data).map_err(|err| {
@@ -113,19 +119,19 @@ impl Handler<VoteRequest> for Network {
             }
             Ok(payload) => payload,
         };
-        let request = api::Request{segment: Some(api::request::Segment::Raft(api::RaftRequest{
-            payload: Some(api::raft_request::Payload::Vote(payload)),
+        let request = peer::Request{segment: Some(peer::request::Segment::Raft(peer::RaftRequest{
+            payload: Some(peer::raft_request::Payload::Vote(payload)),
         }))};
         let outbound = OutboundPeerRequest{request, target_node: msg.target, timeout: RAFT_VOTE_REQUEST_TIMEOUT};
 
         Box::new(self.send_outbound_peer_request(outbound, ctx)
             .and_then(|frame| {
                 let raft_frame = match frame.segment {
-                    Some(api::response::Segment::Raft(raft_frame)) => raft_frame,
+                    Some(peer::response::Segment::Raft(raft_frame)) => raft_frame,
                     _ => return Err(()),
                 };
                 let data = match raft_frame.payload {
-                    Some(api::raft_response::Payload::Vote(data)) => data,
+                    Some(peer::raft_response::Payload::Vote(data)) => data,
                     _ => return Err(()),
                 };
                 let res: VoteResponse = bincode::deserialize(&data).map_err(|err| {

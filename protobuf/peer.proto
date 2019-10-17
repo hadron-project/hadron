@@ -1,0 +1,160 @@
+syntax = "proto3";
+package peer;
+
+import "client.proto";
+
+// Metadata related to an API frame.
+message Meta {
+  // The ID of this request or response frame.
+  string id = 1;
+}
+
+// A peer to peer message frame.
+message Frame {
+  // The metadata of the frame.
+  Meta meta = 1;
+  // The payload of data for this frame.
+  oneof payload {
+    Disconnect disconnect = 2;
+    Request request = 3;
+    Response response = 4;
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Frame Variants ////////////////////////////////////////////////////////////////////////////////
+
+// A request frame sent between cluster peers.
+message Request {
+  oneof segment {
+    Handshake handshake = 1;
+    RaftRequest raft = 2;
+    RoutingInfo routing = 3;
+    ForwardedClientRequest forwarded = 4;
+  }
+}
+
+// A response to an earlier sent request.
+message Response {
+  oneof segment {
+    Error error = 1;
+    Handshake handshake = 2;
+    RaftResponse raft = 3;
+    RoutingInfo routing = 4;
+    ForwardedClientResponse forwarded = 5;
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Components ////////////////////////////////////////////////////////////////////////////////////
+
+// A description of a client's state for data routing.
+//
+// This data is used for ephemeral messaging, RPCs & stream consumer routing. Ephemeral
+// messaging & RPC routing info is ephemeral, and held only in memory. Stream consumer
+// information is propagated up to the app level, but only durable consumer information is
+// persisted on disk via Raft.
+message ClientInfo {
+  repeated MessagingSub messaging = 1;
+  repeated RpcSub rpc = 2;
+  repeated StreamSub streams = 3;
+  repeated PipelineSub pipelines = 4;
+}
+
+// A frame indicating that the peer connection must disconnect.
+enum Disconnect {
+  // The disconnect frame has been sent because the connection is no longer valid..
+  ConnectionInvalid = 0;
+}
+
+// A peer error variant.
+enum Error {
+  // An internal error has taken place. The request should be safe to retry, if related to a request.
+  Internal = 0;
+  /// The request has hit a timeout.
+  Timeout = 1;
+  /// The target peer no longer has an active connection.
+  TargetPeerDisconnected = 2;
+}
+
+// A node's client routing info.
+//
+// The ID of the node to which this info pertains is established during the peer handshake.
+message RoutingInfo {
+  // A mapping of all clients curently connected to this node, by ID.
+  map<string, ClientInfo> client_info = 2;
+}
+
+// Details of a client ephemeral messaging subscription.
+message MessagingSub {}
+
+// Details of a client RPC subscription.
+message RpcSub {}
+
+// Details of a client Stream subscription.
+message StreamSub {}
+
+// Details of a client Pipeline subscription.
+message PipelineSub {}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Handshake /////////////////////////////////////////////////////////////////////////////////////
+
+// A handshake frame holding all data needed for a successful handshake between peers.
+message Handshake {
+  // The ID of the node sending this frame.
+  uint64 node_id = 1;
+  // The sending node's client routing info.
+  RoutingInfo routing = 2;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Raft Request & Response ///////////////////////////////////////////////////////////////////////
+
+// A Raft request.
+message RaftRequest {
+  oneof payload {
+    bytes append_entries = 1;
+    bytes vote = 2;
+    bytes install_snapshot = 3;
+  }
+}
+
+// A Raft response.
+message RaftResponse {
+  oneof payload {
+    bytes append_entries = 1;
+    bytes vote = 2;
+    bytes install_snapshot = 3;
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Forwarded Client Request & Response ///////////////////////////////////////////////////////////
+
+message ForwardedClientRequest {
+  // This must be a bincode serialization of an `RgClientPayload`, else will cause an internal error.
+  //
+  // NOTE WELL: though the Raft encapsulating types are unlikely to change, care must be taken to
+  // ensure that all versions of Railgun running in the cluster are able to properly encode/decode
+  // this value. The standard serde backwards compatibility rules apply here.
+  bytes payload = 1;
+}
+
+// A response to a client payload forwarding request.
+message ForwardedClientResponse {
+  oneof result {
+    // This must be a bincode serialization of an `AppDataResponse`, else will cause an internal error.
+    //
+    // NOTE WELL: care must be taken to ensure that all versions of Railgun running in the cluster
+    // are able to properly encode/decode this value. The standard serde backwards compatibility
+    // rules apply here.
+    bytes data = 1;
+    // This must be a bincode serialization of an `AppDataError`, else will cause an internal error.
+    //
+    // NOTE WELL: care must be taken to ensure that all versions of Railgun running in the cluster
+    // are able to properly encode/decode this value. The standard serde backwards compatibility
+    // rules apply here.
+    bytes error = 2;
+  }
+}

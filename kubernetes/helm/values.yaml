@@ -14,20 +14,34 @@ statefulSet:
 
   pod:
     annotations: {}
+
+  ## Server Config
+  server:
+    ## Logging configuration.
+    logging: "railgun=debug,actix_raft=debug"
+    ## The port which Railgun is to serve on.
     port: 15000
 
-  ## Cluster Configuration
-  clustering:
-    formationDelaySeconds: 30
-    discoveryBackend: DNS
-    ## NOTE: the "*." prefix works with ClusterIP services as well as Headless services.
-    dnsName: "*.railgun"
+  ## Raft Config
+  raft:
+    ## The rate at which the Raft leader will send heartbeats in milliseconds.
+    heartbeatIntervalMillis: 400
+    ## The maximum amount of time for a Raft node to wait before triggering an election.
+    electionTimeoutMax: 1800
+    ## The minimum amount of time for a Raft node to wait before triggering an election.
+    electionTimeoutMin: 900
 
-  ## Database Configuration
-  db:
+
+  ## Storage Config
+  storage:
     ## The path where the persistent volume for data storage will be mounted. This value is also
     ## used for the Railgun `RG_DB_PATH` env var.
-    path: /var/lib/railgun/data
+    dbPath: /var/lib/railgun/data
+    ## The location under the `dbPath` where snapshots are to be stored.
+    snapshotDir: /raft/snapshots
+
+  ## Volume Config
+  volume:
     ## The size of the persistent volume to provision for data storage.
     volumeSize: 5Gi
     ## The name of the storage class to use.
@@ -35,3 +49,17 @@ statefulSet:
     storageClassName: "hostpath"
     ## The access modes for the persistent volume for data storage.
     accessModes: [ "ReadWriteOnce" ]
+
+  ## Cluster Config
+  clustering:
+    ## The number of seconds to delay before issuing an initial cluster formation command.
+    formationDelaySeconds: 30
+    ## The discovery backend to use.
+    discoveryBackend: DNS
+    ## NOTE: the "*." prefix works with ClusterIP services as well as Headless services.
+    dnsName: "*.railgun"
+
+  ## Client Config
+  client:
+    ## The threshold in seconds of not receiving a heartbeat from a client, after which it is reckoned to be dead.
+    livenessThreshold: 10

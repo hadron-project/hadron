@@ -31,35 +31,53 @@ spec:
         - name: railgun
           image: railgun:latest
           imagePullPolicy: Never
+          command: ["/bin/railgun"]
           ports:
-            - containerPort: {{.Values.statefulSet.pod.port}}
+            - containerPort: {{.Values.statefulSet.server.port}}
           env:
-            - name: RUST_LOG
-              value: railgun=debug,actix_raft=debug
+            ## Server Config
+            - name: RG_LOGGING
+              value: {{.Values.statefulSet.server.logging}}
             - name: RG_PORT
-              value: {{.Values.statefulSet.pod.port | quote}}
+              value: {{.Values.statefulSet.server.port | quote}}
+
+            ## Raft Config
+            - name: RG_RAFT_HEARTBEAT_INTERVAL_MILLIS
+              value: {{.Values.statefulSet.raft.heartbeatIntervalMillis | quote}}
+            - name: RG_RAFT_ELECTION_TIMEOUT_MAX
+              value: {{.Values.statefulSet.raft.electionTimeoutMax| quote}}
+            - name: RG_RAFT_ELECTION_TIMEOUT_MIN
+              value: {{.Values.statefulSet.raft.electionTimeoutMin| quote}}
+
+            ## Storage Config
+            - name: RG_STORAGE_DB_PATH
+              value: {{.Values.statefulSet.storage.dbPath}}
+            - name: RG_STORAGE_SNAPSHOT_DIR
+              value: {{.Values.statefulSet.storage.snapshotDir}}
+
+            ## Clustering Config
             - name: RG_INITIAL_CLUSTER_FORMATION_DELAY
               value: {{.Values.statefulSet.clustering.formationDelaySeconds | quote}}
             - name: RG_DISCOVERY_BACKEND
               value: {{.Values.statefulSet.clustering.discoveryBackend}}
             - name: RG_DISCOVERY_DNS_NAME
               value: {{.Values.statefulSet.clustering.dnsName | quote}}
-            - name: RG_DB_PATH
-              value: {{.Values.statefulSet.db.path}}
-            - name: RG_DB_PATH
-              value: {{.Values.statefulSet.db.path}}
+
+            ## Client Config
+            - name: RG_CLIENT_LIVENESS_THRESHOLD
+              value: {{.Values.statefulSet.client.livenessThreshold | quote}}
 
           volumeMounts:
             - name: data
-              mountPath: {{.Values.statefulSet.db.path}}
+              mountPath: {{.Values.statefulSet.storage.dbPath}}
 
   volumeClaimTemplates:
     - metadata:
         name: data
       spec:
         accessModes:
-{{toYaml .Values.statefulSet.db.accessModes | indent 10}}
-        storageClassName: {{.Values.statefulSet.db.storageClassName | quote}}
+{{toYaml .Values.statefulSet.volume.accessModes | indent 10}}
+        storageClassName: {{.Values.statefulSet.volume.storageClassName | quote}}
         resources:
           requests:
-            storage: {{.Values.statefulSet.db.volumeSize}}
+            storage: {{.Values.statefulSet.volume.volumeSize}}

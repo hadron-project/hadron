@@ -1,8 +1,14 @@
 //! Data models for Railgun primitive objects.
 
-use std::collections::BTreeSet;
-
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde::{Serialize, Deserialize};
+use sled;
+
+lazy_static! {
+    /// The regex pattern for stream names.
+    pub(super) static ref STREAM_NAME_PATTERN: Regex = Regex::new(r"[-_.a-zA-Z0-9]{1,100}").expect("Expected stream name pattern to compile.");
+}
 
 /// A multi-stage data workflow composed of endpoints and streams.
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -31,14 +37,14 @@ pub struct Stream {
 pub enum StreamType {
     /// A standard durable stream.
     Standard,
-    /// A durable stream which enfoces that the ID of each entry be unique.
-    UniqueId {
-        /// The in-memory index of the stream's IDs.
-        ///
-        /// This is never sent to disk as part of this model.
-        #[serde(skip)]
-        index: BTreeSet<String>,
-    }
+    // /// A durable stream which enfoces that the ID of each entry be unique.
+    // UniqueId {
+    //     /// The in-memory index of the stream's IDs.
+    //     ///
+    //     /// This is never sent to disk as part of this model.
+    //     #[serde(skip)]
+    //     index: BTreeSet<String>,
+    // }
 }
 
 /// The visibility variants of a stream.
@@ -53,8 +59,17 @@ pub enum StreamVisibility {
 /// An entry of data written to a stream.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct StreamEntry {
-    /// The optional ID of the entry.
-    pub id: Option<String>,
+    /// The index of the stream entry.
+    pub index: u64,
     /// The data payload of the entry.
     pub data: Vec<u8>,
+}
+
+/// A wrapper type used for tracking a stream's last index & DB tree.
+pub struct StreamWrapper {
+    pub stream: Stream,
+    /// The index to use for the next entry to be written to this stream.
+    pub next_index: u64,
+    pub data: sled::Tree,
+    pub meta: sled::Tree,
 }
