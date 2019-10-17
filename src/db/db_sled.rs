@@ -674,7 +674,7 @@ impl SledStorage {
             db.insert(RAFT_LAL_KEY, &log_index.to_be_bytes())?;
             Ok(())
         }).map_err(|err| {
-            log::error!("Error writing stream entry. {}", err);
+            log::error!("Error writing stream entry. {:?}", err);
             AppDataError::Internal
         })?;
 
@@ -718,7 +718,7 @@ impl SledStorage {
             db.insert(RAFT_LAL_KEY, &log_index.to_be_bytes())?;
             Ok(())
         }).map_err(|err| {
-            log::error!("Error creating new stream. {}", err);
+            log::error!("Error creating new stream. {:?}", err);
             AppDataError::Internal
         })?;
 
@@ -745,7 +745,7 @@ impl SledStorage {
             db.insert(RAFT_HARDSTATE_KEY, hs.as_slice())?;
             db.insert(RAFT_LAL_KEY, &log_index.to_be_bytes())?;
             Ok(())
-        }).map_err(|err| {
+        }).map_err(|err: sled::TransactionError<()>| {
             log::error!("{} {:?}", ERR_WRITING_HARD_STATE, err);
             AppDataError::Internal
         })?;

@@ -65,7 +65,7 @@ impl Message for VerifyToken {
 // ClientState ///////////////////////////////////////////////////////////////////////////////////
 
 enum ClientState {
-    Initial,
+    Initial(Instant),
     Active(ClientStateActive),
 }
 
@@ -110,7 +110,7 @@ impl WsClient {
             connection_id: uuid::Uuid::new_v4().to_string(),
             heartbeat: Instant::now(),
             heartbeat_handle: None,
-            state: ClientState::Initial,
+            state: ClientState::Initial(Instant::now()),
             liveness_threshold,
         }
     }
@@ -123,6 +123,13 @@ impl WsClient {
         log::debug!("Starting client healthcheck loop with liveness threshold {:?}", self.liveness_threshold);
         self.heartbeat_handle = Some(ctx.run_interval(self.liveness_threshold, |act, ctx| {
             log::debug!("Running healthcheck loop on client {}.", &act.connection_id);
+            if let ClientState::Initial(inst) = act.state {
+                if Instant::now().duration_since(inst) > act.liveness_threshold {
+                    log::info!("Client connection {} did not finish handshake protocol in time, disconnecting.", act.connection_id);
+                    ctx.close(None);
+                    return;
+                }
+            }
             if Instant::now().duration_since(act.heartbeat) > act.liveness_threshold {
                 log::info!("Client connection {} appears to be dead, disconnecting.", act.connection_id);
                 ctx.stop();
@@ -220,7 +227,7 @@ impl WsClient {
     fn handle_ensure_stream(&mut self, req: client::EnsureStreamRequest, meta: FrameMeta, ctx: &mut WsClientCtx) {
         // Ensure client is in an active state.
         let state = match &self.state {
-            ClientState::Initial => return self.send_frame(ServerFramePayload::EnsureStream(client::EnsureStreamResponse::new_err(ClientError::new_handshake_required())), meta, ctx),
+            ClientState::Initial(_) => return self.send_frame(ServerFramePayload::EnsureStream(client::EnsureStreamResponse::new_err(ClientError::new_handshake_required())), meta, ctx),
             ClientState::Active(state) => state,
         };
 
@@ -242,7 +249,7 @@ impl WsClient {
     fn handle_pub_stream(&mut self, req: client::PubStreamRequest, meta: FrameMeta, ctx: &mut WsClientCtx) {
         // Ensure client is in an active state.
         let state = match &self.state {
-            ClientState::Initial => return self.send_frame(ServerFramePayload::PubStream(client::PubStreamResponse::new_err(ClientError::new_handshake_required())), meta, ctx),
+            ClientState::Initial(_) => return self.send_frame(ServerFramePayload::PubStream(client::PubStreamResponse::new_err(ClientError::new_handshake_required())), meta, ctx),
             ClientState::Active(state) => state,
         };
 
