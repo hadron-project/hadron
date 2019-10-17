@@ -12,7 +12,6 @@ use std::{
 use actix::{
     prelude::*,
     fut::FutureResult,
-    io::{WriteHandler, SinkWrite},
 };
 use actix_web::client::Client;
 use backoff::{backoff::Backoff, ExponentialBackoff};
@@ -22,7 +21,8 @@ use futures::{
 };
 use awc::{
     error::{WsProtocolError},
-    ws::{self, Frame, Message},
+    http::StatusCode,
+    ws::{Frame, Message as WsMessage},
 };
 use log::{debug, error, warn};
 use prost;
@@ -41,12 +41,6 @@ use crate::{
     proto::peer,
     utils,
 };
-
-/// A type alias for the Sink type for outbound messages to the connected peer.
-type WsSink = Box<dyn Sink<SinkItem=Message, SinkError=WsProtocolError> + 'static>;
-
-/// A type alias for the Stream type for inbound messages from the connected peer.
-type WsStream = Box<dyn Stream<Item=Frame, Error=WsProtocolError> + 'static>;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // WsToPeerServices //////////////////////////////////////////////////////////////////////////////
@@ -110,8 +104,8 @@ struct StateConnected {
     heartbeat: Instant,
     /// A handle to the currently running heartbeat loop.
     heartbeat_handle: Option<SpawnHandle>,
-    /// The current outbound sink for sending data to the connected peer.
-    outbound: SinkWrite<WsSink>,
+    /// The channel used to send outbound frames.
+    outbound: mpsc::UnboundedSender<WsMessage>,
     /// The handshake state of the connection.
     handshake: PeerHandshakeState,
     /// A map of all pending requests.
@@ -279,33 +273,49 @@ impl WsToPeer {
 
     /// Attempt to build a new connection to the target peer.
     fn new_connection(&mut self, ctx: &mut Context<Self>) {
-        let (conntx, connrx) = mpsc::unbounded::<NewConnection>();
-        let self_addr = ctx.address();
-        actix::spawn(Client::new().ws(format!("ws://{}/internal/", &self.target)).connect()
-            .then(move |res| match res {
-                Ok((_httpres, framed)) => {
+        ctx.spawn(fut::wrap_future(Client::new().ws(format!("ws://{}/internal/", &self.target)).connect())
+            .map_err(|err, act: &mut Self, ctx| {
+                log::error!("Error while attempting to connect to cluster. {:?}", err);
+                act.reconnect(ctx);
+            })
+            .and_then(|res, act, ctx| {
+                let (res, framed) = res;
+                if res.status() != StatusCode::SWITCHING_PROTOCOLS {
+                    log::error!("Received unexpected status code '{}' from peer connection request, expected code 101.", res.status());
+                    act.reconnect(ctx);
+                    return fut::err(());
+                }
 
-                    // This is a bit complex. Here we are heap allocating the new stream+sink pair
-                    // from the new connection so that we can refer to them more easily. Then we
-                    // are sending them to the parent via the unbounded channel.
-                    let (sink, stream) = framed.split();
-                    let bsink: Box<dyn Sink<SinkItem=Message, SinkError=WsProtocolError> + 'static> = Box::new(sink);
-                    let bstream: Box<dyn Stream<Item=Frame, Error=WsProtocolError> + 'static> = Box::new(stream);
-                    let _ = conntx.unbounded_send(NewConnection{sink: bsink, stream: bstream}); // Will never meaningfully fail.
-                    Ok(())
-                }
-                Err(err) => {
-                    // NOTE: if we need more granular error handling in the future, we will have
-                    // to take a custom approach. See https://github.com/actix/actix-web/issues/838.
-                    self_addr.do_send(WsClientErrorMsg(err.to_string()));
-                    Ok(())
-                }
+                // Connect inbound message stream.
+                let (sink, stream) = framed.split();
+                ctx.add_stream(stream);
+
+                // Create a channel->stream->sink pipeline for sending messages to the cluster, and spawn it.
+                let (outbound, outrx) = mpsc::unbounded::<WsMessage>();
+                let outrx = outrx.map_err(|_| {
+                    log::error!("Error while processing outbound frame, which should never happen.");
+                    WsProtocolError::Io(std::io::Error::from(std::io::ErrorKind::Other))
+                });
+                ctx.spawn(fut::wrap_future(sink.send_all(outrx)
+                    .map_err(|err| log::error!("Error sending frame to connected peer. {}", err))
+                    // This will clean up the sink's memory, and will happen when the
+                    // sender is dropped & everything has been flushed.
+                    .map(|_| ())));
+
+                act.connection = ConnectionState::Connected(StateConnected{
+                    heartbeat: Instant::now(),
+                    heartbeat_handle: None,
+                    outbound,
+                    handshake: PeerHandshakeState::Initial,
+                    requests_map: Default::default(),
+                });
+
+                // Start the connection healthcheck protocol & initialize the peer handshake.
+                act.heartbeat(ctx);
+                act.handshake(ctx);
+
+                fut::ok(())
             }));
-
-        // After the above connection future is spawned, we spawn this stream to wait for
-        // the returned stream & sink from a successful message. If the connection attempt
-        // fails, the sending ends will be dropped and this stream will terminate.
-        ctx.add_message_stream(connrx);
     }
 
     /// Handle the reconnect algorithm.
@@ -383,7 +393,7 @@ impl WsToPeer {
     /// Send a fully structured frame to the connected peer.
     fn send_frame(&mut self, frame: peer::Frame, ctx: &mut Context<Self>) -> impl ActorFuture<Actor=Self, Item=(), Error=()> {
         let buf = utils::encode_peer_frame(&frame);
-        self.write_outbound_message(ctx, ws::Message::Binary(buf.into()));
+        self.write_outbound_message(ctx, WsMessage::Binary(buf.into()));
         fut::ok(())
     }
 
@@ -419,22 +429,12 @@ impl WsToPeer {
     }
 
     /// Write an outbound message to the connected peer.
-    fn write_outbound_message(&mut self, ctx: &mut Context<Self>, msg: Message) {
-        let state = match &mut self.connection {
-            ConnectionState::Connected(state) => state,
-            _ => return,
-        };
-
-        use futures::AsyncSink::*;
-        match state.outbound.write(msg) {
-            Err(err) => error!("Error while attempting to write an outbound message to peer. {:?}", err),
-            Ok(asyncsink) => match asyncsink {
-                Ready => (),
-                NotReady(m) => {
-                    error!("Could not queue message to be sent to peer.");
-                    ctx.notify(RetryOutboundMessage(m));
-                }
+    fn write_outbound_message(&mut self, _: &mut Context<Self>, msg: WsMessage) {
+        match &mut self.connection {
+            ConnectionState::Connected(state) => {
+                let _ = state.outbound.unbounded_send(msg);
             }
+            _ => (),
         }
     }
 }
@@ -454,78 +454,6 @@ impl Actor for WsToPeer {
     }
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// UpdateDiscoveryState //////////////////////////////////////////////////////////////////////////
-
-/// A message indicating a needed update to the tracked state of a peer in the discovery system.
-///
-/// This is used by the `WsToPeer` actor and it influences its reconnect behavior.
-#[derive(Clone, Debug, Message)]
-pub(super) struct UpdateDiscoveryState(pub DiscoveryState);
-
-impl Handler<UpdateDiscoveryState> for WsToPeer {
-    type Result = ();
-
-    /// Handle messages to update the associated peer's state as seen by discovery system.
-    fn handle(&mut self, msg: UpdateDiscoveryState, _: &mut Self::Context) {
-        self.discovery_state = msg.0;
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// Connection Setup //////////////////////////////////////////////////////////////////////////////
-
-/// A message type wrapping an `awc::WsClientError`.
-#[derive(Debug, Message)]
-struct WsClientErrorMsg(pub String);
-
-impl Handler<WsClientErrorMsg> for WsToPeer {
-    type Result = ();
-
-    /// An error has taken place while attempting to establish a baseline WebSocket
-    /// connection to a peer.
-    ///
-    /// This handler is invoked only when an error takes place while attempting to open a baseline
-    /// WebSocket connection to a peer. Once the WebSocket connection is established, different
-    /// handlers are responsible for handling errors coming from the live connection.
-    ///
-    /// This handler shares the responsibility of driving reconnect logic.
-    fn handle(&mut self, error: WsClientErrorMsg, ctx: &mut Self::Context) {
-        debug!("Error while attempting to open a connection to peer '{}'. {}", &self.target, error.0);
-        self.reconnect(ctx); // Begin or continue the reconnect process.
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// NewConnection /////////////////////////////////////////////////////////////////////////////////
-
-/// A message representing that a new connection has been established to the target peer.
-#[derive(Message)]
-struct NewConnection {
-    sink: WsSink,
-    stream: WsStream,
-}
-
-impl Handler<NewConnection> for WsToPeer {
-    type Result = ();
-
-    /// Handler for when a new connection has been successfully open to the target peer.
-    fn handle(&mut self, msg: NewConnection, ctx: &mut Self::Context) {
-        ctx.add_stream(msg.stream);
-        self.connection = ConnectionState::Connected(StateConnected{
-            heartbeat: Instant::now(),
-            heartbeat_handle: None,
-            outbound: SinkWrite::new(msg.sink, ctx),
-            handshake: PeerHandshakeState::Initial,
-            requests_map: Default::default(),
-        });
-
-        // Start the connection healthcheck protocol & initialize the peer handshake.
-        self.heartbeat(ctx);
-        self.handshake(ctx);
-    }
-}
-
 impl StreamHandler<Frame, WsProtocolError> for WsToPeer {
     /// Handle messages received over the WebSocket.
     fn handle(&mut self, msg: Frame, ctx: &mut Self::Context) {
@@ -536,7 +464,7 @@ impl StreamHandler<Frame, WsProtocolError> for WsToPeer {
                 if let ConnectionState::Connected(state) = &mut self.connection {
                     state.heartbeat = Instant::now();
                 }
-                self.write_outbound_message(ctx, Message::Pong(data));
+                self.write_outbound_message(ctx, WsMessage::Pong(data));
             }
             Pong(_) => warn!("Protocol error. Unexpectedly received a pong frame from connected peer."),
             Text(_) => warn!("Protocol error. Unexpectedly received a text frame from connected peer."),
@@ -583,31 +511,21 @@ impl StreamHandler<Frame, WsProtocolError> for WsToPeer {
     }
 }
 
-impl WriteHandler<WsProtocolError> for WsToPeer {
-    /// Handle errors coming from write attempts on `self.outbound`.
-    ///
-    /// NOTE WELL: we don't take any action here in terms of checking the connection's health. If
-    /// the connection is fucked at this point, the healthcheck system will end up triggering a
-    /// reconnect event. So here we just log the error.
-    fn error(&mut self, err: WsProtocolError, _: &mut Self::Context) -> Running {
-        error!("Error writing outbound message. {:?}", err);
-        Running::Continue
-    }
-}
-
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// RetryOutboundMessage //////////////////////////////////////////////////////////////////////////
+// UpdateDiscoveryState //////////////////////////////////////////////////////////////////////////
 
-/// A wrapper type used for retrying attempts to send outbound messages.
-#[derive(Message)]
-pub(self) struct RetryOutboundMessage(pub Message);
+/// A message indicating a needed update to the tracked state of a peer in the discovery system.
+///
+/// This is used by the `WsToPeer` actor and it influences its reconnect behavior.
+#[derive(Clone, Debug, Message)]
+pub(super) struct UpdateDiscoveryState(pub DiscoveryState);
 
-impl Handler<RetryOutboundMessage> for WsToPeer {
+impl Handler<UpdateDiscoveryState> for WsToPeer {
     type Result = ();
 
-    /// Handle requests to send outbound messages to the connected peer.
-    fn handle(&mut self, msg: RetryOutboundMessage, ctx: &mut Self::Context) {
-        self.write_outbound_message(ctx, msg.0);
+    /// Handle messages to update the associated peer's state as seen by discovery system.
+    fn handle(&mut self, msg: UpdateDiscoveryState, _: &mut Self::Context) {
+        self.discovery_state = msg.0;
     }
 }
 
@@ -671,7 +589,7 @@ impl WsToPeer {
 
         // Serialize the request data and write it over the outbound socket.
         let buf = utils::encode_peer_frame(&frame);
-        self.write_outbound_message(ctx, ws::Message::Binary(buf.into()));
+        self.write_outbound_message(ctx, WsMessage::Binary(buf.into()));
 
         // Return a future to the caller which will receive the response when it comes back from
         // the peer, else it will timeout.
@@ -688,7 +606,7 @@ impl Handler<DisconnectPeer> for WsToPeer {
     fn handle(&mut self, _: DisconnectPeer, ctx: &mut Self::Context) {
         let frame = peer::Frame::new_disconnect(peer::Disconnect::ConnectionInvalid, Default::default());
         let data = utils::encode_peer_frame(&frame);
-        self.write_outbound_message(ctx, ws::Message::Binary(data.into()));
+        self.write_outbound_message(ctx, WsMessage::Binary(data.into()));
         ctx.stop();
     }
 }
