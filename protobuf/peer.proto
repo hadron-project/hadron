@@ -26,21 +26,32 @@ message Frame {
 
 // A request frame sent between cluster peers.
 message Request {
-  oneof segment {
+  // The payload of the associated request.
+  oneof payload {
+    // A handshake request, part of the initial peer connection setup.
     Handshake handshake = 1;
+    // A request coming from the Raft actor of the sending node.
     RaftRequest raft = 2;
-    RoutingInfo routing = 3;
+    // A request for a peer to update its routing info on the sending peer. See #37 for future optimizations.
+    RoutingInfoRequest routing = 3;
+    // A forwarded client request from the sending peer.
     ForwardedClientRequest forwarded = 4;
   }
 }
 
 // A response to an earlier sent request.
 message Response {
-  oneof segment {
+  // The payload of the associated response.
+  oneof payload {
+    // An error which has taken place while processing the request.
     Error error = 1;
+    // A response to a handshake request.
     Handshake handshake = 2;
+    // A response from the Raft actor of the responding node.
     RaftResponse raft = 3;
-    RoutingInfo routing = 4;
+    // A response to a routing info request. See #37 for future optimizations.
+    RoutingInfoResponse routing = 4;
+    // A response to a forwarded client request.
     ForwardedClientResponse forwarded = 5;
   }
 }
@@ -77,14 +88,6 @@ enum Error {
   TargetPeerDisconnected = 2;
 }
 
-// A node's client routing info.
-//
-// The ID of the node to which this info pertains is established during the peer handshake.
-message RoutingInfo {
-  // A mapping of all clients curently connected to this node, by ID.
-  map<string, ClientInfo> client_info = 2;
-}
-
 // Details of a client ephemeral messaging subscription.
 message MessagingSub {}
 
@@ -105,7 +108,7 @@ message Handshake {
   // The ID of the node sending this frame.
   uint64 node_id = 1;
   // The sending node's client routing info.
-  RoutingInfo routing = 2;
+  map<string, ClientInfo> routing = 1;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -128,6 +131,21 @@ message RaftResponse {
     bytes install_snapshot = 3;
   }
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Routing Info Request & Response ///////////////////////////////////////////////////////////////
+
+// A request for a peer to update its routing info on the sending peer. See #37 for future optimizations.
+message RoutingInfoRequest {
+  // The payload of a routing info request.
+  oneof payload {
+    // A full mapping of all clients curently connected to the sender node, mapped by ID.
+    map<string, ClientInfo> full = 1;
+  }
+}
+
+// A response to a routing info request.
+message RoutingInfoResponse {}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Forwarded Client Request & Response ///////////////////////////////////////////////////////////

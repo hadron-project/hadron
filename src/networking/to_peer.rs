@@ -452,6 +452,20 @@ impl Actor for WsToPeer {
         // Attempt to open a connection to the target peer.
         self.new_connection(ctx);
     }
+
+    fn stopped(&mut self, _: &mut Self::Context) {
+        log::debug!("WsToPeer connection to {:?} has been stopped.", self.peer_id);
+    }
+
+    fn stopping(&mut self, _: &mut Self::Context) -> Running {
+        if let ConnectionState::Closing = self.connection {
+            log::debug!("WsToPeer connection to {:?} is in Closing state & has hit shutdown routine. Stopping.", self.peer_id);
+            Running::Stop
+        } else {
+            log::debug!("WsToPeer connection to {:?} is not in Closing state. Continuing.", self.peer_id);
+            Running::Continue
+        }
+    }
 }
 
 impl StreamHandler<Frame, WsProtocolError> for WsToPeer {

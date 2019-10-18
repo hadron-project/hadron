@@ -258,8 +258,14 @@ impl Network {
 
         // Send the outbound request to the target node.
         match addr {
-            PeerAddr::FromPeer(iaddr) => Either::A(Either::A(iaddr.send(msg).map_err(|_| ()).and_then(|res| res))),
-            PeerAddr::ToPeer(iaddr) => Either::A(Either::B(iaddr.send(msg).map_err(|_| ()).and_then(|res| res))),
+            PeerAddr::FromPeer(iaddr) => Either::A(Either::A(iaddr.send(msg).then(|res| match res {
+                Ok(inner) => inner,
+                Err(_) => Ok(peer::Response::new_error(peer::Error::Internal)),
+            }))),
+            PeerAddr::ToPeer(iaddr) => Either::A(Either::B(iaddr.send(msg).then(|res| match res {
+                Ok(inner) => inner,
+                Err(_) => Ok(peer::Response::new_error(peer::Error::Internal)),
+            }))),
         }
     }
 }

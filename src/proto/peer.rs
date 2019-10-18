@@ -33,18 +33,24 @@ pub mod frame {
 /// A request frame sent between cluster peers.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Request {
-    #[prost(oneof="request::Segment", tags="1, 2, 3, 4")]
-    pub segment: ::std::option::Option<request::Segment>,
+    /// The payload of the associated request.
+    #[prost(oneof="request::Payload", tags="1, 2, 3, 4")]
+    pub payload: ::std::option::Option<request::Payload>,
 }
 pub mod request {
+    /// The payload of the associated request.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Segment {
+    pub enum Payload {
+        /// A handshake request, part of the initial peer connection setup.
         #[prost(message, tag="1")]
         Handshake(super::Handshake),
+        /// A request coming from the Raft actor of the sending node.
         #[prost(message, tag="2")]
         Raft(super::RaftRequest),
+        /// A request for a peer to update its routing info on the sending peer. See #37 for future optimizations.
         #[prost(message, tag="3")]
         Routing(super::RoutingInfo),
+        /// A forwarded client request from the sending peer.
         #[prost(message, tag="4")]
         Forwarded(super::ForwardedClientRequest),
     }
@@ -52,20 +58,27 @@ pub mod request {
 /// A response to an earlier sent request.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Response {
-    #[prost(oneof="response::Segment", tags="1, 2, 3, 4, 5")]
-    pub segment: ::std::option::Option<response::Segment>,
+    /// The payload of the associated response.
+    #[prost(oneof="response::Payload", tags="1, 2, 3, 4, 5")]
+    pub payload: ::std::option::Option<response::Payload>,
 }
 pub mod response {
+    /// The payload of the associated response.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Segment {
+    pub enum Payload {
+        /// An error which has taken place while processing the request.
         #[prost(enumeration="super::Error", tag="1")]
         Error(i32),
+        /// A response to a handshake request.
         #[prost(message, tag="2")]
         Handshake(super::Handshake),
+        /// A response from the Raft actor of the responding node.
         #[prost(message, tag="3")]
         Raft(super::RaftResponse),
+        /// A response to a routing info request. See #37 for future optimizations.
         #[prost(message, tag="4")]
         Routing(super::RoutingInfo),
+        /// A response to a forwarded client request.
         #[prost(message, tag="5")]
         Forwarded(super::ForwardedClientResponse),
     }

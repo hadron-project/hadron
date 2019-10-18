@@ -270,6 +270,15 @@ impl Actor for WsFromPeer {
         // Start the heartbeat protocol.
         self.heartbeat(ctx);
     }
+
+    fn stopped(&mut self, _: &mut Self::Context) {
+        log::debug!("WsFromPeer connection from {:?} has been stopped.", self.peer_id);
+    }
+
+    fn stopping(&mut self, _: &mut Self::Context) -> Running {
+        log::debug!("WsFromPeer connection from {:?} is being stopped.", self.peer_id);
+        Running::Stop
+    }
 }
 
 impl StreamHandler<ws::Message, ws::ProtocolError> for WsFromPeer {

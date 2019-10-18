@@ -13,7 +13,7 @@
 //!
 //! When the network actor's node becomes the leader, it will take all of the client routing and
 //! subscription information that it has, and will start the process of controlling message
-//! delivery. It will start off by submitting queries to the storage engine
+//! delivery. It will start off with queries to the storage engine for needed payloads of data.
 //!
 //! The storage layer will be initialized with an unbounded stream sender of consumer group
 //! updates. When the storage engine first initializes, it will emit a payload of all current
@@ -29,13 +29,23 @@
 //! - stream of updates from storage layer:
 //!     - new consumer groups created or destroyed.
 //!     - ack offset updates.
-//!     - stream of new messages applied to streams which may need to be delivered to consumers. NOTE: storage layer will make an informed decision on whether to emit messages for potential delivery based on if the stream has consumer groups or not, and will only do so when Raft node is leader.
+//!     - stream of new messages applied to streams which may need to be delivered to consumers.
+//!       NOTE: storage layer will make an informed decision on whether to emit messages for potential
+//!       delivery based on if the stream has consumer groups or not, and will only do so when Raft
+//!       node is leader.
 //!
-//! - stream of updates from network actor on connected clients and their subscriptions.
-//!     - new client connections with subscriptions and disconnected clients.
+//! - stream of updates from network actor on:
+//!     - new stream subscriptions, new pipeline subscriptions and disconnected clients.
+//!     - may only run while node is leader, needs updates from Raft on leader ID. To ensure that
+//!       an old leader node's delivery actor isn't attmepting to continue delivering messages,
+//!       each network actor in the cluster will check a delivery frame's current term and sender
+//!       to ensure only the latest leader is delivering.
 //!
-//! - may only run on the Raft leader node, so will receive Raft state metrics.
-//!     - this will allow it to spin up or down as needd.
+//! ### leader / term checking on delivery frames
+//! As delivery frames are received by a node's network actor, it will check the frame's current
+//! term & leader. If the values match, then allowed. If the frame's term is > node's term, allow.
+//! All other conditions, reject. The error used to reject delivery frames will not cause
+//! redelivery count increments.
 //!
 //! ### behaviors
 //! - must only run on the leader node.
@@ -71,3 +81,35 @@
 //!
 //! NOTE: need to get Nack in place as well. Will probably use a new (Stream/Pipeline)DeliveryResponse type which is oneof Ack or Nack.
 //!
+
+use crate::{
+    NodeId
+};
+
+/// An actor responsible for delivering stream messages to consumers.
+pub(crate) struct Delivery {
+    /// The ID of the node this actor is running on.
+    node_id: NodeId,
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// NetworkUpdate /////////////////////////////////////////////////////////////////////////////////
+
+pub(crate) enum NetworkUpdate {
+    /// An update to the known value of the Raft leader.
+    Leader(Option<NodeId>),
+    /// An update indicating a disconnected client connection.
+    DisconnectedClient{connection_id: String},
+    /// An update indicating a new stream subscription.
+    NewStreamSubscription {
+        /// The ID of the client's connection.
+        connection_id: String,
+        /// The namespace which this subscription pertains to.
+        namespace: String,
+        /// The name of the stream which the subscription pertains to.
+        stream: String,
+        /// The name of the consumer group which the subscription pertains to.
+        consumer_group: String,
+    }
+    // NewPipelineSubscription{...}
+}
