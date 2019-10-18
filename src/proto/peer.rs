@@ -49,7 +49,7 @@ pub mod request {
         Raft(super::RaftRequest),
         /// A request for a peer to update its routing info on the sending peer. See #37 for future optimizations.
         #[prost(message, tag="3")]
-        Routing(super::RoutingInfo),
+        Routing(super::RoutingInfoRequest),
         /// A forwarded client request from the sending peer.
         #[prost(message, tag="4")]
         Forwarded(super::ForwardedClientRequest),
@@ -77,7 +77,7 @@ pub mod response {
         Raft(super::RaftResponse),
         /// A response to a routing info request. See #37 for future optimizations.
         #[prost(message, tag="4")]
-        Routing(super::RoutingInfo),
+        Routing(super::RoutingInfoResponse),
         /// A response to a forwarded client request.
         #[prost(message, tag="5")]
         Forwarded(super::ForwardedClientResponse),
@@ -103,30 +103,48 @@ pub struct ClientInfo {
     #[prost(message, repeated, tag="4")]
     pub pipelines: ::std::vec::Vec<PipelineSub>,
 }
-/// A node's client routing info.
-///
-/// The ID of the node to which this info pertains is established during the peer handshake.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RoutingInfo {
-    /// A mapping of all clients curently connected to this node, by ID.
-    #[prost(map="string, message", tag="2")]
-    pub client_info: ::std::collections::HashMap<std::string::String, ClientInfo>,
-}
 /// Details of a client ephemeral messaging subscription.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MessagingSub {
+    /// The namespace which this subscription pertains to.
+    #[prost(string, tag="1")]
+    pub namespace: std::string::String,
+    /// The topic matcher this subscription is using.
+    #[prost(string, tag="2")]
+    pub topic: std::string::String,
 }
 /// Details of a client RPC subscription.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RpcSub {
+    /// The namespace which this subscription pertains to.
+    #[prost(string, tag="1")]
+    pub namespace: std::string::String,
+    /// The endpoint which this subscription pertains to.
+    #[prost(string, tag="2")]
+    pub endpoint: std::string::String,
 }
 /// Details of a client Stream subscription.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamSub {
+    /// The namespace which this subscription pertains to.
+    #[prost(string, tag="1")]
+    pub namespace: std::string::String,
+    /// The name of the stream which the subscription pertains to.
+    #[prost(string, tag="2")]
+    pub stream: std::string::String,
+    /// The name of the consumer group which the subscription pertains to.
+    #[prost(string, tag="3")]
+    pub consumer_group: std::string::String,
 }
 /// Details of a client Pipeline subscription.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PipelineSub {
+    /// The namespace which this subscription pertains to.
+    #[prost(string, tag="1")]
+    pub namespace: std::string::String,
+    /// The name of the pieline which the subscription pertains to.
+    #[prost(string, tag="2")]
+    pub pipeline: std::string::String,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Handshake /////////////////////////////////////////////////////////////////////////////////////
@@ -138,8 +156,8 @@ pub struct Handshake {
     #[prost(uint64, tag="1")]
     pub node_id: u64,
     /// The sending node's client routing info.
-    #[prost(message, optional, tag="2")]
-    pub routing: ::std::option::Option<RoutingInfo>,
+    #[prost(map="string, message", tag="2")]
+    pub routing: ::std::collections::HashMap<std::string::String, ClientInfo>,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Raft Request & Response ///////////////////////////////////////////////////////////////////////
@@ -177,6 +195,36 @@ pub mod raft_response {
         #[prost(bytes, tag="3")]
         InstallSnapshot(std::vec::Vec<u8>),
     }
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Routing Info Request & Response ///////////////////////////////////////////////////////////////
+
+/// A request for a peer to update its routing info on the sending peer. See #37 for future optimizations.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RoutingInfoRequest {
+    /// The payload of a routing info request.
+    #[prost(oneof="routing_info_request::Payload", tags="1")]
+    pub payload: ::std::option::Option<routing_info_request::Payload>,
+}
+pub mod routing_info_request {
+    /// The payload of a routing info request.
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Payload {
+        /// A full payload of the sending node's routing info.
+        #[prost(message, tag="1")]
+        Full(super::RoutingInfoFull),
+    }
+}
+/// A response to a routing info request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RoutingInfoResponse {
+}
+/// A full payload of the sending node's routing info.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RoutingInfoFull {
+    /// A full mapping of all clients curently connected to the sender node, mapped by ID.
+    #[prost(map="string, message", tag="1")]
+    pub full: ::std::collections::HashMap<std::string::String, ClientInfo>,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Forwarded Client Request & Response ///////////////////////////////////////////////////////////

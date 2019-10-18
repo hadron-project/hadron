@@ -13,6 +13,7 @@ use crate::{
     NodeId,
     app::UpdatePeerInfo,
     networking::{
+        ClientRoutingInfo,
         network::Network,
         to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer, WsToPeerServices},
         from_peer::WsFromPeer,
@@ -179,7 +180,7 @@ pub(in crate::networking) struct PeerConnectionLive {
     /// The ID of the peer with which the connection is now live.
     pub peer_id: NodeId,
     /// Routing info coming from the newly connected peer.
-    pub routing: peer::RoutingInfo,
+    pub routing: ClientRoutingInfo,
     /// The address of the actor which is responsible for the new connection.
     pub addr: PeerAddr,
 }
@@ -213,7 +214,7 @@ impl Handler<PeerConnectionLive> for Network {
         self.routing_table.keys().for_each(|peer| debug!("Is connected to: {}", peer));
 
         // Update app instance with new connection info.
-        let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Update{peer: msg.peer_id, routing: msg.routing})
+        let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Update(msg.peer_id))
             .map_err(|err| error!("Error sending `UpdatePeerInfo::Update` from `Network` actor. {}", err));
     }
 }

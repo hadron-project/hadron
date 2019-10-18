@@ -30,12 +30,15 @@ use prost;
 use crate::{
     NodeId,
     app::{AppDataResponse, AppDataError, InboundRaftRequest},
-    networking::network::{
-        PEER_HB_INTERVAL, PEER_HB_THRESHOLD, PEER_HANDSHAKE_TIMEOUT,
-        forwarding::ForwardedRequest,
-        peers::{
-            ClosingPeerConnection, DisconnectPeer, OutboundPeerRequest,
-            PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
+    networking::{
+        ClientRoutingInfo,
+        network::{
+            PEER_HB_INTERVAL, PEER_HB_THRESHOLD, PEER_HANDSHAKE_TIMEOUT,
+            forwarding::ForwardedRequest,
+            peers::{
+                ClosingPeerConnection, DisconnectPeer, OutboundPeerRequest,
+                PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
+            },
         },
     },
     proto::peer,
@@ -139,12 +142,12 @@ pub(super) struct WsToPeer {
     /// The state of the connection with the target peer.
     connection: ConnectionState,
     /// A cached copy of this node's client routing info.
-    routing: peer::RoutingInfo,
+    routing: ClientRoutingInfo,
 }
 
 impl WsToPeer {
     /// Create a new instance.
-    pub fn new(services: WsToPeerServices, node_id: NodeId, target: SocketAddr, routing: peer::RoutingInfo) -> Self {
+    pub fn new(services: WsToPeerServices, node_id: NodeId, target: SocketAddr, routing: ClientRoutingInfo) -> Self {
         Self{
             node_id, services, target, routing,
             peer_id: None,
@@ -172,8 +175,8 @@ impl WsToPeer {
         // Create a frame for the next state of the handshake.
         use PeerHandshakeState::*;
         let request = match hs_state {
-            Initial => peer::Request{segment: Some(peer::request::Segment::Handshake(
-                peer::Handshake{node_id: self.node_id, routing: Some(self.routing.clone())}
+            Initial => peer::Request{payload: Some(peer::request::Payload::Handshake(
+                peer::Handshake{node_id: self.node_id, routing: self.routing.clone()}
             ))},
             Done => return,
         };
@@ -195,8 +198,8 @@ impl WsToPeer {
         };
 
         // Extract handshake response segment, else handle errors.
-        let hs = match res.segment {
-            Some(peer::response::Segment::Handshake(hs)) => hs,
+        let hs = match res.payload {
+            Some(peer::response::Payload::Handshake(hs)) => hs,
             Some(other) => {
                 debug!("Invalid frame received from handshake request. {:?}", other);
                 return self.handshake(ctx);
@@ -223,7 +226,7 @@ impl WsToPeer {
         // Propagate handshake info to parent `Network` actor.
         let f = self.services.peer_connection_live.send(PeerConnectionLive{
             peer_id: hs.node_id,
-            routing: hs.routing.unwrap_or_default(),
+            routing: hs.routing,
             addr: PeerAddr::ToPeer(ctx.address()),
         });
         ctx.spawn(fut::wrap_future(f.map_err(|_| ())));
@@ -352,10 +355,10 @@ impl WsToPeer {
 
     /// Route a request over to the parent `Network` actor for handling.
     fn route_request(&mut self, req: peer::Request, meta: peer::Meta, ctx: &mut Context<Self>) {
-        match req.segment {
+        match req.payload {
             // Only this actor type sends handshake requests, so log an error if one is observed here.
-            Some(peer::request::Segment::Handshake(_)) => warn!("Handshake request received by a WsToPeer actor. This is a protocol violation."),
-            Some(peer::request::Segment::Raft(req)) => {
+            Some(peer::request::Payload::Handshake(_)) => warn!("Handshake request received by a WsToPeer actor. This is a protocol violation."),
+            Some(peer::request::Payload::Raft(req)) => {
                 let f = fut::wrap_future(self.services.inbound_raft_request.send(InboundRaftRequest(req, meta.clone())))
                     .map_err(|err, _: &mut Self, _| {
                         error!("Error propagating inbound Raft request. {}", err);
@@ -365,11 +368,11 @@ impl WsToPeer {
                     .then(move |res, act, ctx| act.send_raft_response(res, meta, ctx));
                 ctx.spawn(f);
             }
-            Some(peer::request::Segment::Routing(routing_info)) => {
+            Some(peer::request::Payload::Routing(routing_info)) => {
                 // TODO: impl this.
                 error!("Received updated routing info from peer, but handler is not implemented in WsToPeer. {:?}", routing_info)
             },
-            Some(peer::request::Segment::Forwarded(forwarded)) => self.handle_forwarded_request(forwarded, meta, ctx),
+            Some(peer::request::Payload::Forwarded(forwarded)) => self.handle_forwarded_request(forwarded, meta, ctx),
             None => warn!("Empty request segment received in WsToPeer."),
         }
     }
@@ -406,7 +409,7 @@ impl WsToPeer {
         let frame = peer::Frame{
             meta: Some(meta),
             payload: Some(peer::frame::Payload::Response(peer::Response{
-                segment: Some(peer::response::Segment::Forwarded(peer::ForwardedClientResponse{
+                payload: Some(peer::response::Payload::Forwarded(peer::ForwardedClientResponse{
                     result: Some(forwarded_res),
                 })),
             })),
@@ -419,9 +422,9 @@ impl WsToPeer {
         let frame = peer::Frame{
             meta: Some(meta),
             payload: Some(peer::frame::Payload::Response(peer::Response{
-                segment: Some(match res {
-                    Ok(raft_res) => peer::response::Segment::Raft(raft_res),
-                    Err(err) => peer::response::Segment::Error(err as i32),
+                payload: Some(match res {
+                    Ok(raft_res) => peer::response::Payload::Raft(raft_res),
+                    Err(err) => peer::response::Payload::Error(err as i32),
                 }),
             })),
         };

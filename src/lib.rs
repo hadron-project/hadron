@@ -4,6 +4,7 @@ extern crate serde;
 mod app;
 mod auth;
 mod config;
+mod delivery;
 mod networking;
 mod consensus;
 mod db;

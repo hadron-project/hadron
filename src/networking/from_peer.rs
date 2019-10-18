@@ -19,13 +19,16 @@ use log::{debug, error, warn};
 use crate::{
     NodeId,
     app::{AppDataResponse, AppDataError, InboundRaftRequest},
-    networking::network::{
-        PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
-        forwarding::ForwardedRequest,
-        peers::{
-            ClosingPeerConnection, DisconnectPeer, OutboundPeerRequest,
-            PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
-        }
+    networking::{
+        ClientRoutingInfo,
+        network::{
+            PEER_HB_INTERVAL, PEER_HB_THRESHOLD,
+            forwarding::ForwardedRequest,
+            peers::{
+                ClosingPeerConnection, DisconnectPeer, OutboundPeerRequest,
+                PeerAddr, PeerConnectionIdentifier, PeerConnectionLive, PeerHandshakeState,
+            },
+        },
     },
     proto::peer,
     utils,
@@ -82,12 +85,12 @@ pub(super) struct WsFromPeer {
     /// A map of all pending requests.
     requests_map: HashMap<String, oneshot::Sender<peer::Response>>,
     /// A cached copy of this node's client routing info.
-    routing: peer::RoutingInfo,
+    routing: ClientRoutingInfo,
 }
 
 impl WsFromPeer {
     /// Create a new instance.
-    pub fn new(services: WsFromPeerServices, node_id: NodeId, routing: peer::RoutingInfo) -> Self {
+    pub fn new(services: WsFromPeerServices, node_id: NodeId, routing: ClientRoutingInfo) -> Self {
         Self{
             node_id, services, routing,
             heartbeat: Instant::now(),
@@ -127,7 +130,7 @@ impl WsFromPeer {
         // Propagate handshake info to parent `Network` actor.
         let f = self.services.peer_connection_live.send(PeerConnectionLive{
             peer_id: hs.node_id,
-            routing: hs.routing.unwrap_or_default(),
+            routing: hs.routing,
             addr: PeerAddr::FromPeer(ctx.address()),
         });
         ctx.spawn(fut::wrap_future(f.map_err(|_| ())).map(move |_, act: &mut Self, ctx| act.handshake_response(meta, ctx)));
@@ -137,9 +140,9 @@ impl WsFromPeer {
     fn handshake_response(&mut self, meta: peer::Meta, ctx: &mut ws::WebsocketContext<Self>) {
         // Respond to the caller with a handshake frame.
         // TODO: finish up the routing info pattern. See the peer connection management doc.
-        let hs_out = peer::Handshake{node_id: self.node_id, routing: Some(self.routing.clone())};
+        let hs_out = peer::Handshake{node_id: self.node_id, routing: self.routing.clone()};
         let frame = peer::Frame{meta: Some(meta), payload: Some(peer::frame::Payload::Response(peer::Response{
-            segment: Some(peer::response::Segment::Handshake(hs_out)),
+            payload: Some(peer::response::Payload::Handshake(hs_out)),
         }))};
         let data = utils::encode_peer_frame(&frame);
         ctx.binary(data);
@@ -186,10 +189,10 @@ impl WsFromPeer {
 
     /// Route a request over to the parent `Network` actor for handling.
     fn route_request(&mut self, req: peer::Request, meta: peer::Meta, ctx: &mut ws::WebsocketContext<Self>) {
-        match req.segment {
+        match req.payload {
             // Only this actor type receives handshake requests.
-            Some(peer::request::Segment::Handshake(hs)) => self.handshake(hs, meta, ctx),
-            Some(peer::request::Segment::Raft(req)) => {
+            Some(peer::request::Payload::Handshake(hs)) => self.handshake(hs, meta, ctx),
+            Some(peer::request::Payload::Raft(req)) => {
                 // TODO: refactor this into a standalone handler.
                 let f = fut::wrap_future(self.services.inbound_raft_request.send(InboundRaftRequest(req, meta.clone())))
                     .map_err(|err, _: &mut Self, _| {
@@ -200,11 +203,11 @@ impl WsFromPeer {
                     .then(move |res, act, ctx| act.send_raft_response(res, meta, ctx));
                 ctx.spawn(f);
             }
-            Some(peer::request::Segment::Routing(routing_info)) => {
+            Some(peer::request::Payload::Routing(routing_info)) => {
                 // TODO: impl this.
                 error!("Received updated routing info from peer, but handler is not implemented in WsFromPeer. {:?}", routing_info)
             },
-            Some(peer::request::Segment::Forwarded(forwarded)) => self.handle_forwarded_request(forwarded, meta, ctx),
+            Some(peer::request::Payload::Forwarded(forwarded)) => self.handle_forwarded_request(forwarded, meta, ctx),
             None => log::warn!("Empty request segment received in WsFromPeer."),
         }
     }
@@ -236,7 +239,7 @@ impl WsFromPeer {
         let frame = peer::Frame{
             meta: Some(meta),
             payload: Some(peer::frame::Payload::Response(peer::Response{
-                segment: Some(peer::response::Segment::Forwarded(peer::ForwardedClientResponse{
+                payload: Some(peer::response::Payload::Forwarded(peer::ForwardedClientResponse{
                     result: Some(forwarded_res),
                 })),
             })),
@@ -249,9 +252,9 @@ impl WsFromPeer {
         let frame = peer::Frame{
             meta: Some(meta),
             payload: Some(peer::frame::Payload::Response(peer::Response{
-                segment: Some(match res {
-                    Ok(raft_res) => peer::response::Segment::Raft(raft_res),
-                    Err(err) => peer::response::Segment::Error(err as i32),
+                payload: Some(match res {
+                    Ok(raft_res) => peer::response::Payload::Raft(raft_res),
+                    Err(err) => peer::response::Payload::Error(err as i32),
                 }),
             })),
         };

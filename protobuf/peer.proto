@@ -89,16 +89,38 @@ enum Error {
 }
 
 // Details of a client ephemeral messaging subscription.
-message MessagingSub {}
+message MessagingSub {
+  // The namespace which this subscription pertains to.
+  string namespace = 1;
+  // The topic matcher this subscription is using.
+  string topic = 2;
+}
 
 // Details of a client RPC subscription.
-message RpcSub {}
+message RpcSub {
+  // The namespace which this subscription pertains to.
+  string namespace = 1;
+  // The endpoint which this subscription pertains to.
+  string endpoint = 2;
+}
 
 // Details of a client Stream subscription.
-message StreamSub {}
+message StreamSub {
+  // The namespace which this subscription pertains to.
+  string namespace = 1;
+  // The name of the stream which the subscription pertains to.
+  string stream = 2;
+  // The name of the consumer group which the subscription pertains to.
+  string consumer_group = 3;
+}
 
 // Details of a client Pipeline subscription.
-message PipelineSub {}
+message PipelineSub {
+  // The namespace which this subscription pertains to.
+  string namespace = 1;
+  // The name of the pieline which the subscription pertains to.
+  string pipeline = 2;
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Handshake /////////////////////////////////////////////////////////////////////////////////////
@@ -108,7 +130,7 @@ message Handshake {
   // The ID of the node sending this frame.
   uint64 node_id = 1;
   // The sending node's client routing info.
-  map<string, ClientInfo> routing = 1;
+  map<string, ClientInfo> routing = 2;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -139,13 +161,19 @@ message RaftResponse {
 message RoutingInfoRequest {
   // The payload of a routing info request.
   oneof payload {
-    // A full mapping of all clients curently connected to the sender node, mapped by ID.
-    map<string, ClientInfo> full = 1;
+    // A full payload of the sending node's routing info.
+    RoutingInfoFull full = 1;
   }
 }
 
 // A response to a routing info request.
 message RoutingInfoResponse {}
+
+// A full payload of the sending node's routing info.
+message RoutingInfoFull {
+  // A full mapping of all clients curently connected to the sender node, mapped by ID.
+  map<string, ClientInfo> full = 1;
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Forwarded Client Request & Response ///////////////////////////////////////////////////////////

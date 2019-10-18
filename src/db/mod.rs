@@ -3,6 +3,10 @@
 mod db_sled;
 mod models;
 
+pub(crate) use models::{
+    Pipeline,
+};
+
 /// The default path to use for data store.
 pub const DEFAULT_DB_PATH: &str = "/var/lib/railgun/data";
 

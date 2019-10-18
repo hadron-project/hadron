@@ -2,8 +2,8 @@ use actix::prelude::*;
 
 use crate::{
     auth::{Claims, ClaimsV1},
-    networking::{Network, client::VerifyToken},
-    proto::{client::ClientError, peer},
+    networking::{ClientRoutingInfo, Network, client::VerifyToken},
+    proto::{client::ClientError},
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -29,11 +29,11 @@ impl Handler<VerifyToken> for Network {
 pub(in crate::networking) struct GetRoutingInfo;
 
 impl Message for GetRoutingInfo {
-    type Result = Result<peer::RoutingInfo, ()>;
+    type Result = Result<ClientRoutingInfo, ()>;
 }
 
 impl Handler<GetRoutingInfo> for Network {
-    type Result = Result<peer::RoutingInfo, ()>;
+    type Result = Result<ClientRoutingInfo, ()>;
 
     fn handle(&mut self, _: GetRoutingInfo, _: &mut Self::Context) -> Self::Result {
         Ok(self.routing.clone())
@@ -62,6 +62,8 @@ impl Handler<ClientConnectionUpdate> for Network {
 
     fn handle(&mut self, msg: ClientConnectionUpdate, _: &mut Self::Context) {
         // TODO:
+        // - refactor self.routing (ClientRoutingInfo) to be wrapped in an Arc. We will make_mut
+        //   on the inner value for updates, and then send an Arc ref to peers for updates &c.
         // - need to update router.
         // - need to flood this node's updated routing info to all peers.
         match msg {

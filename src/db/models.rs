@@ -12,7 +12,7 @@ lazy_static! {
 
 /// A multi-stage data workflow composed of endpoints and streams.
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub struct Pipeline {
+pub(crate) struct Pipeline {
     /// The namespace which this object belongs to.
     pub namespace: String,
     /// The name of this object.

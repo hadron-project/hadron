@@ -15,14 +15,14 @@ impl peer::Frame {
 impl peer::Request {
     /// Create a new forwarding request.
     pub fn new_forwarded(payload: Vec<u8>) -> Self {
-        Self{segment: Some(peer::request::Segment::Forwarded(peer::ForwardedClientRequest{payload}))}
+        Self{payload: Some(peer::request::Payload::Forwarded(peer::ForwardedClientRequest{payload}))}
     }
 }
 
 impl peer::Response {
     /// Create a new error instance.
     pub fn new_error(err: peer::Error) -> Self {
-        Self{segment: Some(peer::response::Segment::Error(err as i32))}
+        Self{payload: Some(peer::response::Payload::Error(err as i32))}
     }
 }
 

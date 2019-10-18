@@ -107,8 +107,8 @@ impl Network {
     /// and prepped for response to the original requesting client.
     fn handle_forwarding_response(&mut self, res: Result<peer::Response, ()>) -> impl ActorFuture<Actor=Self, Item=AppDataResponse, Error=AppDataError> {
         match res {
-            Ok(res) => match res.segment {
-                Some(peer::response::Segment::Error(err)) => {
+            Ok(res) => match res.payload {
+                Some(peer::response::Payload::Error(err)) => {
                     let peer_err = peer::Error::from_i32(err);
                     log::error!("Error during client request forwarding. {:?}", peer_err);
                     match peer_err {
@@ -116,7 +116,7 @@ impl Network {
                         _ => fut::err(AppDataError::Internal),
                     }
                 },
-                Some(peer::response::Segment::Forwarded(forwarded)) => match forwarded.result {
+                Some(peer::response::Payload::Forwarded(forwarded)) => match forwarded.result {
                     Some(peer::forwarded_client_response::Result::Data(data_buf)) => fut::result(utils::bin_decode_app_data_response_as_result(data_buf)),
                     Some(peer::forwarded_client_response::Result::Error(err_buf)) => fut::err(utils::bin_decode_app_data_error(err_buf)),
                     None => {

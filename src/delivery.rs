@@ -83,7 +83,8 @@
 //!
 
 use crate::{
-    NodeId
+    NodeId,
+    db::{Pipeline},
 };
 
 /// An actor responsible for delivering stream messages to consumers.
@@ -99,9 +100,11 @@ pub(crate) enum NetworkUpdate {
     /// An update to the known value of the Raft leader.
     Leader(Option<NodeId>),
     /// An update indicating a disconnected client connection.
-    DisconnectedClient{connection_id: String},
+    DisconnectedClient {
+        connection_id: String,
+    },
     /// An update indicating a new stream subscription.
-    NewStreamSubscription {
+    SubStream {
         /// The ID of the client's connection.
         connection_id: String,
         /// The namespace which this subscription pertains to.
@@ -110,6 +113,24 @@ pub(crate) enum NetworkUpdate {
         stream: String,
         /// The name of the consumer group which the subscription pertains to.
         consumer_group: String,
+    },
+    /// An update indicating a new pipeline subscription.
+    SubPipeline {
+        /// The ID of the client's connection.
+        connection_id: String,
+        /// The namespace which this subscription pertains to.
+        namespace: String,
+        /// The name of the pieline which the subscription pertains to.
+        pipeline: String,
     }
-    // NewPipelineSubscription{...}
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// StorageUpdate /////////////////////////////////////////////////////////////////////////////////
+
+pub(crate) enum StorageUpdate {
+    Initial {
+        pipelines: Vec<Pipeline>,
+        stream_consumer_groups: Vec<()>,
+    }
 }

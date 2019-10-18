@@ -2,7 +2,7 @@ mod raft;
 mod metrics;
 
 use std::{
-    collections::HashMap,
+    collections::HashSet,
     error, fmt,
     sync::Arc,
 };
@@ -36,7 +36,6 @@ use crate::{
             PubStreamRequest, SubPipelineRequest, SubStreamRequest,
             UnsubPipelineRequest, UnsubStreamRequest,
         },
-        peer,
     },
 };
 
@@ -82,7 +81,7 @@ pub struct App {
     /// The address of the Raft actor.
     raft: Addr<AppRaft>,
     /// Information on all currently connected node's and their connected clients.
-    peers: HashMap<NodeId, peer::RoutingInfo>,
+    peers: HashSet<NodeId>,
 }
 
 impl App {
@@ -153,7 +152,7 @@ impl Actor for App {
 impl App {
     /// Issue the initial cluster formation command to this node.
     fn initial_cluster_formation(&mut self, ctx: &mut Context<Self>) {
-        let mut cluster_members: Vec<NodeId> = self.peers.keys().copied().collect();
+        let mut cluster_members: Vec<NodeId> = self.peers.iter().copied().collect();
         cluster_members.push(self.id);
 
         let f = self.raft.send(InitWithConfig::new(cluster_members))
@@ -173,10 +172,7 @@ impl App {
 /// A message indicating an update to a peer's connection info.
 #[derive(Message)]
 pub enum UpdatePeerInfo {
-    Update{
-        peer: NodeId,
-        routing: peer::RoutingInfo,
-    },
+    Update(NodeId),
     Remove(NodeId),
 }
 
@@ -188,8 +184,8 @@ impl Handler<UpdatePeerInfo> for App {
             UpdatePeerInfo::Remove(id) => {
                 self.peers.remove(&id);
             }
-            UpdatePeerInfo::Update{peer, routing} => {
-                self.peers.insert(peer, routing);
+            UpdatePeerInfo::Update(id) => {
+                self.peers.insert(id);
             }
         }
     }

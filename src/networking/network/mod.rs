@@ -26,6 +26,7 @@ use crate::{
     app::{AppDataResponse, AppDataError, InboundRaftRequest, UpdatePeerInfo, RgClientPayload},
     config::Config,
     networking::{
+        ClientRoutingInfo,
         client::{WsClient, WsClientServices},
         from_peer::{WsFromPeer, WsFromPeerServices},
         network::{
@@ -35,7 +36,6 @@ use crate::{
         },
     },
     discovery::{Discovery},
-    proto::{peer},
 };
 
 /// The interval at which heartbeats are sent to peer nodes.
@@ -102,7 +102,7 @@ pub struct Network {
     #[allow(dead_code)]
     discovery: Addr<Discovery>,
     /// The source of truth on all of this node's connected clients and their routing info.
-    routing: peer::RoutingInfo,
+    routing: ClientRoutingInfo,
     /// A buffer of client requests which need to be forwarded to the Raft leader when known.
     forwarding_buffer: HashMap<String, (ForwardToLeader, oneshot::Sender<Result<AppDataResponse, AppDataError>>)>,
     /// A value tracking the current Raft leader.
