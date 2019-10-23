@@ -28,7 +28,7 @@ use crate::{
         db_sled::{
             SledStorage, ObjectCollections,
             consts,
-            raft::{SledActor},
+            raft::{SledStorageSync},
             u64_from_be_bytes,
         },
         models::{
@@ -81,7 +81,7 @@ impl SledStorage {
         });
         log::info!("Finished indexing data.");
 
-        let sled = SyncArbiter::start(3, move || SledActor); // TODO: probably use `num_cores` crate.
+        let sled = SyncArbiter::start(3, move || SledStorageSync); // TODO: probably use `num_cores` crate.
         let mut inst = SledStorage{
             id, sled, db, log,
             hs: state.hard_state, object_collections,
@@ -92,6 +92,7 @@ impl SledStorage {
             indexed_pipelines, indexed_streams,
             indexed_tokens, indexed_users,
             pending_streams: Default::default(),
+            producer: Default::default(),
         };
         inst.index_unapplied_logs(state.last_log_index, state.last_applied_log)?;
         Ok(inst)

@@ -1,22 +1,18 @@
-#[macro_use]
-extern crate serde;
-
 mod app;
-mod auth;
+// mod auth;
 mod config;
-mod delivery;
-mod networking;
-mod consensus;
-mod db;
+// mod consensus;
+// mod db;
+// mod delivery;
 mod discovery;
+mod network;
+// mod producer;
 mod proto;
-mod utils;
+// mod utils;
+mod storage;
 
 // Public exports for binaries.
-pub use crate::{
-    app::App,
-    config::Config,
-};
+pub use crate::{app::App, config::Config};
 
 /// A Railgun cluster node's ID.
 type NodeId = u64;

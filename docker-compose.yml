@@ -1,0 +1,64 @@
+# NOTE WELL: this is intended for local development only.
+version: "3.7"
+services:
+  # This container will build a development image with all needed system deps,
+  # and will build the app caching all work in a volume for more rapid development.
+  #
+  # `docker-compose run builder`
+  builder:
+    image: hadron-local-builder:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.local.builder
+    volumes:
+      - hadron-build-cache:/build/target
+      - ./target/.artifacts:/.artifacts
+      - ./src:/build/src
+      - ./Cargo.toml:/build/Cargo.toml
+      - ./Cargo.lock:/build/Cargo.lock
+      - ./build.rs:/build/build.rs
+      - ./protobuf:/build/protobuf
+    environment:
+      CARGO_HOME: "/build/target/.cargo"
+
+  # This container requires the artifacts generated from the `builder` image above. The workflow
+  # is that you will build the `builder` image first, and any time you have made updates to the
+  # app. Then:
+  #
+  # To update the local release image to use:
+  # `docker-compose build --no-cache hadron`
+  #
+  # Or to boot a single-node hadron cluster:
+  # `docker-compose run hadron`
+  hadron:
+    container_name: hadron
+    image: hadron-local-release:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.local.release
+      args:
+        ARTIFACT_PATH: ./target/.artifacts/hadron
+    volumes:
+      - hadron-data:/usr/local/hadron/data
+    environment:
+      RUST_LOG: info,hadron=trace
+      CLIENT_PORT: 7000
+      SERVER_PORT: 7001
+
+      RAFT_HEARTBEAT_INTERVAL_MILLIS: 400
+      RAFT_ELECTION_TIMEOUT_MAX: 1800
+      RAFT_ELECTION_TIMEOUT_MIN: 900
+
+      STORAGE_DB_PATH: /usr/local/hadron/data
+
+      INITIAL_CLUSTER_FORMATION_DELAY: 30
+      DISCOVERY_BACKEND: DNS
+      DISCOVERY_DNS_NAME: "hadron"
+
+      CLIENT_LIVENESS_THRESHOLD: 10
+
+volumes:
+  # `docker volume create hadron-build-cache`
+  hadron-build-cache:
+    external: true
+  hadron-data: {}

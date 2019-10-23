@@ -448,12 +448,15 @@ impl Handler<RgInstallSnapshot> for SledStorage {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// SledActor /////////////////////////////////////////////////////////////////////////////////////
+// SledStorageSync ///////////////////////////////////////////////////////////////////////////////
 
 /// Sync actor for interfacing with Sled.
-pub(super) struct SledActor;
+///
+/// This is needed particularly for operations which might be blocking, which includes all read
+/// operations, flush (though sled has its own background flush routine), and a few others.
+pub(super) struct SledStorageSync;
 
-impl Actor for SledActor {
+impl Actor for SledStorageSync {
     type Context = SyncContext<Self>;
 }
 
@@ -463,7 +466,7 @@ impl Message for SyncGetLogEntries {
     type Result = Result<Vec<RgEntry>, AppDataError>;
 }
 
-impl Handler<SyncGetLogEntries> for SledActor {
+impl Handler<SyncGetLogEntries> for SledStorageSync {
     type Result = Result<Vec<RgEntry>, AppDataError>;
 
     fn handle(&mut self, msg: SyncGetLogEntries, _ctx: &mut Self::Context) -> Self::Result {
@@ -485,7 +488,7 @@ impl Handler<SyncGetLogEntries> for SledActor {
     }
 }
 
-impl Handler<RgCreateSnapshot> for SledActor {
+impl Handler<RgCreateSnapshot> for SledStorageSync {
     type Result = Result<CurrentSnapshotData, AppDataError>;
 
     fn handle(&mut self, _msg: RgCreateSnapshot, _ctx: &mut Self::Context) -> Self::Result {
@@ -493,7 +496,7 @@ impl Handler<RgCreateSnapshot> for SledActor {
     }
 }
 
-impl Handler<RgGetCurrentSnapshot> for SledActor {
+impl Handler<RgGetCurrentSnapshot> for SledStorageSync {
     type Result = Result<Option<CurrentSnapshotData>, AppDataError>;
 
     fn handle(&mut self, _msg: RgGetCurrentSnapshot, _ctx: &mut Self::Context) -> Self::Result {
@@ -501,7 +504,7 @@ impl Handler<RgGetCurrentSnapshot> for SledActor {
     }
 }
 
-impl Handler<RgInstallSnapshot> for SledActor {
+impl Handler<RgInstallSnapshot> for SledStorageSync {
     type Result = Result<(), AppDataError>;
 
     fn handle(&mut self, _msg: RgInstallSnapshot, _ctx: &mut Self::Context) -> Self::Result {

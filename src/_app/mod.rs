@@ -29,12 +29,12 @@ use crate::{
     config::Config,
     db::Storage,
     networking::{Network, NetworkServices},
+    producer::Producer,
     proto::{
         client::{
             AckPipelineRequest, AckStreamRequest,
             EnsurePipelineRequest, EnsureRpcEndpointRequest, EnsureStreamRequest,
             PubStreamRequest, SubPipelineRequest, SubStreamRequest,
-            UnsubPipelineRequest, UnsubStreamRequest,
         },
     },
 };
@@ -82,6 +82,10 @@ pub struct App {
     raft: Addr<AppRaft>,
     /// Information on all currently connected node's and their connected clients.
     peers: HashSet<NodeId>,
+    /// A producer which emits updates on the ID of the app's Raft leader.
+    leader: Producer<Option<NodeId>>,
+    /// A value tracking the last known Raft leader.
+    current_leader: Option<NodeId>,
 }
 
 impl App {
@@ -95,13 +99,16 @@ impl App {
 
         // The address of self for spawned child actors to communicate back to this actor.
         let app = ctx.address();
+        let metrics = Default::default();
+        let leader = Default::default();
 
         // Instantiate the Raft storage system & start it.
-        let storage = Storage::new(&config.storage_db_path).unwrap_or_else(|err| {
+        let mut storage = Storage::new(&config.storage_db_path).unwrap_or_else(|err| {
             error!("Error initializing the system database. {}", err);
             std::process::exit(1);
         });
         let nodeid = storage.node_id();
+        let _delivery_sub = storage.subscribe();
         let storage_arb = Arbiter::new();
         let storage_addr = Storage::start_in_arbiter(&storage_arb, move |_| storage);
 
@@ -136,6 +143,8 @@ impl App {
             _network: net_addr,
             raft: raft_addr,
             peers: Default::default(),
+            metrics, leader,
+            current_leader: None,
         }
     }
 }
@@ -200,8 +209,6 @@ pub enum AppData {
     PubStream(PubStreamRequest),
     SubStream(SubStreamRequest),
     SubPipeline(SubPipelineRequest),
-    UnsubStream(UnsubStreamRequest),
-    UnsubPipeline(UnsubPipelineRequest),
     EnsureRpcEndpoint(EnsureRpcEndpointRequest),
     EnsureStream(EnsureStreamRequest),
     EnsurePipeline(EnsurePipelineRequest),
@@ -226,18 +233,6 @@ impl From<SubStreamRequest> for AppData {
 impl From<SubPipelineRequest> for AppData {
     fn from(src: SubPipelineRequest) -> Self {
         AppData::SubPipeline(src)
-    }
-}
-
-impl From<UnsubStreamRequest> for AppData {
-    fn from(src: UnsubStreamRequest) -> Self {
-        AppData::UnsubStream(src)
-    }
-}
-
-impl From<UnsubPipelineRequest> for AppData {
-    fn from(src: UnsubPipelineRequest) -> Self {
-        AppData::UnsubPipeline(src)
     }
 }
 
@@ -284,8 +279,6 @@ pub enum AppDataResponse {
     },
     SubStream,
     SubPipeline,
-    UnsubStream,
-    UnsubPipeline,
     EnsureRpcEndpoint,
     EnsureStream,
     EnsurePipeline,

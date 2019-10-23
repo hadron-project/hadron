@@ -3,5 +3,6 @@ guide
 kubernetes
 rgclient
 target
+!target/.artifacts
 
 # File Ignores #

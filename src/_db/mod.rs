@@ -1,11 +1,12 @@
 //! A module encapsulating all logic for interfacing with the data storage system.
 
-mod db_sled;
-mod models;
+// mod db_sled;
+// mod models;
+// mod stream;
 
-pub(crate) use models::{
-    Pipeline,
-};
+// pub(crate) use models::{
+//     Pipeline,
+// };
 
 /// The default path to use for data store.
 pub const DEFAULT_DB_PATH: &str = "/var/lib/railgun/data";
@@ -25,5 +26,5 @@ pub fn default_db_path() -> String {
 // ))]
 // compile_error!("Only one storage engine may be active.");
 
-/// The configured storage backend.
-pub type Storage = db_sled::SledStorage;
+// /// The configured storage backend.
+// pub type Storage = db_sled::SledStorage;

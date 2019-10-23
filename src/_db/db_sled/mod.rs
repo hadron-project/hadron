@@ -19,7 +19,10 @@ use sled;
 use crate::{
     NodeId,
     auth::User,
-    db::models::{Pipeline, StreamWrapper},
+    db::{
+        models::{Pipeline, StreamWrapper},
+        stream::{StorageProducer, StorageUpdatesStream},
+    },
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -47,7 +50,7 @@ pub struct SledStorage {
     /// The ID of this node.
     id: NodeId,
     /// The addr of the sled sync actor for DB operations.
-    sled: Addr<raft::SledActor>,
+    sled: Addr<raft::SledStorageSync>,
     /// The main sled database handle.
     db: sled::Db,
     /// The keyspace used for the Raft log.
@@ -73,9 +76,15 @@ pub struct SledStorage {
     /// New streams which have been written to the log, but which have not yet
     /// been applied to the state machine.
     pending_streams: BTreeMap<u64, String>,
+    producer: StorageProducer,
 }
 
 impl SledStorage {
+    /// This node's ID.
+    pub fn node_id(&self) -> NodeId {
+        self.id
+    }
+
     /// Get the keyspace for a stream's data given its namespace & name.
     fn stream_keyspace_data(ns: &str, name: &str) -> String {
         format!("{}/{}/{}/data", consts::STREAMS_DATA_PREFIX, ns, name)
@@ -86,9 +95,9 @@ impl SledStorage {
         format!("{}/{}/{}/metadata", consts::STREAMS_DATA_PREFIX, ns, name)
     }
 
-    /// This node's ID.
-    pub fn node_id(&self) -> NodeId {
-        self.id
+    /// Subscribe to all storage updates.
+    pub fn subscribe(&mut self) -> StorageUpdatesStream {
+        self.producer.subscribe()
     }
 }
 

@@ -1,26 +1,22 @@
-//! Stream & pipeline delivery controls.
+//! An actor used for delivering stream messages to consumers.
 //!
-//! For delivering stream & pipeline messages to clients which have active consumer subscriptions,
-//! this actor functions a bit like a request/response client, sending requests to clients
-//! to have them process messages as part of their consumer subscriptions, and then upon
-//! receiving a response will send the ack payload to the Raft node for durability. Once the ack
-//! has been applied to the state machine, it will respond to the client with an AckStreamResponse
-//! or AckPipelineResponse as needed.
+//! The producer runs only on the Raft leader node. In the future, this may change and producers
+//! may be selected to run on different nodes by the leader.
 //!
-//! Fundamentally, messages can only be delivered to live clients, so this subsystem does not need
-//! to be aware of all consumer subscriptions which have ever been created, it only needs to be
-//! aware of live consumers.
+//! This system implements the "at least once" delivery semantics for messages. There are some
+//! conditions where messages may be delivered more than once, such as when a leadership change
+//! takes place while a message has already been delivered, and the new leader will see the message
+//! as outstanding and will redeliver it. Stream consumers should always be idempotent.
+//!
+//! This actor will coalesce a few streams of data from the storage and network layers and will
+//! use that data to determine when messages need to be delivered, and when they need to be
+//! redelivered. Nacks will cause messages to be redelivered, and a client with unacknowledged
+//! messages which disconnects will also have its messages redelivered. There is no redelivery
+//! timeout in the Railgun system.
 //!
 //! When the network actor's node becomes the leader, it will take all of the client routing and
 //! subscription information that it has, and will start the process of controlling message
 //! delivery. It will start off with queries to the storage engine for needed payloads of data.
-//!
-//! The storage layer will be initialized with an unbounded stream sender of consumer group
-//! updates. When the storage engine first initializes, it will emit a payload of all current
-//! consumer group data on disk, and then will emit updates on new consumer groups, updates to ack
-//! offsets per group, and will receive messages for immediate delivery.
-//!
-//!
 //!
 //! stream consumers
 //! ================

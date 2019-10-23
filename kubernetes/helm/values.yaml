@@ -1,16 +1,26 @@
-namespace: default
-
+## The service which will be used by clients for communicating with the Hadron cluster.
 service:
-  name: railgun
+  name: hadron
   annotations: {}
-  port: 15000
-  targetPort: 15000
+  port: 7000
+  targetPort: 7000
+
+## The service which the Hadron cluster itself uses for internal communication.
+serviceInternal:
+  name: hadron-internal
+  annotations: {}
+  port: 7001
+  targetPort: 7001
 
 statefulSet:
-  name: railgun
+  name: hadron
 
-  serviceName: railgun
-  replicas: 3
+  serviceName: hadron
+  replicas: 5
+
+  image:
+    fullName: docker.io/hadron-project/hadron:latest
+    pullPolicy: IfNotPresent
 
   pod:
     annotations: {}
@@ -18,9 +28,11 @@ statefulSet:
   ## Server Config
   server:
     ## Logging configuration.
-    logging: "railgun=debug,actix_raft=debug"
-    ## The port which Railgun is to serve on.
-    port: 15000
+    logging: "error,hadron=trace"
+    ## The port which client network traffic is to use.
+    clientPort: 7000
+    ## The port which cluster internal network traffic is to use.
+    serverPort: 7001
 
   ## Raft Config
   raft:
@@ -34,19 +46,18 @@ statefulSet:
 
   ## Storage Config
   storage:
-    ## The path where the persistent volume for data storage will be mounted. This value is also
-    ## used for the Railgun `RG_DB_PATH` env var.
-    dbPath: /var/lib/railgun/data
-    ## The location under the `dbPath` where snapshots are to be stored.
-    snapshotDir: /raft/snapshots
+    ## The path where the persistent volume for data storage will be mounted.
+    dbPath: /usr/local/hadron/data
 
   ## Volume Config
   volume:
     ## The size of the persistent volume to provision for data storage.
     volumeSize: 5Gi
     ## The name of the storage class to use.
-    # NOTE: "hostpath" for docker-desktop-k8s; "standard" for minikube; other values for different platforms.
-    storageClassName: "hostpath"
+    ##
+    ## NOTE: create your own storage class using your K8s storage provisioner,
+    ## and overwrite this value.
+    storageClassName: "standard"
     ## The access modes for the persistent volume for data storage.
     accessModes: [ "ReadWriteOnce" ]
 
@@ -56,8 +67,8 @@ statefulSet:
     formationDelaySeconds: 30
     ## The discovery backend to use.
     discoveryBackend: DNS
-    ## NOTE: the "*." prefix works with ClusterIP services as well as Headless services.
-    dnsName: "*.railgun"
+    ## The DNS name to use for service discovery.
+    dnsName: "*.hadron-internal.default.svc.cluster.local."
 
   ## Client Config
   client:

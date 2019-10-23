@@ -1,25 +1,20 @@
-use std::{
-    net::SocketAddr,
-    time::Duration,
-};
+use std::{net::SocketAddr, time::Duration};
 
 use actix::prelude::*;
-use futures::{
-    future::{Either, ok as fut_ok},
-};
+use futures::future::{ok as fut_ok, Either};
 use log::{debug, error};
 
 use crate::{
-    NodeId,
     app::UpdatePeerInfo,
+    discovery::ObservedPeersChangeset,
     networking::{
-        ClientRoutingInfo,
+        from_peer::WsFromPeer,
         network::Network,
         to_peer::{DiscoveryState, UpdateDiscoveryState, WsToPeer, WsToPeerServices},
-        from_peer::WsFromPeer,
+        ClientRoutingInfo,
     },
-    discovery::{ObservedPeersChangeset},
     proto::peer,
+    NodeId,
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -60,7 +55,9 @@ impl Handler<ObservedPeersChangeset> for Network {
     ///   disappeared, then update its discovery state to `Observed`.
     fn handle(&mut self, changeset: ObservedPeersChangeset, ctx: &mut Self::Context) -> Self::Result {
         // Determine which new addrs need to be spawned. Update discovery states & filter.
-        let tospawn: Vec<_> = changeset.new_peers.into_iter()
+        let tospawn: Vec<_> = changeset
+            .new_peers
+            .into_iter()
             .filter(|socketaddr| match self.socketaddr_to_peer.get_mut(socketaddr) {
                 // If a disappeared addr has come back, then update it, notify actor & filter.
                 Some(ref mut state) if state.discovery_state == DiscoveryState::Disappeared => {
@@ -73,7 +70,8 @@ impl Handler<ObservedPeersChangeset> for Network {
                 Some(_) => false,
                 // New socket addrs will not be filtered out.
                 None => true,
-            }).collect();
+            })
+            .collect();
 
         // Spawn new outbound connections to peers.
         tospawn.into_iter().for_each(|socketaddr| {
@@ -86,11 +84,13 @@ impl Handler<ObservedPeersChangeset> for Network {
             );
             let addr = WsToPeer::new(services, self.node_id, socketaddr, self.routing.clone()).start();
             let discovery_state = DiscoveryState::Observed;
-            self.socketaddr_to_peer.insert(socketaddr, WsToPeerState{addr, discovery_state});
+            self.socketaddr_to_peer.insert(socketaddr, WsToPeerState { addr, discovery_state });
         });
 
         // For any addr which has disappeared from the discovery system, update it here if needed.
-        changeset.purged_peers.into_iter()
+        changeset
+            .purged_peers
+            .into_iter()
             .for_each(|socketaddr| match self.socketaddr_to_peer.get_mut(&socketaddr) {
                 None => (),
                 Some(state) => {
@@ -156,7 +156,10 @@ impl Handler<ClosingPeerConnection> for Network {
         match msg.0 {
             PeerConnectionIdentifier::NodeId(id) => {
                 self.routing_table.remove(&id);
-                let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Remove(id))
+                let _ = self
+                    .services
+                    .update_peer_info
+                    .do_send(UpdatePeerInfo::Remove(id))
                     .map_err(|err| error!("Error sending `UpdatePeerInfo::Remove` from `Network` actor. {}", err));
             }
             PeerConnectionIdentifier::SocketAddr(addr) => {
@@ -165,7 +168,10 @@ impl Handler<ClosingPeerConnection> for Network {
             PeerConnectionIdentifier::SocketAddrAndId(addr, id) => {
                 self.routing_table.remove(&id);
                 self.socketaddr_to_peer.remove(&addr);
-                let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Remove(id))
+                let _ = self
+                    .services
+                    .update_peer_info
+                    .do_send(UpdatePeerInfo::Remove(id))
                     .map_err(|err| error!("Error sending `UpdatePeerInfo::Remove` from `Network` actor. {}", err));
             }
         }
@@ -214,7 +220,10 @@ impl Handler<PeerConnectionLive> for Network {
         self.routing_table.keys().for_each(|peer| debug!("Is connected to: {}", peer));
 
         // Update app instance with new connection info.
-        let _ = self.services.update_peer_info.do_send(UpdatePeerInfo::Update(msg.peer_id))
+        let _ = self
+            .services
+            .update_peer_info
+            .do_send(UpdatePeerInfo::Update(msg.peer_id))
             .map_err(|err| error!("Error sending `UpdatePeerInfo::Update` from `Network` actor. {}", err));
     }
 }
@@ -250,7 +259,9 @@ impl Network {
     ///
     /// NOTE WELL: any errors taking place within the actors which handle these requests will be
     /// transformed into a Response error variant.
-    pub(in crate::networking) fn send_outbound_peer_request(&mut self, msg: OutboundPeerRequest, _: &mut Context<Self>) -> impl Future<Item=peer::Response, Error=()> {
+    pub(in crate::networking) fn send_outbound_peer_request(
+        &mut self, msg: OutboundPeerRequest, _: &mut Context<Self>,
+    ) -> impl Future<Item = peer::Response, Error = ()> {
         // Get a reference to actor which is holding the connection to the target node.
         let addr = match self.routing_table.get(&msg.target_node) {
             None => return Either::B(fut_ok(peer::Response::new_error(peer::Error::TargetPeerDisconnected))),

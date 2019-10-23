@@ -1,412 +1,652 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// ClientToServer & ClientFromServer /////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// A client request frame.
-///
-/// Client requests come in a few different forms:
-/// - Connnect: a request to establish a client connection.
-/// - Disconnect: a request sent to disconnect the client from the server.
-/// - PubEphemeral: a request to publish an ephemeral message.
-/// - PubRpc: a request to publish an RPC message.
-/// - PubStream: a request to publish a message to a durable stream.
-/// - SubEphemeral: a request to subscribe to an ephemeral messaging exchange.
-/// - SubRpc: a request to subscribe as a handler of an RPC endpoint.
-/// - SubStream: a request to subscribe as a stream consumer.
-/// - SubPipeline: a request to subscribe to a stage of a pipeline (RPC endpoint or stream).
-/// - UnsubStream: unsubscribe from a stream.
-/// - UnsubPipeline: unsubscribe from a stage of a pipeline.
-/// - EnsureRpcEndpoint: a request to ensure that the specified RPC endpoint exists.
-/// - EnsureStream: a request to ensure that the specified stream exists with the given config.
-/// - EnsurePipeline: a request to ensure that the specified pipeline exists with the
-/// given structure and config.
-/// - StreamAck: a request to ack a stream message. Ack'ing a stream message may also be
-/// accompanied by a set of messages to be published to other streams. See the guide for more
-/// details on how this works in the Durable Streams chapter.
-/// - PipelineAck: a request to ack a message from a pipeline stage. This request must include
-/// the payload of data which is to be written to downstream stages. Ack'ing the message & writing
-/// its output to downstream stages is done transactionally. This request is used even if the stage
-/// is an RPC endpoint stage, in which case only the data is written for the downstream stages.
 #[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct ClientFrame {
-    #[prost(message, optional, tag="1")]
-    pub meta: ::std::option::Option<FrameMeta>,
-    #[prost(oneof="client_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
-    pub payload: ::std::option::Option<client_frame::Payload>,
-}
-pub mod client_frame {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    #[derive(Serialize, Deserialize)]
-    pub enum Payload {
-        #[prost(message, tag="2")]
-        Connect(super::ConnectRequest),
-        #[prost(message, tag="3")]
-        Disconnect(super::DisconnectRequest),
-        #[prost(message, tag="4")]
-        PubEphemeral(super::PubEphemeralRequest),
-        #[prost(message, tag="5")]
-        PubRpc(super::PubRpcRequest),
-        #[prost(message, tag="6")]
-        PubStream(super::PubStreamRequest),
-        #[prost(message, tag="7")]
-        SubEphemeral(super::SubEphemeralRequest),
-        #[prost(message, tag="8")]
-        SubRpc(super::SubRpcRequest),
-        #[prost(message, tag="9")]
-        SubStream(super::SubStreamRequest),
-        #[prost(message, tag="10")]
-        SubPipeline(super::SubPipelineRequest),
-        #[prost(message, tag="11")]
-        UnsubStream(super::UnsubStreamRequest),
-        #[prost(message, tag="12")]
-        UnsubPipeline(super::UnsubPipelineRequest),
-        #[prost(message, tag="13")]
-        EnsureEndpoint(super::EnsureRpcEndpointRequest),
-        #[prost(message, tag="14")]
-        EnsureStream(super::EnsureStreamRequest),
-        #[prost(message, tag="15")]
-        EnsurePipeline(super::EnsurePipelineRequest),
-        #[prost(message, tag="16")]
-        AckStream(super::AckStreamRequest),
-        #[prost(message, tag="17")]
-        AckPipeline(super::AckPipelineRequest),
+pub struct EphemeralPubRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EphemeralPubResponse {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EphemeralSubClient {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EphemeralSubServer {}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RpcPubRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RpcPubResponse {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RpcSubClient {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RpcSubServer {}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamPubRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamPubResponse {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamSubClient {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamSubServer {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamUnsubRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamUnsubResponse {}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineStageSubClient {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineStageSubServer {}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateSchemaRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateSchemaResponse {}
+#[doc = r" Generated client implementations."]
+pub mod client_client {
+    #![allow(unused_variables, dead_code, missing_docs)]
+    use tonic::codegen::*;
+    pub struct ClientClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl ClientClient<tonic::transport::Channel> {
+        #[doc = r" Attempt to create a new client by connecting to a given endpoint."]
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> ClientClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::BoxBody>,
+        T::ResponseBody: Body + HttpBody + Send + 'static,
+        T::Error: Into<StdError>,
+        <T::ResponseBody as HttpBody>::Error: Into<StdError> + Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
+            let inner = tonic::client::Grpc::with_interceptor(inner, interceptor);
+            Self { inner }
+        }
+        #[doc = " Publish an ephemeral message."]
+        pub async fn ephemeral_pub(
+            &mut self, request: impl tonic::IntoRequest<super::EphemeralPubRequest>,
+        ) -> Result<tonic::Response<super::EphemeralPubResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/client.Client/EphemeralPub");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        #[doc = " Subscribe to an ephemeral messaging exchange using a given routing key."]
+        #[doc = ""]
+        #[doc = " This gRPC endpoint uses a uni-direction stream. The client sends an initial `EphemeralSubClient`"]
+        #[doc = " message to setup the subscription stream, and the server will respond with an initial"]
+        #[doc = " `EphemeralSubServer` message to confirm initialization."]
+        #[doc = ""]
+        #[doc = " From there, the server will send `EphemeralSubServer` messages containing published ephemeral"]
+        #[doc = " messages matching this subscription's exchange and routing key."]
+        pub async fn ephemeral_sub(
+            &mut self, request: impl tonic::IntoRequest<super::EphemeralSubClient>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<super::EphemeralSubServer>>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/client.Client/EphemeralSub");
+            self.inner.server_streaming(request.into_request(), path, codec).await
+        }
+        #[doc = " Publish an RPC request and await its response."]
+        pub async fn rpc_pub(
+            &mut self, request: impl tonic::IntoRequest<super::RpcPubRequest>,
+        ) -> Result<tonic::Response<super::RpcPubResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/client.Client/RpcPub");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        #[doc = " Subscribe as an RPC handler."]
+        #[doc = ""]
+        #[doc = " This gRPC endpoint uses a bi-direction stream. The client sends `RpcSubClient` messages and"]
+        #[doc = " the server sends `RpcSubServer` messages. The client will send an initial message to initialize"]
+        #[doc = " the stream and the server will send an initial message to confirm initialization."]
+        #[doc = ""]
+        #[doc = " From there, the server will send a `RpcSubServer` message any time an RPC has been published"]
+        #[doc = " and this client connection has been chosen to handle the RPC. The client is then expected to"]
+        #[doc = " handle the RPC and respond with a `RpcSubClient` message."]
+        pub async fn rpc_sub(
+            &mut self, request: impl tonic::IntoStreamingRequest<Message = super::RpcSubClient>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<super::RpcSubServer>>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/client.Client/RpcSub");
+            self.inner.streaming(request.into_streaming_request(), path, codec).await
+        }
+        #[doc = " Publish an event to a stream."]
+        pub async fn stream_pub(
+            &mut self, request: impl tonic::IntoRequest<super::StreamPubRequest>,
+        ) -> Result<tonic::Response<super::StreamPubResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/client.Client/StreamPub");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        #[doc = " Subscribe as an event handler for a specific stream."]
+        #[doc = ""]
+        #[doc = " This gRPC endpoint uses a bi-direction stream. The client sends `StreamSubClient` messages and"]
+        #[doc = " the server sends `StreamSubServer` messages. The client will send an initial message to initialize"]
+        #[doc = " the stream and the server will send an initial message to confirm initialization."]
+        #[doc = ""]
+        #[doc = " From there, the server will send a `StreamSubServer` message any time an event has been published"]
+        #[doc = " to the corresponding stream and this client connection has been chosen to handle event. The client"]
+        #[doc = " is then expected to handle the event and respond with a `StreamSubClient` message, which will"]
+        #[doc = " either acknowledge (`ack`) the event indicating that it was successfully processed, or will"]
+        #[doc = " negatively acknowledge (`nack`) the event indicating that the event was not processed successfully."]
+        pub async fn stream_sub(
+            &mut self, request: impl tonic::IntoStreamingRequest<Message = super::StreamSubClient>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<super::StreamSubServer>>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/client.Client/StreamSub");
+            self.inner.streaming(request.into_streaming_request(), path, codec).await
+        }
+        #[doc = " Unsubscribes a stream consumer group, deleting the consumer group's offsets for the associated stream."]
+        pub async fn stream_unsub(
+            &mut self, request: impl tonic::IntoRequest<super::StreamUnsubRequest>,
+        ) -> Result<tonic::Response<super::StreamUnsubResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/client.Client/StreamUnsub");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        #[doc = " Subscribe as an event handler for a specific pipeline stage."]
+        #[doc = ""]
+        #[doc = " This gRPC endpoint uses a bi-direction stream. The client sends `PipelineStageSubClient` messages and"]
+        #[doc = " the server sends `PipelineStageSubServer` messages. The client will send an initial message to initialize"]
+        #[doc = " the stream and the server will send an initial message to confirm initialization."]
+        #[doc = ""]
+        #[doc = " From there, the server will send a `PipelineStageSubServer` message to trigger a specific pipeline"]
+        #[doc = " stage providing the stage's required input. The client is then expected to handle the input"]
+        #[doc = " event for the specific stage and respond with a `PipelineStageSubClient` message, which will either"]
+        #[doc = " acknowledge (`ack`) the stage providing any required outputs for the stage, or will negatively"]
+        #[doc = " acknowledge (`nack`) the stage indicating that the stage was not processed successfully."]
+        pub async fn pipeline_stage_sub(
+            &mut self, request: impl tonic::IntoStreamingRequest<Message = super::PipelineStageSubClient>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<super::PipelineStageSubServer>>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/client.Client/PipelineStageSub");
+            self.inner.streaming(request.into_streaming_request(), path, codec).await
+        }
+        #[doc = " Update the schema of the Hadron cluster."]
+        #[doc = ""]
+        #[doc = " This is the one endpoint used for making updates to a Hadron cluster's schema. The given"]
+        #[doc = " payload should be an array of YAML documents describing schema updates. This process is"]
+        #[doc = " always idempotent, as all documents are required to have a revision number, and old revisions"]
+        #[doc = " are ignored."]
+        pub async fn update_schema(
+            &mut self, request: impl tonic::IntoRequest<super::UpdateSchemaRequest>,
+        ) -> Result<tonic::Response<super::UpdateSchemaResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/client.Client/UpdateSchema");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+    }
+    impl<T: Clone> Clone for ClientClient<T> {
+        fn clone(&self) -> Self {
+            Self { inner: self.inner.clone() }
+        }
+    }
+    impl<T> std::fmt::Debug for ClientClient<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "ClientClient {{ ... }}")
+        }
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct ServerFrame {
-    #[prost(message, optional, tag="1")]
-    pub meta: ::std::option::Option<FrameMeta>,
-    #[prost(oneof="server_frame::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17")]
-    pub payload: ::std::option::Option<server_frame::Payload>,
-}
-pub mod server_frame {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    #[derive(Serialize, Deserialize)]
-    pub enum Payload {
-        #[prost(message, tag="2")]
-        Connect(super::ConnectResponse),
-        #[prost(message, tag="3")]
-        Disconnect(super::DisconnectResponse),
-        #[prost(message, tag="4")]
-        PubEphemeral(super::PubEphemeralResponse),
-        #[prost(message, tag="5")]
-        PubRpc(super::PubRpcResponse),
-        #[prost(message, tag="6")]
-        PubStream(super::PubStreamResponse),
-        #[prost(message, tag="7")]
-        SubEphemeral(super::SubEphemeralResponse),
-        #[prost(message, tag="8")]
-        SubRpc(super::SubRpcResponse),
-        #[prost(message, tag="9")]
-        SubStream(super::SubStreamResponse),
-        #[prost(message, tag="10")]
-        SubPipeline(super::SubPipelineResponse),
-        #[prost(message, tag="11")]
-        UnsubStream(super::UnsubStreamResponse),
-        #[prost(message, tag="12")]
-        UnsubPipeline(super::UnsubPipelineResponse),
-        #[prost(message, tag="13")]
-        EnsureEndpoint(super::EnsureRpcEndpointResponse),
-        #[prost(message, tag="14")]
-        EnsureStream(super::EnsureStreamResponse),
-        #[prost(message, tag="15")]
-        EnsurePipeline(super::EnsurePipelineResponse),
-        #[prost(message, tag="16")]
-        AckStream(super::AckStreamResponse),
-        #[prost(message, tag="17")]
-        AckPipeline(super::AckPipelineResponse),
+#[doc = r" Generated server implementations."]
+pub mod client_server {
+    #![allow(unused_variables, dead_code, missing_docs)]
+    use tonic::codegen::*;
+    #[doc = "Generated trait containing gRPC methods that should be implemented for use with ClientServer."]
+    #[async_trait]
+    pub trait Client: Send + Sync + 'static {
+        #[doc = " Publish an ephemeral message."]
+        async fn ephemeral_pub(
+            &self, request: tonic::Request<super::EphemeralPubRequest>,
+        ) -> Result<tonic::Response<super::EphemeralPubResponse>, tonic::Status>;
+        #[doc = "Server streaming response type for the EphemeralSub method."]
+        type EphemeralSubStream: Stream<Item = Result<super::EphemeralSubServer, tonic::Status>> + Send + Sync + 'static;
+        #[doc = " Subscribe to an ephemeral messaging exchange using a given routing key."]
+        #[doc = ""]
+        #[doc = " This gRPC endpoint uses a uni-direction stream. The client sends an initial `EphemeralSubClient`"]
+        #[doc = " message to setup the subscription stream, and the server will respond with an initial"]
+        #[doc = " `EphemeralSubServer` message to confirm initialization."]
+        #[doc = ""]
+        #[doc = " From there, the server will send `EphemeralSubServer` messages containing published ephemeral"]
+        #[doc = " messages matching this subscription's exchange and routing key."]
+        async fn ephemeral_sub(
+            &self, request: tonic::Request<super::EphemeralSubClient>,
+        ) -> Result<tonic::Response<Self::EphemeralSubStream>, tonic::Status>;
+        #[doc = " Publish an RPC request and await its response."]
+        async fn rpc_pub(&self, request: tonic::Request<super::RpcPubRequest>) -> Result<tonic::Response<super::RpcPubResponse>, tonic::Status>;
+        #[doc = "Server streaming response type for the RpcSub method."]
+        type RpcSubStream: Stream<Item = Result<super::RpcSubServer, tonic::Status>> + Send + Sync + 'static;
+        #[doc = " Subscribe as an RPC handler."]
+        #[doc = ""]
+        #[doc = " This gRPC endpoint uses a bi-direction stream. The client sends `RpcSubClient` messages and"]
+        #[doc = " the server sends `RpcSubServer` messages. The client will send an initial message to initialize"]
+        #[doc = " the stream and the server will send an initial message to confirm initialization."]
+        #[doc = ""]
+        #[doc = " From there, the server will send a `RpcSubServer` message any time an RPC has been published"]
+        #[doc = " and this client connection has been chosen to handle the RPC. The client is then expected to"]
+        #[doc = " handle the RPC and respond with a `RpcSubClient` message."]
+        async fn rpc_sub(
+            &self, request: tonic::Request<tonic::Streaming<super::RpcSubClient>>,
+        ) -> Result<tonic::Response<Self::RpcSubStream>, tonic::Status>;
+        #[doc = " Publish an event to a stream."]
+        async fn stream_pub(
+            &self, request: tonic::Request<super::StreamPubRequest>,
+        ) -> Result<tonic::Response<super::StreamPubResponse>, tonic::Status>;
+        #[doc = "Server streaming response type for the StreamSub method."]
+        type StreamSubStream: Stream<Item = Result<super::StreamSubServer, tonic::Status>> + Send + Sync + 'static;
+        #[doc = " Subscribe as an event handler for a specific stream."]
+        #[doc = ""]
+        #[doc = " This gRPC endpoint uses a bi-direction stream. The client sends `StreamSubClient` messages and"]
+        #[doc = " the server sends `StreamSubServer` messages. The client will send an initial message to initialize"]
+        #[doc = " the stream and the server will send an initial message to confirm initialization."]
+        #[doc = ""]
+        #[doc = " From there, the server will send a `StreamSubServer` message any time an event has been published"]
+        #[doc = " to the corresponding stream and this client connection has been chosen to handle event. The client"]
+        #[doc = " is then expected to handle the event and respond with a `StreamSubClient` message, which will"]
+        #[doc = " either acknowledge (`ack`) the event indicating that it was successfully processed, or will"]
+        #[doc = " negatively acknowledge (`nack`) the event indicating that the event was not processed successfully."]
+        async fn stream_sub(
+            &self, request: tonic::Request<tonic::Streaming<super::StreamSubClient>>,
+        ) -> Result<tonic::Response<Self::StreamSubStream>, tonic::Status>;
+        #[doc = " Unsubscribes a stream consumer group, deleting the consumer group's offsets for the associated stream."]
+        async fn stream_unsub(
+            &self, request: tonic::Request<super::StreamUnsubRequest>,
+        ) -> Result<tonic::Response<super::StreamUnsubResponse>, tonic::Status>;
+        #[doc = "Server streaming response type for the PipelineStageSub method."]
+        type PipelineStageSubStream: Stream<Item = Result<super::PipelineStageSubServer, tonic::Status>> + Send + Sync + 'static;
+        #[doc = " Subscribe as an event handler for a specific pipeline stage."]
+        #[doc = ""]
+        #[doc = " This gRPC endpoint uses a bi-direction stream. The client sends `PipelineStageSubClient` messages and"]
+        #[doc = " the server sends `PipelineStageSubServer` messages. The client will send an initial message to initialize"]
+        #[doc = " the stream and the server will send an initial message to confirm initialization."]
+        #[doc = ""]
+        #[doc = " From there, the server will send a `PipelineStageSubServer` message to trigger a specific pipeline"]
+        #[doc = " stage providing the stage's required input. The client is then expected to handle the input"]
+        #[doc = " event for the specific stage and respond with a `PipelineStageSubClient` message, which will either"]
+        #[doc = " acknowledge (`ack`) the stage providing any required outputs for the stage, or will negatively"]
+        #[doc = " acknowledge (`nack`) the stage indicating that the stage was not processed successfully."]
+        async fn pipeline_stage_sub(
+            &self, request: tonic::Request<tonic::Streaming<super::PipelineStageSubClient>>,
+        ) -> Result<tonic::Response<Self::PipelineStageSubStream>, tonic::Status>;
+        #[doc = " Update the schema of the Hadron cluster."]
+        #[doc = ""]
+        #[doc = " This is the one endpoint used for making updates to a Hadron cluster's schema. The given"]
+        #[doc = " payload should be an array of YAML documents describing schema updates. This process is"]
+        #[doc = " always idempotent, as all documents are required to have a revision number, and old revisions"]
+        #[doc = " are ignored."]
+        async fn update_schema(
+            &self, request: tonic::Request<super::UpdateSchemaRequest>,
+        ) -> Result<tonic::Response<super::UpdateSchemaResponse>, tonic::Status>;
     }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct FrameMeta {
-    /// The ID of the associated request.
-    ///
-    /// This is used to establish request/response semantics over the bi-directional stream. These
-    /// IDs should have strong uniqueness guarantees. Clients are encouraged to use UUID4s, which is
-    /// what the server uses for server side initiated frames sent to clients.
-    #[prost(string, tag="1")]
-    pub id: std::string::String,
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// Errors ////////////////////////////////////////////////////////////////////////////////////////
-
-/// An error which has taken place as the result of a client request.
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct ClientError {
-    #[prost(string, tag="1")]
-    pub message: std::string::String,
-    #[prost(enumeration="ErrorCode", tag="2")]
-    pub code: i32,
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// Common Components /////////////////////////////////////////////////////////////////////////////
-
-/// The ID of a stream entry.
-///
-/// This wrapper type is used to allow for leaving the ID field null when there is no assocaited ID.
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct StreamEntryId {
-    /// The associated ID. Even an empty string will be treated as an ID.
-    #[prost(string, tag="1")]
-    pub id: std::string::String,
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// ConnectRequest & ConnectResponse //////////////////////////////////////////////////////////////
-
-/// A request to connect to the cluster.
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct ConnectRequest {
-    /// The JWT credentials being used for this connection.
-    #[prost(string, tag="1")]
-    pub token: std::string::String,
-    /// The configured liveness threshold for this client connection.
-    ///
-    /// The server will treat this as a duration in seconds since the client's last heartbeat, after
-    /// which the client connection will be closed by the server.
-    #[prost(uint32, tag="2")]
-    pub liveness_threshold: u32,
-}
-/// A response to a connection request.
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct ConnectResponse {
-    #[prost(oneof="connect_response::Response", tags="1, 2")]
-    pub response: ::std::option::Option<connect_response::Response>,
-}
-pub mod connect_response {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    #[derive(Serialize, Deserialize)]
-    pub enum Response {
-        /// An error associated with this response. If this field is populated, no other fields should be used.
-        #[prost(message, tag="1")]
-        Error(super::ClientError),
-        /// The ID assigned to this connection by the server.
-        #[prost(string, tag="2")]
-        Id(std::string::String),
+    #[derive(Debug)]
+    pub struct ClientServer<T: Client> {
+        inner: _Inner<T>,
     }
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// DisconnectRequest & DisconnectResponse ////////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct DisconnectRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct DisconnectResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// PubEphemeralRequest & PubEphemeralResponse ////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct PubEphemeralRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct PubEphemeralResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// PubRpcRequest & PubRpcResponse ////////////////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct PubRpcRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct PubRpcResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// PubStreamRequest & PubStreamResponse //////////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct PubStreamRequest {
-    /// The namespace of the stream to publish to.
-    #[prost(string, tag="1")]
-    pub namespace: std::string::String,
-    /// The name of the stream to publish to.
-    #[prost(string, tag="2")]
-    pub stream: std::string::String,
-    /// The data payload of the entry to publish.
-    ///
-    /// // The ID of the entry. Leave null if there is no associated ID.
-    /// StreamEntryId id = 4;
-    #[prost(bytes, tag="3")]
-    pub payload: std::vec::Vec<u8>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct PubStreamResponse {
-    #[prost(oneof="pub_stream_response::Result", tags="1, 2")]
-    pub result: ::std::option::Option<pub_stream_response::Result>,
-}
-pub mod pub_stream_response {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    #[derive(Serialize, Deserialize)]
-    pub enum Result {
-        /// An error associated with this response.
-        #[prost(message, tag="1")]
-        Error(super::ClientError),
-        /// The index of the published stream entry.
-        #[prost(uint64, tag="2")]
-        Index(u64),
+    struct _Inner<T>(Arc<T>, Option<tonic::Interceptor>);
+    impl<T: Client> ClientServer<T> {
+        pub fn new(inner: T) -> Self {
+            let inner = Arc::new(inner);
+            let inner = _Inner(inner, None);
+            Self { inner }
+        }
+        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
+            let inner = Arc::new(inner);
+            let inner = _Inner(inner, Some(interceptor.into()));
+            Self { inner }
+        }
     }
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// SubEphemeralRequest & SubEphemeralResponse ////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct SubEphemeralRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct SubEphemeralResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// SubRpcRequest & SubRpcResponse ////////////////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct SubRpcRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct SubRpcResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// SubStreamRequest & SubStreamResponse //////////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct SubStreamRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct SubStreamResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// SubPipelineRequest & SubPipelineResponse //////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct SubPipelineRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct SubPipelineResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// UnsubStreamRequest & UnsubStreamResponse //////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct UnsubStreamRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct UnsubStreamResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// UnsubPipelineRequest & UnsubPipelineResponse //////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct UnsubPipelineRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct UnsubPipelineResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// EnsureRpcEndpointRequest & EnsureRpcEndpointResponse //////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct EnsureRpcEndpointRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct EnsureRpcEndpointResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// EnsureStreamRequest & EnsureStreamResponse ////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct EnsureStreamRequest {
-    /// The namespace which the ensured stream should exist in.
-    #[prost(string, tag="1")]
-    pub namespace: std::string::String,
-    /// The name of the stream to ensure.
-    #[prost(string, tag="2")]
-    pub name: std::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct EnsureStreamResponse {
-    /// An error associated with this response. Will be null if no error has taken place.
-    #[prost(message, optional, tag="1")]
-    pub error: ::std::option::Option<ClientError>,
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// EnsurePipelineRequest & EnsurePipelineResponse ////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct EnsurePipelineRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct EnsurePipelineResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// AckStreamRequest & AckStreamResponse //////////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct AckStreamRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct AckStreamResponse {
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// AckPipelineRequest & AckPipelineResponse //////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct AckPipelineRequest {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(Serialize, Deserialize)]
-pub struct AckPipelineResponse {
-}
-/// An enumeration of all error codes which may come from the system.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-#[derive(Serialize, Deserialize)]
-pub enum ErrorCode {
-    /// An internal error.
-    Internal = 0,
-    /// The request hit a timeout.
-    Timeout = 1,
-    /// The server needs the client to perform the connection handshake before proceeding.
-    HandshakeRequired = 2,
-    /// The given credentials are invalid.
-    Unauthorized = 3,
-    /// The token being used by the client does not have sufficient permissions for the requested operation.
-    InsufficientPermissions = 4,
-    /// The given input is invalid.
-    InvalidInput = 5,
-    /// The target stream of the request is unknown.
-    TargetStreamUnknown = 6,
+    impl<T, B> Service<http::Request<B>> for ClientServer<T>
+    where
+        T: Client,
+        B: HttpBody + Send + Sync + 'static,
+        B::Error: Into<StdError> + Send + 'static,
+    {
+        type Response = http::Response<tonic::body::BoxBody>;
+        type Error = Never;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            let inner = self.inner.clone();
+            match req.uri().path() {
+                "/client.Client/EphemeralPub" => {
+                    #[allow(non_camel_case_types)]
+                    struct EphemeralPubSvc<T: Client>(pub Arc<T>);
+                    impl<T: Client> tonic::server::UnaryService<super::EphemeralPubRequest> for EphemeralPubSvc<T> {
+                        type Response = super::EphemeralPubResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::EphemeralPubRequest>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).ephemeral_pub(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = EphemeralPubSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/client.Client/EphemeralSub" => {
+                    #[allow(non_camel_case_types)]
+                    struct EphemeralSubSvc<T: Client>(pub Arc<T>);
+                    impl<T: Client> tonic::server::ServerStreamingService<super::EphemeralSubClient> for EphemeralSubSvc<T> {
+                        type Response = super::EphemeralSubServer;
+                        type ResponseStream = T::EphemeralSubStream;
+                        type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::EphemeralSubClient>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).ephemeral_sub(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1;
+                        let inner = inner.0;
+                        let method = EphemeralSubSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/client.Client/RpcPub" => {
+                    #[allow(non_camel_case_types)]
+                    struct RpcPubSvc<T: Client>(pub Arc<T>);
+                    impl<T: Client> tonic::server::UnaryService<super::RpcPubRequest> for RpcPubSvc<T> {
+                        type Response = super::RpcPubResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::RpcPubRequest>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).rpc_pub(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = RpcPubSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/client.Client/RpcSub" => {
+                    #[allow(non_camel_case_types)]
+                    struct RpcSubSvc<T: Client>(pub Arc<T>);
+                    impl<T: Client> tonic::server::StreamingService<super::RpcSubClient> for RpcSubSvc<T> {
+                        type Response = super::RpcSubServer;
+                        type ResponseStream = T::RpcSubStream;
+                        type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<tonic::Streaming<super::RpcSubClient>>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).rpc_sub(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1;
+                        let inner = inner.0;
+                        let method = RpcSubSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/client.Client/StreamPub" => {
+                    #[allow(non_camel_case_types)]
+                    struct StreamPubSvc<T: Client>(pub Arc<T>);
+                    impl<T: Client> tonic::server::UnaryService<super::StreamPubRequest> for StreamPubSvc<T> {
+                        type Response = super::StreamPubResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::StreamPubRequest>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).stream_pub(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = StreamPubSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/client.Client/StreamSub" => {
+                    #[allow(non_camel_case_types)]
+                    struct StreamSubSvc<T: Client>(pub Arc<T>);
+                    impl<T: Client> tonic::server::StreamingService<super::StreamSubClient> for StreamSubSvc<T> {
+                        type Response = super::StreamSubServer;
+                        type ResponseStream = T::StreamSubStream;
+                        type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<tonic::Streaming<super::StreamSubClient>>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).stream_sub(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1;
+                        let inner = inner.0;
+                        let method = StreamSubSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/client.Client/StreamUnsub" => {
+                    #[allow(non_camel_case_types)]
+                    struct StreamUnsubSvc<T: Client>(pub Arc<T>);
+                    impl<T: Client> tonic::server::UnaryService<super::StreamUnsubRequest> for StreamUnsubSvc<T> {
+                        type Response = super::StreamUnsubResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::StreamUnsubRequest>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).stream_unsub(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = StreamUnsubSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/client.Client/PipelineStageSub" => {
+                    #[allow(non_camel_case_types)]
+                    struct PipelineStageSubSvc<T: Client>(pub Arc<T>);
+                    impl<T: Client> tonic::server::StreamingService<super::PipelineStageSubClient> for PipelineStageSubSvc<T> {
+                        type Response = super::PipelineStageSubServer;
+                        type ResponseStream = T::PipelineStageSubStream;
+                        type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<tonic::Streaming<super::PipelineStageSubClient>>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).pipeline_stage_sub(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1;
+                        let inner = inner.0;
+                        let method = PipelineStageSubSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/client.Client/UpdateSchema" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateSchemaSvc<T: Client>(pub Arc<T>);
+                    impl<T: Client> tonic::server::UnaryService<super::UpdateSchemaRequest> for UpdateSchemaSvc<T> {
+                        type Response = super::UpdateSchemaResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::UpdateSchemaRequest>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).update_schema(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = UpdateSchemaSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .body(tonic::body::BoxBody::empty())
+                        .unwrap())
+                }),
+            }
+        }
+    }
+    impl<T: Client> Clone for ClientServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self { inner }
+        }
+    }
+    impl<T: Client> Clone for _Inner<T> {
+        fn clone(&self) -> Self {
+            Self(self.0.clone(), self.1.clone())
+        }
+    }
+    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.0)
+        }
+    }
+    impl<T: Client> tonic::transport::NamedService for ClientServer<T> {
+        const NAME: &'static str = "client.Client";
+    }
 }

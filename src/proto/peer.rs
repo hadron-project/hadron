@@ -1,284 +1,370 @@
-/// Metadata related to an API frame.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Meta {
-    /// The ID of this request or response frame.
-    #[prost(string, tag="1")]
-    pub id: std::string::String,
-}
-/// A peer to peer message frame.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Frame {
-    /// The metadata of the frame.
-    #[prost(message, optional, tag="1")]
-    pub meta: ::std::option::Option<Meta>,
-    /// The payload of data for this frame.
-    #[prost(oneof="frame::Payload", tags="2, 3, 4")]
-    pub payload: ::std::option::Option<frame::Payload>,
-}
-pub mod frame {
-    /// The payload of data for this frame.
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Payload {
-        #[prost(enumeration="super::Disconnect", tag="2")]
-        Disconnect(i32),
-        #[prost(message, tag="3")]
-        Request(super::Request),
-        #[prost(message, tag="4")]
-        Response(super::Response),
-    }
-}
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// Frame Variants ////////////////////////////////////////////////////////////////////////////////
-
-/// A request frame sent between cluster peers.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Request {
-    /// The payload of the associated request.
-    #[prost(oneof="request::Payload", tags="1, 2, 3, 4")]
-    pub payload: ::std::option::Option<request::Payload>,
-}
-pub mod request {
-    /// The payload of the associated request.
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Payload {
-        /// A handshake request, part of the initial peer connection setup.
-        #[prost(message, tag="1")]
-        Handshake(super::Handshake),
-        /// A request coming from the Raft actor of the sending node.
-        #[prost(message, tag="2")]
-        Raft(super::RaftRequest),
-        /// A request for a peer to update its routing info on the sending peer. See #37 for future optimizations.
-        #[prost(message, tag="3")]
-        Routing(super::RoutingInfoRequest),
-        /// A forwarded client request from the sending peer.
-        #[prost(message, tag="4")]
-        Forwarded(super::ForwardedClientRequest),
-    }
-}
-/// A response to an earlier sent request.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Response {
-    /// The payload of the associated response.
-    #[prost(oneof="response::Payload", tags="1, 2, 3, 4, 5")]
-    pub payload: ::std::option::Option<response::Payload>,
-}
-pub mod response {
-    /// The payload of the associated response.
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Payload {
-        /// An error which has taken place while processing the request.
-        #[prost(enumeration="super::Error", tag="1")]
-        Error(i32),
-        /// A response to a handshake request.
-        #[prost(message, tag="2")]
-        Handshake(super::Handshake),
-        /// A response from the Raft actor of the responding node.
-        #[prost(message, tag="3")]
-        Raft(super::RaftResponse),
-        /// A response to a routing info request. See #37 for future optimizations.
-        #[prost(message, tag="4")]
-        Routing(super::RoutingInfoResponse),
-        /// A response to a forwarded client request.
-        #[prost(message, tag="5")]
-        Forwarded(super::ForwardedClientResponse),
-    }
-}
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// Components ////////////////////////////////////////////////////////////////////////////////////
 
-/// A description of a client's state for data routing.
-///
-/// This data is used for ephemeral messaging, RPCs & stream consumer routing. Ephemeral
-/// messaging & RPC routing info is ephemeral, and held only in memory. Stream consumer
-/// information is propagated up to the app level, but only durable consumer information is
-/// persisted on disk via Raft.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClientInfo {
-    #[prost(message, repeated, tag="1")]
-    pub messaging: ::std::vec::Vec<MessagingSub>,
-    #[prost(message, repeated, tag="2")]
-    pub rpc: ::std::vec::Vec<RpcSub>,
-    #[prost(message, repeated, tag="3")]
-    pub streams: ::std::vec::Vec<StreamSub>,
-    #[prost(message, repeated, tag="4")]
-    pub pipelines: ::std::vec::Vec<PipelineSub>,
-}
 /// Details of a client ephemeral messaging subscription.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MessagingSub {
     /// The namespace which this subscription pertains to.
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub namespace: std::string::String,
     /// The topic matcher this subscription is using.
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub topic: std::string::String,
 }
 /// Details of a client RPC subscription.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RpcSub {
     /// The namespace which this subscription pertains to.
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub namespace: std::string::String,
     /// The endpoint which this subscription pertains to.
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub endpoint: std::string::String,
 }
 /// Details of a client Stream subscription.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamSub {
     /// The namespace which this subscription pertains to.
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub namespace: std::string::String,
     /// The name of the stream which the subscription pertains to.
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub stream: std::string::String,
     /// The name of the consumer group which the subscription pertains to.
-    #[prost(string, tag="3")]
+    #[prost(string, tag = "3")]
     pub consumer_group: std::string::String,
 }
 /// Details of a client Pipeline subscription.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PipelineSub {
     /// The namespace which this subscription pertains to.
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub namespace: std::string::String,
     /// The name of the pieline which the subscription pertains to.
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub pipeline: std::string::String,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// Handshake /////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// A handshake frame holding all data needed for a successful handshake between peers.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Handshake {
+pub struct HandshakeMsg {
     /// The ID of the node sending this frame.
-    #[prost(uint64, tag="1")]
+    #[prost(uint64, tag = "1")]
     pub node_id: u64,
-    /// The sending node's client routing info.
-    #[prost(map="string, message", tag="2")]
-    pub routing: ::std::collections::HashMap<std::string::String, ClientInfo>,
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// Raft Request & Response ///////////////////////////////////////////////////////////////////////
-
-/// A Raft request.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RaftRequest {
-    #[prost(oneof="raft_request::Payload", tags="1, 2, 3")]
-    pub payload: ::std::option::Option<raft_request::Payload>,
-}
-pub mod raft_request {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Payload {
-        #[prost(bytes, tag="1")]
-        AppendEntries(std::vec::Vec<u8>),
-        #[prost(bytes, tag="2")]
-        Vote(std::vec::Vec<u8>),
-        #[prost(bytes, tag="3")]
-        InstallSnapshot(std::vec::Vec<u8>),
-    }
-}
-/// A Raft response.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RaftResponse {
-    #[prost(oneof="raft_response::Payload", tags="1, 2, 3")]
-    pub payload: ::std::option::Option<raft_response::Payload>,
-}
-pub mod raft_response {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Payload {
-        #[prost(bytes, tag="1")]
-        AppendEntries(std::vec::Vec<u8>),
-        #[prost(bytes, tag="2")]
-        Vote(std::vec::Vec<u8>),
-        #[prost(bytes, tag="3")]
-        InstallSnapshot(std::vec::Vec<u8>),
-    }
-}
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// Routing Info Request & Response ///////////////////////////////////////////////////////////////
 
-/// A request for a peer to update its routing info on the sending peer. See #37 for future optimizations.
+/// A Raft AppendEntries RPC.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RoutingInfoRequest {
-    /// The payload of a routing info request.
-    #[prost(oneof="routing_info_request::Payload", tags="1")]
-    pub payload: ::std::option::Option<routing_info_request::Payload>,
-}
-pub mod routing_info_request {
-    /// The payload of a routing info request.
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Payload {
-        /// A full payload of the sending node's routing info.
-        #[prost(message, tag="1")]
-        Full(super::RoutingInfoFull),
-    }
-}
-/// A response to a routing info request.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RoutingInfoResponse {
-}
-/// A full payload of the sending node's routing info.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RoutingInfoFull {
-    /// A full mapping of all clients curently connected to the sender node, mapped by ID.
-    #[prost(map="string, message", tag="1")]
-    pub full: ::std::collections::HashMap<std::string::String, ClientInfo>,
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// Forwarded Client Request & Response ///////////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ForwardedClientRequest {
-    /// This must be a bincode serialization of an `RgClientPayload`, else will cause an internal error.
-    ///
-    /// NOTE WELL: though the Raft encapsulating types are unlikely to change, care must be taken to
-    /// ensure that all versions of Railgun running in the cluster are able to properly encode/decode
-    /// this value. The standard serde backwards compatibility rules apply here.
-    #[prost(bytes, tag="1")]
+pub struct RaftAppendEntriesMsg {
+    #[prost(string, tag = "1")]
+    pub cluster: std::string::String,
+    #[prost(bytes, tag = "2")]
     pub payload: std::vec::Vec<u8>,
 }
-/// A response to a client payload forwarding request.
+/// A Raft Vote RPC.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ForwardedClientResponse {
-    #[prost(oneof="forwarded_client_response::Result", tags="1, 2")]
-    pub result: ::std::option::Option<forwarded_client_response::Result>,
+pub struct RaftVoteMsg {
+    #[prost(string, tag = "1")]
+    pub cluster: std::string::String,
+    #[prost(bytes, tag = "2")]
+    pub payload: std::vec::Vec<u8>,
 }
-pub mod forwarded_client_response {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Result {
-        /// This must be a bincode serialization of an `AppDataResponse`, else will cause an internal error.
-        ///
-        /// NOTE WELL: care must be taken to ensure that all versions of Railgun running in the cluster
-        /// are able to properly encode/decode this value. The standard serde backwards compatibility
-        /// rules apply here.
-        #[prost(bytes, tag="1")]
-        Data(std::vec::Vec<u8>),
-        /// This must be a bincode serialization of an `AppDataError`, else will cause an internal error.
-        ///
-        /// NOTE WELL: care must be taken to ensure that all versions of Railgun running in the cluster
-        /// are able to properly encode/decode this value. The standard serde backwards compatibility
-        /// rules apply here.
-        #[prost(bytes, tag="2")]
-        Error(std::vec::Vec<u8>),
+/// A Raft InstallSnapshot RPC.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RaftInstallSnapshotMsg {
+    #[prost(string, tag = "1")]
+    pub cluster: std::string::String,
+    #[prost(bytes, tag = "2")]
+    pub payload: std::vec::Vec<u8>,
+}
+#[doc = r" Generated client implementations."]
+pub mod peer_client {
+    #![allow(unused_variables, dead_code, missing_docs)]
+    use tonic::codegen::*;
+    pub struct PeerClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl PeerClient<tonic::transport::Channel> {
+        #[doc = r" Attempt to create a new client by connecting to a given endpoint."]
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> PeerClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::BoxBody>,
+        T::ResponseBody: Body + HttpBody + Send + 'static,
+        T::Error: Into<StdError>,
+        <T::ResponseBody as HttpBody>::Error: Into<StdError> + Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
+            let inner = tonic::client::Grpc::with_interceptor(inner, interceptor);
+            Self { inner }
+        }
+        #[doc = " A handshake request, part of the initial peer connection setup."]
+        pub async fn handshake(
+            &mut self, request: impl tonic::IntoRequest<super::HandshakeMsg>,
+        ) -> Result<tonic::Response<super::HandshakeMsg>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/peer.Peer/Handshake");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        #[doc = " A Raft AppendEntries RPC."]
+        pub async fn raft_append_entries(
+            &mut self, request: impl tonic::IntoRequest<super::RaftAppendEntriesMsg>,
+        ) -> Result<tonic::Response<super::RaftAppendEntriesMsg>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/peer.Peer/RaftAppendEntries");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        #[doc = " A Raft Vote RPC."]
+        pub async fn raft_vote(
+            &mut self, request: impl tonic::IntoRequest<super::RaftVoteMsg>,
+        ) -> Result<tonic::Response<super::RaftVoteMsg>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/peer.Peer/RaftVote");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        #[doc = " A Raft InstallSnapshot RPC."]
+        pub async fn raft_install_snapshot(
+            &mut self, request: impl tonic::IntoRequest<super::RaftInstallSnapshotMsg>,
+        ) -> Result<tonic::Response<super::RaftInstallSnapshotMsg>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/peer.Peer/RaftInstallSnapshot");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+    }
+    impl<T: Clone> Clone for PeerClient<T> {
+        fn clone(&self) -> Self {
+            Self { inner: self.inner.clone() }
+        }
+    }
+    impl<T> std::fmt::Debug for PeerClient<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "PeerClient {{ ... }}")
+        }
     }
 }
-/// A frame indicating that the peer connection must disconnect.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Disconnect {
-    /// The disconnect frame has been sent because the connection is no longer valid..
-    ConnectionInvalid = 0,
-}
-/// A peer error variant.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Error {
-    /// An internal error has taken place. The request should be safe to retry, if related to a request.
-    Internal = 0,
-    //// The request has hit a timeout.
-    Timeout = 1,
-    //// The target peer no longer has an active connection.
-    TargetPeerDisconnected = 2,
+#[doc = r" Generated server implementations."]
+pub mod peer_server {
+    #![allow(unused_variables, dead_code, missing_docs)]
+    use tonic::codegen::*;
+    #[doc = "Generated trait containing gRPC methods that should be implemented for use with PeerServer."]
+    #[async_trait]
+    pub trait Peer: Send + Sync + 'static {
+        #[doc = " A handshake request, part of the initial peer connection setup."]
+        async fn handshake(&self, request: tonic::Request<super::HandshakeMsg>) -> Result<tonic::Response<super::HandshakeMsg>, tonic::Status>;
+        #[doc = " A Raft AppendEntries RPC."]
+        async fn raft_append_entries(
+            &self, request: tonic::Request<super::RaftAppendEntriesMsg>,
+        ) -> Result<tonic::Response<super::RaftAppendEntriesMsg>, tonic::Status>;
+        #[doc = " A Raft Vote RPC."]
+        async fn raft_vote(&self, request: tonic::Request<super::RaftVoteMsg>) -> Result<tonic::Response<super::RaftVoteMsg>, tonic::Status>;
+        #[doc = " A Raft InstallSnapshot RPC."]
+        async fn raft_install_snapshot(
+            &self, request: tonic::Request<super::RaftInstallSnapshotMsg>,
+        ) -> Result<tonic::Response<super::RaftInstallSnapshotMsg>, tonic::Status>;
+    }
+    #[derive(Debug)]
+    pub struct PeerServer<T: Peer> {
+        inner: _Inner<T>,
+    }
+    struct _Inner<T>(Arc<T>, Option<tonic::Interceptor>);
+    impl<T: Peer> PeerServer<T> {
+        pub fn new(inner: T) -> Self {
+            let inner = Arc::new(inner);
+            let inner = _Inner(inner, None);
+            Self { inner }
+        }
+        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
+            let inner = Arc::new(inner);
+            let inner = _Inner(inner, Some(interceptor.into()));
+            Self { inner }
+        }
+    }
+    impl<T, B> Service<http::Request<B>> for PeerServer<T>
+    where
+        T: Peer,
+        B: HttpBody + Send + Sync + 'static,
+        B::Error: Into<StdError> + Send + 'static,
+    {
+        type Response = http::Response<tonic::body::BoxBody>;
+        type Error = Never;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            let inner = self.inner.clone();
+            match req.uri().path() {
+                "/peer.Peer/Handshake" => {
+                    #[allow(non_camel_case_types)]
+                    struct HandshakeSvc<T: Peer>(pub Arc<T>);
+                    impl<T: Peer> tonic::server::UnaryService<super::HandshakeMsg> for HandshakeSvc<T> {
+                        type Response = super::HandshakeMsg;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::HandshakeMsg>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).handshake(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = HandshakeSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/peer.Peer/RaftAppendEntries" => {
+                    #[allow(non_camel_case_types)]
+                    struct RaftAppendEntriesSvc<T: Peer>(pub Arc<T>);
+                    impl<T: Peer> tonic::server::UnaryService<super::RaftAppendEntriesMsg> for RaftAppendEntriesSvc<T> {
+                        type Response = super::RaftAppendEntriesMsg;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::RaftAppendEntriesMsg>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).raft_append_entries(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = RaftAppendEntriesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/peer.Peer/RaftVote" => {
+                    #[allow(non_camel_case_types)]
+                    struct RaftVoteSvc<T: Peer>(pub Arc<T>);
+                    impl<T: Peer> tonic::server::UnaryService<super::RaftVoteMsg> for RaftVoteSvc<T> {
+                        type Response = super::RaftVoteMsg;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::RaftVoteMsg>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).raft_vote(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = RaftVoteSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/peer.Peer/RaftInstallSnapshot" => {
+                    #[allow(non_camel_case_types)]
+                    struct RaftInstallSnapshotSvc<T: Peer>(pub Arc<T>);
+                    impl<T: Peer> tonic::server::UnaryService<super::RaftInstallSnapshotMsg> for RaftInstallSnapshotSvc<T> {
+                        type Response = super::RaftInstallSnapshotMsg;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::RaftInstallSnapshotMsg>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).raft_install_snapshot(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = RaftInstallSnapshotSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .body(tonic::body::BoxBody::empty())
+                        .unwrap())
+                }),
+            }
+        }
+    }
+    impl<T: Peer> Clone for PeerServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self { inner }
+        }
+    }
+    impl<T: Peer> Clone for _Inner<T> {
+        fn clone(&self) -> Self {
+            Self(self.0.clone(), self.1.clone())
+        }
+    }
+    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.0)
+        }
+    }
+    impl<T: Peer> tonic::transport::NamedService for PeerServer<T> {
+        const NAME: &'static str = "peer.Peer";
+    }
 }
