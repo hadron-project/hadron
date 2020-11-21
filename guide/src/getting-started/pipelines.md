@@ -7,14 +7,11 @@ Pipelines are declared in YAML. The spec is defined as follows:
 ```yaml
 ## The kind of object being defined. In this case, a pipeline.
 kind: pipeline
-## The name of the pipeline. Each pipeline must have a unique name per namespace.
+## The name of the pipeline. Each pipeline must have a unique name.
 name: required string
-## The namespace in which this pipeline is to be created. All resources declared in this pipeline
-## are scoped to this namespace.
-namespace: required string
 ## The stream from which this pipeline may be triggered. Only events on this stream may be used to
-## to trigger this pipeline.
-sourceStream: required string
+## trigger this pipeline, though triggering piplines must still be explicit.
+triggerStream: required string
 ## A number used to track consecutive updates to the pipeline definition. If the pipeline is
 ## updated using an old serial number or the same number currently tracked by Hadron, then the
 ## update will be ignored.
@@ -29,8 +26,9 @@ stages:
     ## `optional array of string`: A stage will be executed after all of the stages in its `after`
     ## array have successfully completed.
     ##
-    ## Execution order must be acyclic. If this value is empty or omitted, then it will be
-    ## executed as soon as the pipeline is triggered.
+    ## Execution order must be acyclic. If this value is empty or omitted, then this stage is
+    ## considered to be an initial stage of the pipeline, and will be invoked with a copy of the
+    ## event which triggered the pipeline.
     after:
       ## The name of another stage in this pipeline.
       - required string
@@ -54,18 +52,18 @@ stages:
         stream: required string
 ```
 
-
+// TODO: the content below needs revision. The data above is most recent and up-to-date.
 
 
 Pipelines may be used to model services which are responsible for handling request/response traffic — in which case the pipline will start with an RPC endpoint. Pipelines may also be used to model background tasks which do not handle client traffic — in which case the pipeline will start with a durable stream stage. This is perfect for asynchronous build systems, provisioning, data processing, custom jobs, and the like.
 
 - Pipeline names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
 - Pipelines may be composed of 1 or more stages (nodes of the graph), which are just streams with their associated handler functions.
-- Pipelines must have exactly one entrypoint stage. That stage may be an RPC message handler or a stream handler. All other downstream stages of a pipeline must be stream handler stages (not ephemeral or RPC message handler stages).
+- Pipelines may have more than one initial stage. All initial stages of a pipeline will receive a copy of the event which triggered the pipeline.
 - Pipelines are exclusive. They represent a single type of action to be taken over the data moving through the pipeline. All consumers of pipeline stages will be treated as being part of the same consumer group and messages will be load balanced across all consumers. To consume from a public stage of a pipeline for some purpose outside of the scope of the pipeline, use the standard stream consumer or RPC consumer APIs.
 - Pipelines may only be consumed by the user which originally created it, which helps to clarify the intent of pipelines.
 - The flow of data through the pipeline — inputs and outputs — are the edges of the graph.
-- Pipelines have unique names per namespace.
+- Pipelines have unique names.
 - Pipelines are directed acyclic graphs.
 - Pipelines allow users to model complex workflows, while only having to write handler code which takes an input and returns an output.
 - Railgun ensures that the output of a stage is delivered to all downstream stages with a connected edge, and that the message is `ack`'ed transactionally along with the delivery of that output. This greatly reduces the overhead of error handling and minimizes the difficulties of modelling exactly-once idempotent workflows.

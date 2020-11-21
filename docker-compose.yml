@@ -11,15 +11,15 @@ services:
       context: .
       dockerfile: docker/Dockerfile.local.builder
     volumes:
-      - hadron-build-cache:/build/target
-      - ./target/.artifacts:/.artifacts
-      - ./src:/build/src
-      - ./Cargo.toml:/build/Cargo.toml
-      - ./Cargo.lock:/build/Cargo.lock
-      - ./build.rs:/build/build.rs
-      - ./protobuf:/build/protobuf
+      - hadron-build-cache:/hadron/hadrond/target
+      - ./hadrond/src:/hadron/hadrond/src
+      - ./hadrond/build.rs:/hadron/hadrond/build.rs
+      - ./hadrond/Cargo.toml:/hadron/hadrond/Cargo.toml
+      - ./hadrond/Cargo.lock:/hadron/hadrond/Cargo.lock
+      - ./hadrond/.artifacts:/.artifacts
+      - ./protobuf:/hadron/protobuf
     environment:
-      CARGO_HOME: "/build/target/.cargo"
+      CARGO_HOME: "/hadron/hadrond/target/.cargo"
 
   # This container requires the artifacts generated from the `builder` image above. The workflow
   # is that you will build the `builder` image first, and any time you have made updates to the
@@ -37,7 +37,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.local.release
       args:
-        ARTIFACT_PATH: ./target/.artifacts/hadron
+        ARTIFACT_PATH: hadrond/.artifacts/hadrond
     volumes:
       - hadron-data:/usr/local/hadron/data
     environment:

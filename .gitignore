@@ -1,6 +1,7 @@
 # File Ignores #
 
 # Directory Ignores #
-guide/book
+**/target
 target
-vendor
+guide/book
+hadrond/.artifacts

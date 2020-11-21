@@ -19,15 +19,12 @@ RUN cargo search cargo --quiet --limit 1
 ##############################################################################
 ##############################################################################
 FROM builder.cargo-registry as builder.app
-COPY ./src src
-COPY ./Cargo.lock Cargo.lock
-COPY ./Cargo.toml Cargo.toml
-COPY ./build.rs build.rs
+COPY ./hadrond hadrond
 COPY ./protobuf protobuf
-RUN cargo build --release && mv target/release/hadron /bin/hadron
+RUN cargo build --manifest-path hadrond/Cargo.toml --release && mv hadrond/target/release/hadrond /bin/hadrond
 
 ##############################################################################
 ##############################################################################
 FROM alpine:${ALPINE_TAG} as release
-COPY --from=builder.app /bin/hadron /bin/hadron
-CMD ["/bin/hadron"]
+COPY --from=builder.app /bin/hadrond /bin/hadrond
+CMD ["/bin/hadrond"]

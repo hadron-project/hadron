@@ -1,5 +1,5 @@
 # NOTE WELL: this Dockerfile assumes a context from the root of this repo.
 FROM debian:stretch-slim
-ARG ARTIFACT_PATH="./target/.artifacts/hadron"
-COPY ${ARTIFACT_PATH} /bin/hadron
-CMD ["/bin/hadron"]
+ARG ARTIFACT_PATH="hadrond/.artifacts/hadrond"
+COPY ${ARTIFACT_PATH} /bin/hadrond
+CMD ["/bin/hadrond"]

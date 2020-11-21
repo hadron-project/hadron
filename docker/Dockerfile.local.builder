@@ -2,7 +2,7 @@
 FROM rust:1.47.0
 
 LABEL maintainer="Anthony Dodd <dodd.anthonyjosiah@gmail.com>"
-WORKDIR /build
+WORKDIR /hadron
 
 RUN apt-get update -y && apt-get install -y protobuf-compiler && \
     rustup component add rustfmt
@@ -10,4 +10,4 @@ RUN apt-get update -y && apt-get install -y protobuf-compiler && \
 # NOTE WELL: this is intended to be used with the docker-compose.yml file in the root
 # of this repo, which provides volumes mounts and such to expedite this build.
 
-CMD ["sh", "-c", "cargo build --release && mv target/release/hadron /.artifacts/hadron"]
+CMD ["sh", "-c", "cargo build --manifest-path hadrond/Cargo.toml --release && mv hadrond/target/release/hadrond /.artifacts/hadrond"]

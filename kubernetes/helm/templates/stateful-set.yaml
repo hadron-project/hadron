@@ -31,7 +31,7 @@ spec:
         - name: hadron
           image: {{.Values.image.fullName}}
           imagePullPolicy: {{.Values.image.pullPolicy}}
-          command: ["/bin/hadron"]
+          command: ["/bin/hadrond"]
           ports:
             - containerPort: {{.Values.statefulSet.server.clientPort}}
             - containerPort: {{.Values.statefulSet.server.serverPort}}
