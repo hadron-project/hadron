@@ -10,6 +10,7 @@ use async_raft::raft::{Entry, EntryPayload, MembershipConfig};
 use async_raft::storage::{CurrentSnapshotData, HardState, InitialState};
 use async_raft::{AppData, AppDataResponse, RaftStorage};
 use prost::Message;
+use rocksdb::{ColumnFamily, Direction, IteratorMode, ReadOptions, DB};
 use tokio::fs::File;
 use tokio::stream::StreamExt;
 use tokio::sync::mpsc;
@@ -34,11 +35,12 @@ const CORE_DATA_DIR_DB: &str = "db"; // <dataDir>/core/db
 const CORE_DATA_DIR_SNAPS: &str = "snaps"; // <dataDir>/core/snaps
 
 // DB trees.
-const TREE_ENDPOINTS: &str = "endpoints";
-const TREE_STREAMS: &str = "streams";
-const TREE_PIPELINES: &str = "pipelines";
-const TREE_USERS: &str = "users";
-const TREE_TOKENS: &str = "tokens";
+const CF_LOG: &str = "log";
+const CF_ENDPOINTS: &str = "endpoints";
+const CF_STREAMS: &str = "streams";
+const CF_PIPELINES: &str = "pipelines";
+const CF_USERS: &str = "users";
+const CF_TOKENS: &str = "tokens";
 
 // DB keys.
 const KEY_HARD_STATE: &str = "hard_state";
@@ -64,19 +66,7 @@ pub struct HCoreStorage {
     /// The directory where this Raft's snapshots are held.
     snapshot_dir: PathBuf,
     /// The database handle used for disk storage.
-    db: sled::Db,
-    /// The database tree handle used for storing the replicated log.
-    log: sled::Tree,
-    /// The database tree handle used for storing endpoints.
-    endpoints: sled::Tree,
-    /// The database tree handle used for storing streams.
-    streams: sled::Tree,
-    /// The database tree handle used for storing pipelines.
-    pipelines: sled::Tree,
-    /// The database tree handle used for storing users.
-    users: sled::Tree,
-    /// The database tree handle used for storing tokens.
-    tokens: sled::Tree,
+    db: Arc<rocksdb::DB>,
 }
 
 impl HCoreStorage {
@@ -95,18 +85,17 @@ impl HCoreStorage {
             .await
             .context("error creating dir for hadron core database snapshots")?;
 
-        // Open database and trees.
-        let db = sled::Config::new()
-            .mode(sled::Mode::HighThroughput)
-            .path(&dbpath)
-            .open()
-            .context("error opening core database")?;
-        let log = db.open_tree("log").context("error opening database tree for the log")?;
-        let endpoints = db.open_tree(TREE_ENDPOINTS).context("error opening database tree for endpoints")?;
-        let streams = db.open_tree(TREE_STREAMS).context("error opening database tree for streams")?;
-        let pipelines = db.open_tree(TREE_PIPELINES).context("error opening database tree for pipelines")?;
-        let users = db.open_tree(TREE_USERS).context("error opening database tree for users")?;
-        let tokens = db.open_tree(TREE_TOKENS).context("error opening database tree for tokens")?;
+        // Open database and CFs.
+        let (env, dbopts) = Self::get_env_and_db_opts()?;
+        let cfs = vec![
+            rocksdb::ColumnFamilyDescriptor::new("log", dbopts.clone()),
+            rocksdb::ColumnFamilyDescriptor::new(CF_ENDPOINTS, dbopts.clone()),
+            rocksdb::ColumnFamilyDescriptor::new(CF_STREAMS, dbopts.clone()),
+            rocksdb::ColumnFamilyDescriptor::new(CF_PIPELINES, dbopts.clone()),
+            rocksdb::ColumnFamilyDescriptor::new(CF_USERS, dbopts.clone()),
+            rocksdb::ColumnFamilyDescriptor::new(CF_TOKENS, dbopts.clone()),
+        ];
+        let db = Arc::new(DB::open_cf_descriptors(&dbopts, &dbpath, cfs).context("error opening database")?);
 
         let (index_tx, index_rx) = mpsc::unbounded_channel();
         Ok((
@@ -116,15 +105,39 @@ impl HCoreStorage {
                 index_tx,
                 snapshot_dir,
                 db,
-                log,
-                endpoints,
-                streams,
-                pipelines,
-                users,
-                tokens,
             },
             index_rx,
         ))
+    }
+
+    fn get_env_and_db_opts() -> Result<(rocksdb::Env, rocksdb::Options)> {
+        let cpu_count = num_cpus::get();
+        let mut env = rocksdb::Env::default().context("error building rocksdb env")?;
+        env.set_background_threads(cpu_count as i32);
+        env.set_high_priority_background_threads(2);
+        let mut opts = rocksdb::Options::default();
+        opts.increase_parallelism(cpu_count as i32);
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+        opts.set_env(&env);
+        opts.set_num_levels(5);
+        opts.set_compression_per_level(&[
+            rocksdb::DBCompressionType::None,
+            rocksdb::DBCompressionType::None,
+            rocksdb::DBCompressionType::Zstd,
+            rocksdb::DBCompressionType::Zstd,
+            rocksdb::DBCompressionType::Zstd,
+        ]);
+        opts.set_compaction_style(rocksdb::DBCompactionStyle::Level);
+        opts.set_wal_recovery_mode(rocksdb::DBRecoveryMode::PointInTime);
+        opts.set_wal_ttl_seconds(60 * 10);
+
+        // todo: maybe use these
+        // opts.enable_statistics(true);
+        // opts.set_unordered_write(true); // TODO: research this a bit more. Might be a nice write throughput increase.
+        // opts.optimize_level_style_compaction(); // TODO: A dynamic tuning system might be good here.
+
+        Ok((env, opts))
     }
 }
 
@@ -146,11 +159,11 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     /// the node's ID so that it is consistent across restarts.
     #[tracing::instrument(level = "trace", skip(self), err)]
     async fn get_membership_config(&self) -> Result<MembershipConfig> {
-        let log = self.log.clone();
+        let db = self.db.clone();
         let cfg = tokio::task::spawn_blocking(move || -> Result<Option<MembershipConfig>> {
-            for log_res in log.iter().values().rev() {
-                let log = log_res.context(ERR_ITER_FAILURE)?;
-                let entry: Entry<RaftClientRequest> = utils::bin_decode(&log).context(ERR_DECODE_LOG_ENTRY)?;
+            let log_cf = Self::get_cf_log(&db)?;
+            for log_entry in db.iterator_cf(&log_cf, IteratorMode::End).map(|(_, val)| val) {
+                let entry: Entry<RaftClientRequest> = utils::bin_decode(&log_entry).context(ERR_DECODE_LOG_ENTRY)?;
                 match entry.payload {
                     EntryPayload::ConfigChange(cfg) => return Ok(Some(cfg.membership)),
                     _ => continue,
@@ -177,9 +190,9 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     #[tracing::instrument(level = "trace", skip(self), err)]
     async fn get_initial_state(&self) -> Result<InitialState> {
         // If the log is pristine, then return a pristine initial state.
-        let (log, id) = (self.log.clone(), self.id);
+        let (db, id) = (self.db.clone(), self.id);
         let pristine_opt = tokio::task::spawn_blocking(move || -> Result<Option<InitialState>> {
-            if log.first().context("error fetching first entry of log")?.is_none() {
+            if db.iterator_cf(Self::get_cf_log(&db)?, IteratorMode::Start).next().is_none() {
                 return Ok(Some(InitialState::new_initial(id)));
             }
             Ok(None)
@@ -191,26 +204,26 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
         }
 
         // Else, the log is not pristine. Fetch all of the different state bits that we need.
-        let (db, log) = (self.db.clone(), self.log.clone());
+        let (db) = self.db.clone();
         let membership = self.get_membership_config().await?;
         let state = tokio::task::spawn_blocking(move || -> Result<InitialState> {
             // Get hard state.
             let hs: HardState = db
-                .get(KEY_HARD_STATE)
+                .get_pinned(KEY_HARD_STATE)
                 .context("error getting hard state from storage")?
-                .map(|val| utils::bin_decode(&val).context("error decoding hard state"))
+                .map(|val| utils::bin_decode(val.as_ref()).context("error decoding hard state"))
                 .ok_or_else(|| anyhow!("no hard state record found on disk"))??;
             // Get last log info.
-            let last_log: Entry<RaftClientRequest> = log
-                .last()
-                .context("error fetching last entry of log")?
+            let last_log: Entry<RaftClientRequest> = db
+                .iterator_cf(Self::get_cf_log(&db)?, IteratorMode::End)
+                .next()
                 .map(|(_, val)| utils::bin_decode(&val).context(ERR_DECODE_LOG_ENTRY))
                 .ok_or_else(|| anyhow!("error fetching last entry of log, though first entry exists"))??;
             // Get last applied log index.
             let last_applied_log_index = db
-                .get(KEY_LAST_APPLIED_LOG)
+                .get_pinned(KEY_LAST_APPLIED_LOG)
                 .context("error fetching last applied log index")?
-                .map(|raw| utils::bin_decode::<u64>(&raw).context("failed to decode last applied log index"))
+                .map(|raw| utils::bin_decode::<u64>(raw.as_ref()).context("failed to decode last applied log index"))
                 .unwrap_or(Ok(0))?;
             Ok(InitialState {
                 last_log_index: last_log.index,
@@ -226,31 +239,33 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     }
 
     /// Save Raft's hard-state.
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self, hs), err)]
     async fn save_hard_state(&self, hs: &HardState) -> Result<()> {
         let raw = utils::bin_encode(hs).context("error encoding hard state")?;
         let db = self.db.clone();
         tokio::task::spawn_blocking(move || -> Result<()> {
-            db.insert(KEY_HARD_STATE, raw).context("error saving hard state to disk")?;
+            db.put(KEY_HARD_STATE, raw).context("error saving hard state to disk")?;
             Ok(())
         })
         .await
         .context(ERR_DB_TASK)??;
-        self.db.flush_async().await.context(ERR_FLUSH)?;
         Ok(())
     }
 
     /// Get a series of log entries from storage.
     ///
     /// The start value is inclusive in the search and the stop value is non-inclusive: `[start, stop)`.
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self, start, stop), err)]
     async fn get_log_entries(&self, start: u64, stop: u64) -> Result<Vec<Entry<RaftClientRequest>>> {
         let (start, stop) = (utils::encode_u64(start), utils::encode_u64(stop));
-        let log = self.log.clone();
+        let db = self.db.clone();
         let entries = tokio::task::spawn_blocking(move || -> Result<Vec<Entry<RaftClientRequest>>> {
             let mut entries = vec![];
-            for val_res in log.range(start..stop).values() {
-                let val = val_res.context(ERR_ITER_FAILURE)?;
+            let iter = db.iterator_cf(Self::get_cf_log(&db)?, IteratorMode::From(&start, Direction::Forward));
+            for (key, val) in iter {
+                if key.as_ref() == stop {
+                    break;
+                }
                 let entry: Entry<RaftClientRequest> = utils::bin_decode(&val).context(ERR_DECODE_LOG_ENTRY)?;
                 entries.push(entry);
             }
@@ -263,46 +278,45 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
 
     /// Delete all logs starting from `start` and stopping at `stop`, else continuing to the end
     /// of the log if `stop` is `None`.
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self, start, stop), err)]
     async fn delete_logs_from(&self, start: u64, stop: Option<u64>) -> Result<()> {
-        let log = self.log.clone();
+        let (db, start) = (self.db.clone(), utils::encode_u64(start));
         tokio::task::spawn_blocking(move || -> Result<()> {
             // Build an atomic batch of delete operations.
-            let mut batch = sled::Batch::default();
+            let mut batch = rocksdb::WriteBatch::default();
+            let cf_log = Self::get_cf_log(&db)?;
             if let Some(stop) = stop {
-                for key_res in log.range(utils::encode_u64(start)..utils::encode_u64(stop)).keys() {
-                    let key = key_res.context(ERR_ITER_FAILURE)?;
-                    batch.remove(key);
-                }
+                batch.delete_range_cf(cf_log, start, utils::encode_u64(stop));
             } else {
-                for key_res in log.range(utils::encode_u64(start)..).keys() {
-                    let key = key_res.context(ERR_ITER_FAILURE)?;
-                    batch.remove(key);
+                let iter = db
+                    .iterator_cf(&cf_log, IteratorMode::From(start.as_ref(), Direction::Forward))
+                    .map(|(key, _)| key);
+                for key in iter {
+                    batch.delete_cf(&cf_log, key);
                 }
             }
             // Apply batch.
-            log.apply_batch(batch).context("error applying batch log deletion")?;
+            db.write(batch).context("error applying batch log deletion")?;
             Ok(())
         })
         .await
         .context(ERR_DB_TASK)??;
-        self.log.flush_async().await.context(ERR_FLUSH)?;
         Ok(())
     }
 
     /// Append a new entry to the log.
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self, entry), err)]
     async fn append_entry_to_log(&self, entry: &Entry<RaftClientRequest>) -> Result<()> {
-        let log = self.log.clone();
+        let db = self.db.clone();
         let entry_key = utils::encode_u64(entry.index);
         let entry_bytes = utils::bin_encode(&entry).context(ERR_ENCODE_LOG_ENTRY)?;
         tokio::task::spawn_blocking(move || -> Result<()> {
-            log.insert(entry_key, entry_bytes).context("error inserting log entry")?;
+            db.put_cf(Self::get_cf_log(&db)?, entry_key, entry_bytes)
+                .context("error inserting log entry")?;
             Ok(())
         })
         .await
         .context(ERR_DB_TASK)??;
-        self.log.flush_async().await.context(ERR_FLUSH)?;
         Ok(())
     }
 
@@ -310,25 +324,29 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     ///
     /// Though the entries will always be presented in order, each entry's index should be used to
     /// determine its location to be written in the log.
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self, entries), err)]
     async fn replicate_to_log(&self, entries: &[Entry<RaftClientRequest>]) -> Result<()> {
-        // Create a new batch operation which will be atomically applied to the log.
-        let mut batch = sled::Batch::default();
-        for entry in entries {
+        // Prep data to be sent to thread for blocking op.
+        let db = self.db.clone();
+        let entries = entries.iter().try_fold(vec![], |mut acc, entry| -> Result<Vec<([u8; 8], Vec<u8>)>> {
             let entry_key = utils::encode_u64(entry.index);
             let entry_bytes = utils::bin_encode(&entry).context(ERR_ENCODE_LOG_ENTRY)?;
-            batch.insert(&entry_key, entry_bytes.as_slice());
-        }
+            acc.push((entry_key, entry_bytes));
+            Ok(acc)
+        })?;
 
         // Apply insert batch.
-        let log = self.log.clone();
         tokio::task::spawn_blocking(move || -> Result<()> {
-            log.apply_batch(batch).context("error applying batch insert to log for replication")?;
+            let mut batch = rocksdb::WriteBatch::default();
+            let cf_log = Self::get_cf_log(&db)?;
+            for (entry_key, entry_bytes) in entries {
+                batch.put_cf(cf_log, &entry_key, entry_bytes.as_slice());
+            }
+            db.write(batch).context("error applying batch insert to log for replication")?;
             Ok(())
         })
         .await
         .context(ERR_DB_TASK)??;
-        self.log.flush_async().await.context(ERR_FLUSH)?;
         Ok(())
     }
 
@@ -348,7 +366,7 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     /// If instead some application specific error needs to be returned to the client, those
     /// variants must be encapsulated in the type `R`, which may have application specific success
     /// and error variants encoded in the type, perhaps using an inner `Result` type.
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self, index, data), err)]
     async fn apply_entry_to_state_machine(&self, index: &u64, data: &RaftClientRequest) -> Result<RaftClientResponse> {
         Ok(match data {
             RaftClientRequest::Transaction(req) => self.apply_transaction(index, req).await?,
@@ -364,7 +382,7 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     ///
     /// The Raft protocol guarantees that only logs which have been _committed_, that is, logs which
     /// have been replicated to a majority of the cluster, will be applied to the state machine.
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self, entries), err)]
     async fn replicate_to_state_machine(&self, entries: &[(&u64, &RaftClientRequest)]) -> Result<()> {
         for (index, data) in entries {
             let _ = match data {
@@ -446,29 +464,36 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
         let snapshot_entry = Entry::<RaftClientRequest>::new_snapshot_pointer(index, term, id.clone(), membership);
         let snapshot_entry_enc = utils::bin_encode(&snapshot_entry).context(ERR_ENCODE_LOG_ENTRY)?;
         let snapshot_entry_idx = utils::encode_u64(snapshot_entry.index);
-        let log = self.log.clone();
+        let db = self.db.clone();
         tokio::task::spawn_blocking(move || -> Result<()> {
             // Build an atomic batch of delete operations.
-            let mut batch = sled::Batch::default();
+            let mut batch = rocksdb::WriteBatch::default();
+            let cf_log = Self::get_cf_log(&db)?;
             if let Some(stop) = delete_through {
-                for key_res in log.range(utils::encode_u64(0)..utils::encode_u64(stop)).keys() {
-                    let key = key_res.context(ERR_ITER_FAILURE)?;
-                    batch.remove(key);
+                let stop = utils::encode_u64(stop);
+                for (key, _) in db.iterator_cf(cf_log, IteratorMode::Start) {
+                    if key.as_ref() == stop {
+                        break;
+                    }
+                    batch.delete_cf(cf_log, key);
                 }
             } else {
-                for key_res in log.range(utils::encode_u64(0)..).keys() {
-                    let key = key_res.context(ERR_ITER_FAILURE)?;
-                    batch.remove(key);
+                for (key, _) in db.iterator_cf(cf_log, IteratorMode::Start) {
+                    batch.delete_cf(cf_log, key);
                 }
             }
             // Insert the new snapshot pointer & apply the batch.
-            batch.insert(&snapshot_entry_idx, snapshot_entry_enc.as_slice());
-            log.apply_batch(batch).context("error applying batch log operations")?;
+            batch.put_cf(cf_log, &snapshot_entry_idx, snapshot_entry_enc.as_slice());
+            db.write(batch).context("error applying batch log operations")?;
             Ok(())
         })
         .await
         .context(ERR_DB_TASK)??;
-        self.log.flush_async().await.context(ERR_FLUSH)?;
+
+        // Rename the current snapshot to ensure it is not treated as a stale snapshot.
+        let old_path = self.snapshot_dir.join(&format!("{}.snap.tmp", id));
+        let new_path = self.snapshot_dir.join(&format!("{}.snap", id));
+        tokio::fs::rename(old_path, new_path).await.context("error updating snapshot name")?;
 
         // Ensure any old snapshots are pruned as they now no longer have any pointers.
         let mut dir = tokio::fs::read_dir(&self.snapshot_dir).await.context(ERR_READING_SNAPS_DIR)?;
@@ -540,6 +565,36 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
 }
 
 impl HCoreStorage {
+    fn get_cf_log(db: &DB) -> Result<&ColumnFamily> {
+        db.cf_handle(CF_LOG)
+            .ok_or_else(|| anyhow!("misconfigured storage, could not get handle to CF_LOG"))
+    }
+
+    fn get_cf_endpoints(db: &DB) -> Result<&ColumnFamily> {
+        db.cf_handle(CF_ENDPOINTS)
+            .ok_or_else(|| anyhow!("misconfigured storage, could not get handle to CF_ENDPOINTS"))
+    }
+
+    fn get_cf_streams(db: &DB) -> Result<&ColumnFamily> {
+        db.cf_handle(CF_STREAMS)
+            .ok_or_else(|| anyhow!("misconfigured storage, could not get handle to CF_STREAMS"))
+    }
+
+    fn get_cf_pipelines(db: &DB) -> Result<&ColumnFamily> {
+        db.cf_handle(CF_PIPELINES)
+            .ok_or_else(|| anyhow!("misconfigured storage, could not get handle to CF_PIPELINES"))
+    }
+
+    fn get_cf_users(db: &DB) -> Result<&ColumnFamily> {
+        db.cf_handle(CF_USERS)
+            .ok_or_else(|| anyhow!("misconfigured storage, could not get handle to CF_USERS"))
+    }
+
+    fn get_cf_tokens(db: &DB) -> Result<&ColumnFamily> {
+        db.cf_handle(CF_TOKENS)
+            .ok_or_else(|| anyhow!("misconfigured storage, could not get handle to CF_TOKENS"))
+    }
+
     #[tracing::instrument(level = "trace", skip(self, index, req), err)]
     async fn apply_transaction(&self, index: &u64, req: &TransactionClient) -> Result<RaftClientResponse> {
         todo!("")
@@ -548,6 +603,17 @@ impl HCoreStorage {
     #[tracing::instrument(level = "trace", skip(self, index, req), err)]
     async fn apply_stream_pub(&self, index: &u64, req: &StreamPubRequest) -> Result<RaftClientResponse> {
         tracing::info!(index, "applying stream pub request to stream");
+        /* TODO: <<<<<<<< RESUME HERE
+        - need to start recording stream names & info as part of DDL.
+        - need to implement the schema DDL system for creating objects.
+        - objects can probably just be stored under a single CF "objects", each different object
+        with its own object schema / model.
+        - need to persist info on the latest stream ID to be written & used, so that we have a
+        properly incrementing & non-conflicting value for stream entry indices.
+        - need to implement a better indexing system. Will need RwLocks probably.
+        */
+        // let db = self.db.clone();
+        // let key = format!("{}/{}", &req.stream, stream_next_key);
         Ok(RaftClientResponse::StreamPub(StreamPubResponse { id: format!("{}", index) }))
     }
 

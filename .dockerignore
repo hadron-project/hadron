@@ -1,8 +1,16 @@
 # Directory Ignores #
+docker
 guide
 kubernetes
-rgclient
-target
+**/target
 !target/.artifacts
 
 # File Ignores #
+.dockerignore
+.gitignore
+book.toml
+DEVELOPMENT.md
+docker-compose.yml
+Justfile
+LICENSE
+README.md

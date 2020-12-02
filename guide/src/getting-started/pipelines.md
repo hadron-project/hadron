@@ -1,6 +1,6 @@
 Pipelines
 =========
-Pipelines provide multi-stage data workflows, structured in terms of a graph. Pipelines provide transactional guarantees for multi-stage asynchronous workflows, and orchestrate the delivery of events to specific pipeline stages, collection of outputs from pipeline stages, and pipeline stage execution order. Pipelines provide a source of truth for codifying asynchronous event-driven architectures.
+Pipelines are multi-stage data workflows, composed of multiple streams, structured as a directed acyclic graph (DAG). Pipelines provide transactional guarantees for multi-stage asynchronous workflows. Pipelines orchestrate the delivery of events to specific pipeline stages, collect outputs from pipeline stages, and enforce stage execution order. Pipelines provide a source of truth for codifying asynchronous event-driven architectures.
 
 Pipelines are declared in YAML. The spec is defined as follows:
 

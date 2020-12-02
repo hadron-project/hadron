@@ -55,6 +55,9 @@ impl App {
         let (hcore_tx, hcore_rx) = mpsc::unbounded_channel();
         let hcore = HCore::new(node_id, config.clone(), peers_rx.clone(), hcore_rx).await?.spawn();
 
+        // Setup signal handlers to handle graceful shutdown.
+        // TODO: ^^^
+
         Ok(Self {
             node_id,
             app_tx,

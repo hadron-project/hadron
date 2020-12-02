@@ -136,6 +136,55 @@ pub enum NameMatchSegment {
     Remaining,
 }
 
+impl NameMatcher {
+    /// Test the given object name against this matcher instance.
+    pub fn has_match(&self, name: &str) -> bool {
+        let mut did_hit_remaining_token = false;
+        let mut hierarchy = name.split(HIERARCHY_TOKEN);
+        let mut hierarchy_len: usize = 0;
+        let has_match = hierarchy
+            .by_ref()
+            .enumerate()
+            .try_for_each(|(idx, seg)| -> Result<(), ()> {
+                println!("checking segment for matcher: {}", seg);
+                hierarchy_len += 1;
+                if did_hit_remaining_token {
+                    return Ok(());
+                }
+                let matcher = match self.0.get(idx) {
+                    Some(matcher) => matcher,
+                    None => return Err(()),
+                };
+                match matcher {
+                    NameMatchSegment::Literal { literal } => {
+                        if literal == seg {
+                            Ok(())
+                        } else {
+                            Err(())
+                        }
+                    }
+                    NameMatchSegment::Wild => Ok(()),
+                    NameMatchSegment::Remaining => {
+                        did_hit_remaining_token = true;
+                        Ok(())
+                    }
+                }
+            })
+            .is_ok();
+        println!("got a match: {}", has_match);
+        // If we have a match, but the matcher is more specific & we did not hit the `remaining`
+        // token, then this is not a match.
+        if has_match && (self.0.len() > hierarchy_len) && !did_hit_remaining_token {
+            println!("returning false due to mismatch of matcher len");
+            false
+        } else {
+            // Else, we have a match.
+            println!("returning from matcher with has_match");
+            has_match
+        }
+    }
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -181,53 +230,6 @@ impl Claims {
                 }
                 ClaimsV1::Metrics => Err(AuthError::Unauthorized.into()),
             },
-        }
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////
-
-impl NameMatcher {
-    /// Test the given object name against this matcher instance.
-    pub fn has_match(&self, name: &str) -> bool {
-        let mut did_hit_remaining_token = false;
-        let matcher_len = self.0.len();
-        let mut hierarchy = name.split(HIERARCHY_TOKEN);
-        let has_match = hierarchy
-            .by_ref()
-            .enumerate()
-            .try_for_each(|(idx, seg)| -> Result<(), ()> {
-                if did_hit_remaining_token {
-                    return Ok(());
-                }
-                let matcher = match self.0.get(idx) {
-                    Some(matcher) => matcher,
-                    None => return Err(()),
-                };
-                match matcher {
-                    NameMatchSegment::Literal { literal } => {
-                        if literal == seg {
-                            Ok(())
-                        } else {
-                            Err(())
-                        }
-                    }
-                    NameMatchSegment::Wild => Ok(()),
-                    NameMatchSegment::Remaining => {
-                        did_hit_remaining_token = true;
-                        Ok(())
-                    }
-                }
-            })
-            .is_ok();
-        // If we have a match, but the matcher is more specific & we did not hit the `remaining`
-        // token, then this is not a match.
-        if has_match && (matcher_len > hierarchy.count()) && !did_hit_remaining_token {
-            false
-        } else {
-            // Else, we have a match.
-            has_match
         }
     }
 }

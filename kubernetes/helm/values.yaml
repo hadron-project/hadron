@@ -64,7 +64,8 @@ statefulSet:
   ## Cluster Config
   clustering:
     ## The number of seconds to delay before issuing an initial cluster formation command.
-    formationDelaySeconds: 30
+    ## TODO: set this value lower once dynamic cluster membership is done.
+    formationDelaySeconds: 60
     ## The discovery backend to use.
     discoveryBackend: DNS
     ## The DNS name to use for service discovery.

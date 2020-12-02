@@ -72,6 +72,7 @@ impl HCore {
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     pub(super) async fn handle_request_stream_pub(&mut self, req: StreamPub) {
+        // TODO: perform an ahead-of-time forwarding check. If this node is not the leader, then forward.
         let claims = ok_or_else_tx_err!(self.must_get_token_claims(&req.creds.id), req);
         ok_or_else_tx_err!(claims.check_stream_pub_auth(&req.req.stream), req);
         let (raft, forward_tx) = (self.raft.clone(), self.forward_tx.clone());

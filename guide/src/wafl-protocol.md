@@ -1,5 +1,9 @@
 The WAFL Protocol
 =================
+TODO: the name of this protocol should be changed, and the content should be updated to describe the simple yet powerful out-table pattern. This provides transactional processing of requests for an app within their database, and then provides a transactional mechanism for being able to get those events into Hadron with ALO guaranties.
+
+
+
 A protocol which provides a robust pattern for building event-driven streaming architectures.
 
 WAFL is a protocol which operates at the highest level of systems architecture. WAFL creates a bridge between the synchronous request/response world and the asynchronous event-driven world. In the most simple terms, WAFL inverts the paradigm of a WAL (Write-Ahead Log) feeding into a state machine, and instead uses a transaction log which applies fallible requests to a state machine and then records them in a WAFL (Write-After Log) to provide the event-driven streaming capabilities.

@@ -4,7 +4,7 @@ FROM rust:1.47.0
 LABEL maintainer="Anthony Dodd <dodd.anthonyjosiah@gmail.com>"
 WORKDIR /hadron
 
-RUN apt-get update -y && apt-get install -y protobuf-compiler && \
+RUN apt-get update -y && apt-get install -y protobuf-compiler clang && \
     rustup component add rustfmt
 
 # NOTE WELL: this is intended to be used with the docker-compose.yml file in the root
