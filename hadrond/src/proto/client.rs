@@ -32,18 +32,21 @@ pub struct RpcSubServer {}
 
 #[derive(Clone, PartialEq, ::prost::Message, super::Serialize, super::Deserialize)]
 pub struct StreamPubRequest {
-    /// The stream to which this event will be published.
+    /// The namespace of the stream to which this event will be published.
     #[prost(string, tag = "1")]
+    pub namespace: std::string::String,
+    /// The stream to which this event will be published.
+    #[prost(string, tag = "2")]
     pub stream: std::string::String,
     /// The payload of this event.
-    #[prost(bytes, tag = "2")]
+    #[prost(bytes, tag = "3")]
     pub payload: std::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message, super::Serialize, super::Deserialize)]
 pub struct StreamPubResponse {
     /// The ID of the newly created event.
-    #[prost(string, tag = "1")]
-    pub id: std::string::String,
+    #[prost(uint64, tag = "1")]
+    pub id: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message, super::Serialize, super::Deserialize)]
 pub struct StreamSubClient {}
@@ -64,7 +67,11 @@ pub struct PipelineStageSubServer {}
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, PartialEq, ::prost::Message, super::Serialize, super::Deserialize)]
-pub struct UpdateSchemaRequest {}
+pub struct UpdateSchemaRequest {
+    /// A set of Hadron schema documents to apply to the system.
+    #[prost(string, tag = "1")]
+    pub schema: std::string::String,
+}
 #[derive(Clone, PartialEq, ::prost::Message, super::Serialize, super::Deserialize)]
 pub struct UpdateSchemaResponse {}
 #[doc = r" Generated client implementations."]
@@ -262,9 +269,9 @@ pub mod client_client {
         #[doc = " Update the schema of the Hadron cluster."]
         #[doc = ""]
         #[doc = " This is the one endpoint used for making updates to a Hadron cluster's schema. The given"]
-        #[doc = " payload should be an array of YAML documents describing schema updates. This process is"]
-        #[doc = " always idempotent, as all documents are required to have a revision number, and old revisions"]
-        #[doc = " are ignored."]
+        #[doc = " payload should be an array of YAML documents describing schema updates."]
+        #[doc = ""]
+        #[doc = " TODO: update guide on how schema management is setup, changeset docs, &c."]
         pub async fn update_schema(
             &mut self, request: impl tonic::IntoRequest<super::UpdateSchemaRequest>,
         ) -> Result<tonic::Response<super::UpdateSchemaResponse>, tonic::Status> {
@@ -393,9 +400,9 @@ pub mod client_server {
         #[doc = " Update the schema of the Hadron cluster."]
         #[doc = ""]
         #[doc = " This is the one endpoint used for making updates to a Hadron cluster's schema. The given"]
-        #[doc = " payload should be an array of YAML documents describing schema updates. This process is"]
-        #[doc = " always idempotent, as all documents are required to have a revision number, and old revisions"]
-        #[doc = " are ignored."]
+        #[doc = " payload should be an array of YAML documents describing schema updates."]
+        #[doc = ""]
+        #[doc = " TODO: update guide on how schema management is setup, changeset docs, &c."]
         async fn update_schema(
             &self, request: tonic::Request<super::UpdateSchemaRequest>,
         ) -> Result<tonic::Response<super::UpdateSchemaResponse>, tonic::Status>;

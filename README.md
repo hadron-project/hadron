@@ -1,6 +1,6 @@
 Hadron
 ======
-The Hadron distributed event streaming, event coordination & messaging platform.
+The Hadron distributed event streaming, event orchestration & messaging platform.
 
 Hadron's mission statement is to be the singular platform for all streaming and messaging needs, to advance the state of the art in idempotent stream processing, all to provide developers a better tool to reduce error handling and complexity in building distributed systems. Hadron altogether replaces other messaging and streaming platforms, removes the need for other intra-service communication protocols like gRPC or REST, and inherently acts as a service discovery mechanism.
 

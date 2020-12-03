@@ -58,6 +58,7 @@ impl Client for ClientService {
     async fn ephemeral_pub(&self, req: Request<EphemeralPubRequest>) -> TonicResult<Response<EphemeralPubResponse>> {
         let creds = self.must_get_token(req.metadata())?;
         let (tx, rx) = oneshot::channel();
+        let req = req.into_inner();
         let _ = self.network.send(ClientRequest::EphemeralPub(EphemeralPub { req, tx, creds }));
         rx.await.map_err(status_from_rcv_error).and_then(|res| res).map(Response::new)
     }
@@ -66,6 +67,7 @@ impl Client for ClientService {
     async fn ephemeral_sub(&self, req: Request<EphemeralSubClient>) -> TonicResult<Response<Self::EphemeralSubStream>> {
         let creds = self.must_get_token(req.metadata())?;
         let (tx, rx) = mpsc::unbounded_channel();
+        let req = req.into_inner();
         let _ = self.network.send(ClientRequest::EphemeralSub(EphemeralSub { req, tx, creds }));
         Ok(Response::new(rx))
     }
@@ -73,6 +75,7 @@ impl Client for ClientService {
     async fn rpc_pub(&self, req: Request<RpcPubRequest>) -> TonicResult<Response<RpcPubResponse>> {
         let creds = self.must_get_token(req.metadata())?;
         let (tx, rx) = oneshot::channel();
+        let req = req.into_inner();
         let _ = self.network.send(ClientRequest::RpcPub(RpcPub { req, tx, creds }));
         rx.await.map_err(status_from_rcv_error).and_then(|res| res).map(Response::new)
     }
@@ -89,11 +92,8 @@ impl Client for ClientService {
     async fn stream_pub(&self, req: Request<StreamPubRequest>) -> TonicResult<Response<StreamPubResponse>> {
         let creds = self.must_get_token(req.metadata())?;
         let (tx, rx) = oneshot::channel();
-        let _ = self.network.send(ClientRequest::StreamPub(StreamPub {
-            req: req.into_inner(),
-            tx,
-            creds,
-        }));
+        let req = req.into_inner();
+        let _ = self.network.send(ClientRequest::StreamPub(StreamPub { req, tx, creds }));
         rx.await.map_err(status_from_rcv_error).and_then(|res| res).map(Response::new)
     }
 
@@ -109,6 +109,7 @@ impl Client for ClientService {
     async fn stream_unsub(&self, req: Request<StreamUnsubRequest>) -> TonicResult<Response<StreamUnsubResponse>> {
         let creds = self.must_get_token(req.metadata())?;
         let (tx, rx) = oneshot::channel();
+        let req = req.into_inner();
         let _ = self.network.send(ClientRequest::StreamUnsub(StreamUnsub { req, tx, creds }));
         rx.await.map_err(status_from_rcv_error).and_then(|res| res).map(Response::new)
     }
@@ -125,6 +126,7 @@ impl Client for ClientService {
     async fn update_schema(&self, req: Request<UpdateSchemaRequest>) -> TonicResult<Response<UpdateSchemaResponse>> {
         let creds = self.must_get_token(req.metadata())?;
         let (tx, rx) = oneshot::channel();
+        let req = req.into_inner();
         let _ = self.network.send(ClientRequest::UpdateSchema(UpdateSchema { req, tx, creds }));
         rx.await.map_err(status_from_rcv_error).and_then(|res| res).map(Response::new)
     }
@@ -151,19 +153,19 @@ pub struct Transaction {
 }
 
 pub struct EphemeralPub {
-    pub req: Request<EphemeralPubRequest>,
+    pub req: EphemeralPubRequest,
     pub tx: oneshot::Sender<TonicResult<EphemeralPubResponse>>,
     pub creds: TokenCredentials,
 }
 
 pub struct EphemeralSub {
-    pub req: Request<EphemeralSubClient>,
+    pub req: EphemeralSubClient,
     pub tx: mpsc::UnboundedSender<TonicResult<EphemeralSubServer>>,
     pub creds: TokenCredentials,
 }
 
 pub struct RpcPub {
-    pub req: Request<RpcPubRequest>,
+    pub req: RpcPubRequest,
     pub tx: oneshot::Sender<TonicResult<RpcPubResponse>>,
     pub creds: TokenCredentials,
 }
@@ -187,7 +189,7 @@ pub struct StreamSub {
 }
 
 pub struct StreamUnsub {
-    pub req: Request<StreamUnsubRequest>,
+    pub req: StreamUnsubRequest,
     pub tx: oneshot::Sender<TonicResult<StreamUnsubResponse>>,
     pub creds: TokenCredentials,
 }
@@ -199,7 +201,7 @@ pub struct PipelineStageSub {
 }
 
 pub struct UpdateSchema {
-    pub req: Request<UpdateSchemaRequest>,
+    pub req: UpdateSchemaRequest,
     pub tx: oneshot::Sender<TonicResult<UpdateSchemaResponse>>,
     pub creds: TokenCredentials,
 }
@@ -274,8 +276,14 @@ async fn forward_pipeline_stage_sub(req: PipelineStageSub, client: ClientClient<
 }
 
 #[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_update_schema(req: UpdateSchema, client: ClientClient<Channel>) {
-    todo!("")
+async fn forward_update_schema(req: UpdateSchema, mut client: ClientClient<Channel>) {
+    tracing::info!("forwarding update schema request");
+    let tx = req.tx;
+    let res = client
+        .update_schema(build_request_with_creds(req.req, req.creds))
+        .await
+        .map(|res| res.into_inner());
+    let _ = tx.send(res);
 }
 
 fn build_request_with_creds<T>(req: T, creds: TokenCredentials) -> Request<T> {

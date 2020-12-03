@@ -1,26 +1,12 @@
 use anyhow::{anyhow, ensure, Result};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use tonic::metadata::{Ascii, MetadataValue};
 
 use crate::config::Config;
+use crate::error::AppError;
+use crate::utils;
 
-const HIERARCHY_TOKEN: &str = ".";
 const BEARER_PREFIX: &str = "bearer ";
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Error variants related to authN/authZ.
-#[derive(Debug, Error)]
-pub enum AuthError {
-    /// The caller is unauthorized to perform the requested action.
-    #[error("unauthorized to perform the requested action")]
-    Unauthorized,
-    /// The caller's token is unknown.
-    #[error("the given token is unknown")]
-    UnknownToken,
-}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -61,6 +47,41 @@ pub enum Claims {
     V1(ClaimsV1),
 }
 
+impl Claims {
+    /// Ensure these claims are sufficient for publishing to the given stream.
+    pub fn check_stream_pub_auth(&self, stream: &str) -> Result<()> {
+        match &self {
+            Self::V1(v) => match v {
+                ClaimsV1::All => Ok(()),
+                ClaimsV1::Resources(grants) => {
+                    let is_authorized = grants.iter().any(|grant| match &grant.streams {
+                        Some(streams) => streams.iter().any(|s| s.matcher.has_match(stream) && s.access.can_publish()),
+                        None => false,
+                    });
+                    ensure!(is_authorized, AppError::Unauthorized);
+                    Ok(())
+                }
+                ClaimsV1::Metrics => Err(AppError::Unauthorized.into()),
+            },
+        }
+    }
+
+    /// Ensure these claims are sufficient for schema mutations.
+    pub fn check_schema_auth(&self) -> Result<()> {
+        match &self {
+            Self::V1(v) => match v {
+                ClaimsV1::All => Ok(()),
+                ClaimsV1::Resources(grants) => {
+                    let is_authorized = grants.iter().any(|grant| grant.schema);
+                    ensure!(is_authorized, AppError::Unauthorized);
+                    Ok(())
+                }
+                ClaimsV1::Metrics => Err(AppError::Unauthorized.into()),
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClaimsV1 {
@@ -83,9 +104,14 @@ pub struct Grant {
     /// Permissions granted on the ephemeral messaging exchange.
     messaging: Option<Access>,
     /// Permissions granted on RPC endpoints.
-    endpoints: Vec<EndpointGrant>,
+    endpoints: Option<Vec<EndpointGrant>>,
     /// Permissions granted on streams.
-    streams: Vec<StreamGrant>,
+    streams: Option<Vec<StreamGrant>>,
+    /// Permissions to modify the schema of the system.
+    ///
+    /// A token with schema permissions is allowed to create, update & delete streams, pipelines
+    /// and other core resources in the system.
+    schema: bool,
 }
 
 /// An enumeration of possible access levels.
@@ -140,7 +166,7 @@ impl NameMatcher {
     /// Test the given object name against this matcher instance.
     pub fn has_match(&self, name: &str) -> bool {
         let mut did_hit_remaining_token = false;
-        let mut hierarchy = name.split(HIERARCHY_TOKEN);
+        let mut hierarchy = name.split(utils::HIERARCHY_TOKEN);
         let mut hierarchy_len: usize = 0;
         let has_match = hierarchy
             .by_ref()
@@ -210,28 +236,6 @@ pub enum UserRole {
     Admin,
     /// A user with view-only permissions on cluster resources.
     Viewer,
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////
-
-impl Claims {
-    /// Ensure these claims are sufficient for publishing to the given stream.
-    pub fn check_stream_pub_auth(&self, stream: &str) -> Result<()> {
-        match &self {
-            Self::V1(v) => match v {
-                ClaimsV1::All => Ok(()),
-                ClaimsV1::Resources(grants) => {
-                    let is_authorized = grants
-                        .iter()
-                        .any(|grant| grant.streams.iter().any(|s| s.matcher.has_match(stream) && s.access.can_publish()));
-                    ensure!(is_authorized, AuthError::Unauthorized);
-                    Ok(())
-                }
-                ClaimsV1::Metrics => Err(AuthError::Unauthorized.into()),
-            },
-        }
-    }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

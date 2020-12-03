@@ -79,9 +79,9 @@ service Client {
   // Update the schema of the Hadron cluster.
   //
   // This is the one endpoint used for making updates to a Hadron cluster's schema. The given
-  // payload should be an array of YAML documents describing schema updates. This process is
-  // always idempotent, as all documents are required to have a revision number, and old revisions
-  // are ignored.
+  // payload should be an array of YAML documents describing schema updates.
+  //
+  // TODO: update guide on how schema management is setup, changeset docs, &c.
   rpc UpdateSchema(UpdateSchemaRequest) returns (UpdateSchemaResponse);
 }
 
@@ -118,15 +118,17 @@ message RpcSubServer {}
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 message StreamPubRequest {
+  // The namespace of the stream to which this event will be published.
+  string namespace = 1;
   // The stream to which this event will be published.
-  string stream = 1;
+  string stream = 2;
   // The payload of this event.
-  bytes payload = 2;
+  bytes payload = 3;
 }
 
 message StreamPubResponse {
   // The ID of the newly created event.
-  string id = 1;
+  uint64 id = 1;
 }
 
 message StreamSubClient {}
@@ -147,6 +149,9 @@ message PipelineStageSubServer {}
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-message UpdateSchemaRequest {}
+message UpdateSchemaRequest {
+  // A set of Hadron schema documents to apply to the system.
+  string schema = 1;
+}
 
 message UpdateSchemaResponse {}

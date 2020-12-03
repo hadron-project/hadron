@@ -15,9 +15,9 @@ use tokio::task::JoinHandle;
 use tonic::transport::{Channel, ClientTlsConfig, Server, ServerTlsConfig, Uri};
 use tonic::Status;
 
-use crate::auth::AuthError;
 use crate::config::Config;
 use crate::discovery::{ObservedPeersChangeset, PeerSrv};
+use crate::error::AppError;
 pub use crate::network::client::{
     forward_client_request, ClientClient, ClientRequest, EphemeralPub, EphemeralSub, PipelineStageSub, RpcPub, RpcSub, StreamPub, StreamSub,
     StreamUnsub, Transaction, UpdateSchema,

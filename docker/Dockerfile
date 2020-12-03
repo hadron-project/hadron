@@ -1,5 +1,5 @@
 # NOTE WELL: this Dockerfile assumes a context from the root of this repo.
-ARG RUST_TAG=1.47.0
+ARG RUST_TAG=1.48.0
 ARG ALPINE_TAG=3.12
 FROM rust:${RUST_TAG} as builder
 
@@ -9,7 +9,7 @@ WORKDIR /hadron
 ##############################################################################
 ##############################################################################
 FROM builder as builder.os-deps
-RUN apt-get update -y && apt-get install protobuf-compiler clang
+RUN apt-get update -y && apt-get install protobuf-compiler
 
 ##############################################################################
 ##############################################################################

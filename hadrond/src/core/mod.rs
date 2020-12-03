@@ -5,17 +5,16 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
-use async_raft::{Raft, RaftMetrics};
+use async_raft::{Raft, RaftMetrics, SnapshotPolicy};
 use futures::FutureExt;
 use tokio::stream::StreamExt;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
-use crate::auth::{AuthError, Claims, UserRole};
 use crate::config::Config;
 use crate::core::network::{HCoreNetwork, RaftClientRequest, RaftClientResponse};
-use crate::core::storage::{HCoreStorage, IndexUpdate};
+use crate::core::storage::HCoreStorage;
 use crate::network::{PipelineStageSub, StreamPub, StreamSub, StreamUnsub, Transaction, UpdateSchema};
 use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
 use crate::utils;
@@ -27,15 +26,13 @@ pub type HCoreRaft = Raft<RaftClientRequest, RaftClientResponse, HCoreNetwork, H
 /// Hadron core data layer.
 pub struct HCore {
     /// The ID of this node in the cluster.
-    _id: NodeId,
+    id: NodeId,
     /// The application's runtime config.
     config: Arc<Config>,
     /// All active communication channels managed by the network layer.
     peer_channels: watch::Receiver<Arc<HashMap<NodeId, Channel>>>,
     /// A channel of requests coming in from clients & peers.
     requests: mpsc::UnboundedReceiver<HCoreRequest>,
-    /// A channel used for receiving index updates form the storage layer.
-    index_rx: mpsc::UnboundedReceiver<IndexUpdate>,
     /// A channel used for forwarding requests to a peer node.
     forward_tx: mpsc::UnboundedSender<(HCoreClientRequest, Option<NodeId>)>,
     /// A channel used for forwarding requests to a peer node.
@@ -46,12 +43,7 @@ pub struct HCore {
     metrics: watch::Receiver<RaftMetrics>,
 
     _net: Arc<HCoreNetwork>,
-    _storage: Arc<HCoreStorage>,
-
-    /// An index of user permissions.
-    index_user_permissions: HashMap<u64, UserRole>,
-    /// An index of user permissions.
-    index_token_permissions: HashMap<u64, Claims>,
+    pub(self) storage: Arc<HCoreStorage>,
 }
 
 impl HCore {
@@ -61,18 +53,8 @@ impl HCore {
     ) -> Result<Self> {
         // Initialize network & storage interfaces.
         let net = Arc::new(HCoreNetwork::new(peer_channels.clone()));
-        let (storage, index_rx) = HCoreStorage::new(id, config.clone()).await?;
+        let storage = HCoreStorage::new(id, config.clone()).await?;
         let storage = Arc::new(storage);
-
-        // Recover some state from storage.
-        let index_user_permissions = storage
-            .recover_user_permissions()
-            .await
-            .context("error recovering user permissions state from storage")?;
-        let index_token_permissions = storage
-            .recover_token_permissions()
-            .await
-            .context("error recovering token permissions state from storage")?;
 
         // Initialize Raft.
         let raft_config = Arc::new(
@@ -80,6 +62,7 @@ impl HCore {
                 .heartbeat_interval(config.raft_heartbeat_interval_millis as u64)
                 .election_timeout_min(config.raft_election_timeout_min as u64)
                 .election_timeout_max(config.raft_election_timeout_max as u64)
+                .snapshot_policy(SnapshotPolicy::LogsSinceLast(200_000))
                 .validate()
                 .context("invalid raft cluster configuration")?,
         );
@@ -88,19 +71,16 @@ impl HCore {
 
         let (forward_tx, forward_rx) = mpsc::unbounded_channel();
         Ok(Self {
-            _id: id,
+            id,
             config,
             peer_channels,
             requests,
-            index_rx,
             forward_tx,
             forward_rx,
             raft,
             metrics,
             _net: net,
-            _storage: storage,
-            index_user_permissions,
-            index_token_permissions,
+            storage,
         })
     }
 
@@ -113,17 +93,11 @@ impl HCore {
         loop {
             tokio::select! {
                 Some(req) = self.requests.next() => self.handle_request(req).await,
-                Some(update) = self.index_rx.next() => self.handle_index_update(update).await,
                 Some(forward) = self.forward_rx.next() => self.handle_forward_request(forward.0, forward.1).await,
                 Some(metrics) = self.metrics.next() => {
                     tracing::trace!(?metrics, "raft metrics update"); // TODO: wire up metrics.
                 }
                 Ok(_) = &mut form_cluster_rx => self.initialize_raft_cluster().await,
-            }
-
-            // After every iteration, we need to ensure that our indices are fully updated.
-            while let Ok(update) = self.index_rx.try_recv() {
-                self.handle_index_update(update).await;
             }
         }
     }
@@ -131,22 +105,29 @@ impl HCore {
     #[tracing::instrument(level = "trace", skip(self, req))]
     async fn handle_request(&mut self, req: HCoreRequest) {
         match req {
-            HCoreRequest::Client(HCoreClientRequest::Transaction(req)) => self.handle_request_transaction(req).await,
-            HCoreRequest::Client(HCoreClientRequest::StreamPub(req)) => self.handle_request_stream_pub(req).await,
-            HCoreRequest::Client(HCoreClientRequest::StreamSub(req)) => self.handle_request_stream_sub(req).await,
-            HCoreRequest::Client(HCoreClientRequest::StreamUnsub(req)) => self.handle_request_stream_unsub(req).await,
-            HCoreRequest::Client(HCoreClientRequest::PipelineStageSub(req)) => self.handle_request_pipeline_stage_sub(req).await,
-            HCoreRequest::Client(HCoreClientRequest::UpdateSchema(req)) => self.handle_request_update_schema(req).await,
+            HCoreRequest::Client(client_req) => {
+                // Forward the request if needed.
+                match self.metrics.borrow().current_leader {
+                    Some(leader) if leader == self.id => (), // This is the leader node, continue.
+                    other_node_or_unknown => {
+                        // A different node is the leader, so forward the request.
+                        let _ = self.forward_tx.send((client_req, other_node_or_unknown));
+                        return;
+                    }
+                }
+                match client_req {
+                    HCoreClientRequest::Transaction(req) => self.handle_request_transaction(req).await,
+                    HCoreClientRequest::StreamPub(req) => self.handle_request_stream_pub(req).await,
+                    HCoreClientRequest::StreamSub(req) => self.handle_request_stream_sub(req).await,
+                    HCoreClientRequest::StreamUnsub(req) => self.handle_request_stream_unsub(req).await,
+                    HCoreClientRequest::PipelineStageSub(req) => self.handle_request_pipeline_stage_sub(req).await,
+                    HCoreClientRequest::UpdateSchema(req) => self.handle_request_update_schema(req).await,
+                }
+            }
             HCoreRequest::RaftAppendEntries(req) => self.handle_raft_append_entries_rpc(req).await,
             HCoreRequest::RaftInstallSnapshot(req) => self.handle_raft_install_snapshot_rpc(req).await,
             HCoreRequest::RaftVote(req) => self.handle_raft_vote_rpc(req).await,
         }
-    }
-
-    /// Handle updates from the storage layer which should be used to update indices.
-    #[tracing::instrument(level = "trace", skip(self, update))]
-    async fn handle_index_update(&mut self, update: IndexUpdate) {
-        // TODO: update indices
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -177,14 +158,6 @@ impl HCore {
             let _ = tx.send(());
         });
         rx
-    }
-
-    /// Get the given token's claims, else return an auth error.
-    pub(self) fn must_get_token_claims(&self, token_id: &u64) -> Result<&Claims> {
-        match self.index_token_permissions.get(token_id) {
-            Some(claims) => Ok(claims),
-            None => Err(AuthError::UnknownToken.into()),
-        }
     }
 
     pub(self) async fn get_peer_channel(&self, target: &u64) -> Result<Channel> {

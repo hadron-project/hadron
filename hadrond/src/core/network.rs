@@ -12,6 +12,7 @@ use tokio::sync::{oneshot, watch};
 use tonic::transport::Channel;
 
 use crate::core::{HCore, HCoreClientRequest, HCoreRequest};
+use crate::error::AppError;
 use crate::network::{ClientRequest, PipelineStageSub, StreamPub, StreamSub, StreamUnsub, Transaction, UpdateSchema};
 use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
 use crate::proto::client::{PipelineStageSubClient, PipelineStageSubServer, StreamUnsubRequest, StreamUnsubResponse};
@@ -23,7 +24,7 @@ use crate::NodeId;
 
 const RAFT_CLUSTER: &str = "hadron";
 const ERR_UNEXPECTED_RAFT_RESPONSE_VARIANT: &str = "error handling response from storage layer, unexpected variant";
-const ERR_FORWARD_LEADER_UNKNOWN: &str = "error forwarding request, cluster leader unknown";
+const ERR_FORWARD_LEADER_UNKNOWN: &str = "error forwarding request, cluster leadership is transitioning";
 
 macro_rules! ok_or_else_tx_err {
     ($matcher:expr, $holder:ident) => {
@@ -72,8 +73,7 @@ impl HCore {
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     pub(super) async fn handle_request_stream_pub(&mut self, req: StreamPub) {
-        // TODO: perform an ahead-of-time forwarding check. If this node is not the leader, then forward.
-        let claims = ok_or_else_tx_err!(self.must_get_token_claims(&req.creds.id), req);
+        let claims = ok_or_else_tx_err!(self.storage.must_get_token_claims(&req.creds.id).await, req);
         ok_or_else_tx_err!(claims.check_stream_pub_auth(&req.req.stream), req);
         let (raft, forward_tx) = (self.raft.clone(), self.forward_tx.clone());
         tokio::spawn(async move {
@@ -84,14 +84,12 @@ impl HCore {
                         let _ = req.tx.send(Ok(res));
                     }
                     _ => {
-                        let _ = req
-                            .tx
-                            .send(utils::map_result_to_status(Err(anyhow!(ERR_UNEXPECTED_RAFT_RESPONSE_VARIANT))));
+                        let _ = req.tx.send(Err(utils::status_from_err(anyhow!(ERR_UNEXPECTED_RAFT_RESPONSE_VARIANT))));
                     }
                 },
                 Err(err) => match err {
                     ClientWriteError::RaftError(err) => {
-                        let _ = req.tx.send(utils::map_result_to_status(Err(err.into())));
+                        let _ = req.tx.send(Err(utils::status_from_err(err.into())));
                     }
                     ClientWriteError::ForwardToLeader(orig_req, node_opt) => match orig_req {
                         RaftClientRequest::StreamPub(req_fwd) => {
@@ -105,9 +103,7 @@ impl HCore {
                             ));
                         }
                         _ => {
-                            let _ = req
-                                .tx
-                                .send(utils::map_result_to_status(Err(anyhow!(ERR_UNEXPECTED_RAFT_RESPONSE_VARIANT))));
+                            let _ = req.tx.send(Err(utils::status_from_err(anyhow!(ERR_UNEXPECTED_RAFT_RESPONSE_VARIANT))));
                         }
                     },
                 },
@@ -132,7 +128,42 @@ impl HCore {
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     pub(super) async fn handle_request_update_schema(&mut self, req: UpdateSchema) {
-        todo!("")
+        let claims = ok_or_else_tx_err!(self.storage.must_get_token_claims(&req.creds.id).await, req);
+        ok_or_else_tx_err!(claims.check_schema_auth(), req);
+        let (raft, forward_tx) = (self.raft.clone(), self.forward_tx.clone());
+        tokio::spawn(async move {
+            let client_request = ClientWriteRequest::new(RaftClientRequest::UpdateSchema(req.req));
+            match raft.client_write(client_request).await {
+                Ok(res) => match res.data {
+                    RaftClientResponse::UpdateSchema(res) => {
+                        let _ = req.tx.send(Ok(res));
+                    }
+                    _ => {
+                        let _ = req.tx.send(Err(utils::status_from_err(anyhow!(ERR_UNEXPECTED_RAFT_RESPONSE_VARIANT))));
+                    }
+                },
+                Err(err) => match err {
+                    ClientWriteError::RaftError(err) => {
+                        let _ = req.tx.send(Err(utils::status_from_err(err.into())));
+                    }
+                    ClientWriteError::ForwardToLeader(orig_req, node_opt) => match orig_req {
+                        RaftClientRequest::UpdateSchema(req_fwd) => {
+                            let _ = forward_tx.send((
+                                HCoreClientRequest::UpdateSchema(UpdateSchema {
+                                    req: req_fwd,
+                                    tx: req.tx,
+                                    creds: req.creds,
+                                }),
+                                node_opt,
+                            ));
+                        }
+                        _ => {
+                            let _ = req.tx.send(Err(utils::status_from_err(anyhow!(ERR_UNEXPECTED_RAFT_RESPONSE_VARIANT))));
+                        }
+                    },
+                },
+            }
+        });
     }
 
     #[tracing::instrument(level = "trace", skip(self, req))]

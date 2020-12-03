@@ -10,7 +10,10 @@ build-and-load-kind:
         kind load docker-image --name hadron hadron-local-release:latest
 
 helm-upgrade-kind:
-    helm upgrade hadron ./kubernetes/helm -i --set image.fullName=hadron-local-release:latest --set image.pullPolicy=Never
+    helm upgrade hadron ./kubernetes/helm -i \
+        --set image.fullName=hadron-local-release:latest \
+        --set image.pullPolicy=Never \
+        --set-string statefulSet.replicas=3
 
 # # Build a release version of Railgun.
 # docker-build-release tag='latest':

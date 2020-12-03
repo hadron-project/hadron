@@ -7,10 +7,13 @@ Pipelines are declared in YAML. The spec is defined as follows:
 ```yaml
 ## The kind of object being defined. In this case, a pipeline.
 kind: pipeline
+## The namespace in which this pipeline is to be created.
+namespace: required string
 ## The name of the pipeline. Each pipeline must have a unique name.
 name: required string
 ## The stream from which this pipeline may be triggered. Only events on this stream may be used to
-## trigger this pipeline, though triggering piplines must still be explicit.
+## trigger this pipeline, though triggering piplines must still be explicit. The trigger stream
+## must exist in the same namespace as the pipeline.
 triggerStream: required string
 ## A number used to track consecutive updates to the pipeline definition. If the pipeline is
 ## updated using an old serial number or the same number currently tracked by Hadron, then the
@@ -50,6 +53,8 @@ stages:
       - name: required string
         ## The name of the stream to which this output's event will be published.
         stream: required string
+        ## The namespace in which the output stream exists.
+        namespace: required string
 ```
 
 // TODO: the content below needs revision. The data above is most recent and up-to-date.

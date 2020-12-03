@@ -3,6 +3,7 @@ mod auth;
 mod config;
 mod core;
 mod discovery;
+mod error;
 mod models;
 mod network;
 mod proto;
