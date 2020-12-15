@@ -15,3 +15,8 @@ just -l
 just COMMAND
 ```
 
+### thoughts on scale
+What do we want from scale?
+
+- to be able to store more and more data, and continue to do so by just adding more nodes.
+- to be able to increase throughput of request processing.

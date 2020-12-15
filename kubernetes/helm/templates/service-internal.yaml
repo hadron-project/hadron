@@ -2,11 +2,11 @@
 kind: Service
 apiVersion: v1
 metadata:
-  name: {{.Values.service.name}}
+  name: {{.Values.serviceInternal.name}}
   namespace: {{.Values.namespace | default .Release.Namespace}}
-  {{- if .Values.service.annotations}}
+  {{- if .Values.serviceInternal.annotations}}
   annotations:
-{{toYaml .Values.service.annotations | indent 4}}
+{{toYaml .Values.serviceInternal.annotations | indent 4}}
   {{- end}}
   labels:
     # TODO: update this to use helm helpers and more precise selection.
@@ -17,6 +17,6 @@ spec:
     app: hadron
   ports:
     - name: http
-      port: {{.Values.service.port}}
+      port: {{.Values.serviceInternal.port}}
       protocol: TCP
-      targetPort: {{.Values.service.targetPort}}
+      targetPort: {{.Values.serviceInternal.targetPort}}

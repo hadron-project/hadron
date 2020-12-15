@@ -1,16 +1,74 @@
 Pipelines
 =========
-Pipelines are pre-defined multi-stage data workflows, structured in terms of a graph. Pipelines provide transactional guarantees over acking a stages work and the delivery of the next stages data. With Pipelines, Railgun provides a platform with greater guarantees, and reduced error handling for building streaming-first service-oriented architectures.
+Pipelines are multi-stage data workflows, composed of multiple streams, structured as a directed acyclic graph (DAG). Pipelines provide transactional guarantees for multi-stage asynchronous workflows. Pipelines orchestrate the delivery of events to specific pipeline stages, collect outputs from pipeline stages, and enforce stage execution order. Pipelines provide a source of truth for codifying asynchronous event-driven architectures.
+
+Pipelines are declared in YAML. The spec is defined as follows:
+
+```yaml
+## The kind of object being defined. In this case, a pipeline.
+kind: pipeline
+## The namespace in which this pipeline is to be created.
+namespace: required string
+## The name of the pipeline. Each pipeline must have a unique name.
+name: required string
+## The stream from which this pipeline may be triggered. Only events on this stream may be used to
+## trigger this pipeline, though triggering piplines must still be explicit. The trigger stream
+## must exist in the same namespace as the pipeline.
+triggerStream: required string
+## A number used to track consecutive updates to the pipeline definition. If the pipeline is
+## updated using an old serial number or the same number currently tracked by Hadron, then the
+## update will be ignored.
+##
+## Hadron will ensure that the values used here are monotonically increasing.
+revision: required unsigned integer
+## `optional array of <stage>`: An array all stages of which this pipeline is composed. Pipelines
+## are composed of one or more stages.
+stages:
+  ## The name of the stage. Each stage has a unique name per pipeline.
+  - name: required string
+    ## `optional array of string`: A stage will be executed after all of the stages in its `after`
+    ## array have successfully completed.
+    ##
+    ## Execution order must be acyclic. If this value is empty or omitted, then this stage is
+    ## considered to be an initial stage of the pipeline, and will be invoked with a copy of the
+    ## event which triggered the pipeline.
+    after:
+      ## The name of another stage in this pipeline.
+      - required string
+    ## `optional array of string`: Stages may depend upon the output of earlier stages, which also
+    ## implies an `after` relationship with the specified stages.
+    ##
+    ## If no dependencies are declared, then the stage will be provided with the root event which
+    ## triggered this pipeline. The root event can be referred to directly as `root_event` along
+    ## with other stage outputs.
+    dependencies:
+      ## A dot-separated string declaring a stage and one its outputs by name. E.G.,
+      ## `stage-123.output-xyz`. The special name `root_event` refers to the root event.
+      - required string
+    ## `optional array of <output>`: Each stage may declare any number of outputs. Outputs
+    ## declare events which must be provided by the stage handler and which will be published
+    ## to the output's named stream transactionally along with the completion of the stage.
+    outputs:
+      ## Each output must have a unique name per stage.
+      - name: required string
+        ## The name of the stream to which this output's event will be published.
+        stream: required string
+        ## The namespace in which the output stream exists.
+        namespace: required string
+```
+
+// TODO: the content below needs revision. The data above is most recent and up-to-date.
+
 
 Pipelines may be used to model services which are responsible for handling request/response traffic — in which case the pipline will start with an RPC endpoint. Pipelines may also be used to model background tasks which do not handle client traffic — in which case the pipeline will start with a durable stream stage. This is perfect for asynchronous build systems, provisioning, data processing, custom jobs, and the like.
 
 - Pipeline names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
 - Pipelines may be composed of 1 or more stages (nodes of the graph), which are just streams with their associated handler functions.
-- Pipelines must have exactly one entrypoint stage. That stage may be an RPC message handler or a stream handler. All other downstream stages of a pipeline must be stream handler stages (not ephemeral or RPC message handler stages).
+- Pipelines may have more than one initial stage. All initial stages of a pipeline will receive a copy of the event which triggered the pipeline.
 - Pipelines are exclusive. They represent a single type of action to be taken over the data moving through the pipeline. All consumers of pipeline stages will be treated as being part of the same consumer group and messages will be load balanced across all consumers. To consume from a public stage of a pipeline for some purpose outside of the scope of the pipeline, use the standard stream consumer or RPC consumer APIs.
 - Pipelines may only be consumed by the user which originally created it, which helps to clarify the intent of pipelines.
 - The flow of data through the pipeline — inputs and outputs — are the edges of the graph.
-- Pipelines have unique names per namespace.
+- Pipelines have unique names.
 - Pipelines are directed acyclic graphs.
 - Pipelines allow users to model complex workflows, while only having to write handler code which takes an input and returns an output.
 - Railgun ensures that the output of a stage is delivered to all downstream stages with a connected edge, and that the message is `ack`'ed transactionally along with the delivery of that output. This greatly reduces the overhead of error handling and minimizes the difficulties of modelling exactly-once idempotent workflows.
