@@ -10,7 +10,7 @@ pub use crate::proto::peer::peer_client::PeerClient;
 use crate::proto::peer::peer_server::Peer;
 pub use crate::proto::peer::peer_server::PeerServer;
 use crate::proto::peer::{HandshakeMsg, RaftAppendEntriesMsg, RaftInstallSnapshotMsg, RaftVoteMsg};
-use crate::utils::{self, map_result_to_status, status_from_rcv_error, TonicResult};
+use crate::utils::{self, status_from_rcv_error, TonicResult};
 use crate::NodeId;
 
 const ERR_PEER_RPC_FAILURE: &str = "error response returned from peer RPC";

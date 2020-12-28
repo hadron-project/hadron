@@ -131,7 +131,11 @@ message StreamPubResponse {
   uint64 id = 1;
 }
 
-message StreamSubClient {}
+message StreamSubClient {
+  // TODO: add a field `overwrite` which will cause the config presented in this subscription
+  // request to overwrite the subscription's current config. Consumer apps can be deployed in such
+  // a way that rollbacks and version changes will not confict and cause unexpected sub config.
+}
 
 message StreamSubServer {}
 

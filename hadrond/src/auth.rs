@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: remove this.
+
 use anyhow::{anyhow, ensure, Result};
 use serde::{Deserialize, Serialize};
 use tonic::metadata::{Ascii, MetadataValue};
@@ -49,14 +51,18 @@ pub enum Claims {
 
 impl Claims {
     /// Ensure these claims are sufficient for publishing to the given stream.
-    pub fn check_stream_pub_auth(&self, stream: &str) -> Result<()> {
+    pub fn check_stream_pub_auth(&self, ns: &str, stream: &str) -> Result<()> {
         match &self {
             Self::V1(v) => match v {
                 ClaimsV1::All => Ok(()),
-                ClaimsV1::Resources(grants) => {
-                    let is_authorized = grants.iter().any(|grant| match &grant.streams {
-                        Some(streams) => streams.iter().any(|s| s.matcher.has_match(stream) && s.access.can_publish()),
-                        None => false,
+                ClaimsV1::Namespaced(grants) => {
+                    let is_authorized = grants.iter().any(|grant| match grant {
+                        NamespaceGrant::Full { namespace } => namespace == ns,
+                        NamespaceGrant::Limited { namespace, .. } if namespace != ns => false,
+                        NamespaceGrant::Limited { streams, .. } => match streams {
+                            Some(streams) => streams.iter().any(|s| s.matcher.has_match(stream) && s.access.can_publish()),
+                            None => false,
+                        },
                     });
                     ensure!(is_authorized, AppError::Unauthorized);
                     Ok(())
@@ -66,13 +72,17 @@ impl Claims {
         }
     }
 
-    /// Ensure these claims are sufficient for schema mutations.
-    pub fn check_schema_auth(&self) -> Result<()> {
+    /// Ensure these claims are sufficient for schema mutations on the target namespace.
+    pub fn check_schema_auth(&self, ns: &str) -> Result<()> {
         match &self {
             Self::V1(v) => match v {
                 ClaimsV1::All => Ok(()),
-                ClaimsV1::Resources(grants) => {
-                    let is_authorized = grants.iter().any(|grant| grant.schema);
+                ClaimsV1::Namespaced(grants) => {
+                    let is_authorized = grants.iter().any(|grant| match grant {
+                        NamespaceGrant::Full { namespace } => namespace == ns,
+                        NamespaceGrant::Limited { namespace, .. } if namespace != ns => false,
+                        NamespaceGrant::Limited { schema, .. } => *schema,
+                    });
                     ensure!(is_authorized, AppError::Unauthorized);
                     Ok(())
                 }
@@ -87,31 +97,41 @@ impl Claims {
 pub enum ClaimsV1 {
     /// A permissions grant on all resources in the system.
     All,
-    /// A permissions grant on a specific set of resources in the system.
-    Resources(Vec<Grant>),
+    /// A set of permissions granted on namespace scoped resources.
+    Namespaced(Vec<NamespaceGrant>),
     /// A permissions grant on only the cluster metrics system.
     Metrics,
 }
 
-/// A permissions grant on a set of resources.
+/// A permissions grant on a set of resources of a specific namespace.
 ///
 /// Pipeline permissions are evaluated purely in terms of stream permissions. A token may be used
-/// as a pipeline stage subscriber if it has sufficient permissions to read from the input stream
+/// as a pipeline stage subscriber if it has sufficient permissions to read from the input streams
 /// of the stage and has permissions to write to the output streams of the stage.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub struct Grant {
-    /// Permissions granted on the ephemeral messaging exchange.
-    messaging: Option<Access>,
-    /// Permissions granted on RPC endpoints.
-    endpoints: Option<Vec<EndpointGrant>>,
-    /// Permissions granted on streams.
-    streams: Option<Vec<StreamGrant>>,
-    /// Permissions to modify the schema of the system.
-    ///
-    /// A token with schema permissions is allowed to create, update & delete streams, pipelines
-    /// and other core resources in the system.
-    schema: bool,
+pub enum NamespaceGrant {
+    /// A grant of full permissions on the target namespace.
+    Full {
+        /// The namespace to which this grant applies.
+        namespace: String,
+    },
+    /// A grant of limited access to specific resources within the target namespace.
+    Limited {
+        /// The namespace to which this grant applies.
+        namespace: String,
+        /// Permissions granted on the namespace's ephemeral messaging exchange.
+        messaging: Option<Access>,
+        /// Permissions granted on RPC endpoints.
+        endpoints: Option<Vec<EndpointGrant>>,
+        /// Permissions granted on streams.
+        streams: Option<Vec<StreamGrant>>,
+        /// Permissions to modify the schema of the namespace.
+        ///
+        /// A token with schema permissions is allowed to create, update & delete streams, pipelines
+        /// and other core resources in the associated namespace.
+        schema: bool,
+    },
 }
 
 /// An enumeration of possible access levels.

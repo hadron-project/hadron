@@ -132,6 +132,7 @@ impl IndexWriteBatch {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 pub(super) enum IndexWriteOp {
     /// Insert a new namespace record into the index.
     InsertNamespace { name: String, description: String },

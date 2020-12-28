@@ -8,11 +8,10 @@ use async_raft::raft::{
 };
 use async_raft::{error::ClientWriteError, AppData, AppDataResponse, RaftNetwork};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{oneshot, watch};
+use tokio::sync::watch;
 use tonic::transport::Channel;
 
 use crate::core::{HCore, HCoreClientRequest, HCoreRequest};
-use crate::error::AppError;
 use crate::network::{ClientRequest, PipelineStageSub, StreamPub, StreamSub, StreamUnsub, Transaction, UpdateSchema};
 use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
 use crate::proto::client::{PipelineStageSubClient, PipelineStageSubServer, StreamUnsubRequest, StreamUnsubResponse};
@@ -66,15 +65,15 @@ pub enum RaftClientResponse {
 impl AppDataResponse for RaftClientResponse {}
 
 impl HCore {
-    #[tracing::instrument(level = "trace", skip(self, req))]
-    pub(super) async fn handle_request_transaction(&mut self, req: Transaction) {
+    #[tracing::instrument(level = "trace", skip(self, _req))]
+    pub(super) async fn handle_request_transaction(&mut self, _req: Transaction) {
         todo!("")
     }
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     pub(super) async fn handle_request_stream_pub(&mut self, req: StreamPub) {
         let claims = ok_or_else_tx_err!(self.storage.must_get_token_claims(&req.creds.id).await, req);
-        ok_or_else_tx_err!(claims.check_stream_pub_auth(&req.req.stream), req);
+        ok_or_else_tx_err!(claims.check_stream_pub_auth(&req.req.namespace, &req.req.stream), req);
         let (raft, forward_tx) = (self.raft.clone(), self.forward_tx.clone());
         tokio::spawn(async move {
             let client_request = ClientWriteRequest::new(RaftClientRequest::StreamPub(req.req));
@@ -111,25 +110,27 @@ impl HCore {
         });
     }
 
-    #[tracing::instrument(level = "trace", skip(self, req))]
-    pub(super) async fn handle_request_stream_sub(&mut self, req: StreamSub) {
+    #[tracing::instrument(level = "trace", skip(self, _req))]
+    pub(super) async fn handle_request_stream_sub(&mut self, _req: StreamSub) {
         todo!("")
     }
 
-    #[tracing::instrument(level = "trace", skip(self, req))]
-    pub(super) async fn handle_request_stream_unsub(&mut self, req: StreamUnsub) {
+    #[tracing::instrument(level = "trace", skip(self, _req))]
+    pub(super) async fn handle_request_stream_unsub(&mut self, _req: StreamUnsub) {
         todo!("")
     }
 
-    #[tracing::instrument(level = "trace", skip(self, req))]
-    pub(super) async fn handle_request_pipeline_stage_sub(&mut self, req: PipelineStageSub) {
+    #[tracing::instrument(level = "trace", skip(self, _req))]
+    pub(super) async fn handle_request_pipeline_stage_sub(&mut self, _req: PipelineStageSub) {
         todo!("")
     }
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     pub(super) async fn handle_request_update_schema(&mut self, req: UpdateSchema) {
-        let claims = ok_or_else_tx_err!(self.storage.must_get_token_claims(&req.creds.id).await, req);
-        ok_or_else_tx_err!(claims.check_schema_auth(), req);
+        let _claims = ok_or_else_tx_err!(self.storage.must_get_token_claims(&req.creds.id).await, req);
+        // ok_or_else_tx_err!(claims.check_schema_auth(), req); // TODO: update this code to have
+        // the UpdateSchema request be statically validated initially, as was done originally, and
+        // a field declaring all namespaces manipulated should be built. The auth check can use that field.
         let (raft, forward_tx) = (self.raft.clone(), self.forward_tx.clone());
         tokio::spawn(async move {
             let client_request = ClientWriteRequest::new(RaftClientRequest::UpdateSchema(req.req));

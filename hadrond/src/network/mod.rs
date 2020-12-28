@@ -10,14 +10,12 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use futures::future::TryFutureExt;
 use tokio::stream::StreamExt;
-use tokio::sync::{mpsc, oneshot::error::RecvError, watch};
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
-use tonic::transport::{Channel, ClientTlsConfig, Server, ServerTlsConfig, Uri};
-use tonic::Status;
+use tonic::transport::{Channel, Server, Uri};
 
 use crate::config::Config;
 use crate::discovery::{ObservedPeersChangeset, PeerSrv};
-use crate::error::AppError;
 pub use crate::network::client::{
     forward_client_request, ClientClient, ClientRequest, EphemeralPub, EphemeralSub, PipelineStageSub, RpcPub, RpcSub, StreamPub, StreamSub,
     StreamUnsub, Transaction, UpdateSchema,

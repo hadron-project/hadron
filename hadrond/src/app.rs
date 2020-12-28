@@ -15,24 +15,24 @@ use crate::storage;
 
 pub struct App {
     /// The ID of this node in the Raft cluster.
-    node_id: u64,
+    _node_id: u64,
 
     /// A channel used for sending control messages to the app layer.
-    app_tx: mpsc::UnboundedSender<AppCtl>,
+    _app_tx: mpsc::UnboundedSender<AppCtl>,
     /// A channel used for receiving control messages for the app layer.
     app_rx: mpsc::UnboundedReceiver<AppCtl>,
 
     /// A channel of data flowing in from the network layer.
     network_rx: mpsc::UnboundedReceiver<NetworkOutput>,
     /// A signal mapping peer nodes to their communication channels.
-    peers_rx: watch::Receiver<Arc<HashMap<u64, Channel>>>,
+    _peers_rx: watch::Receiver<Arc<HashMap<u64, Channel>>>,
 
     /// A channel used for sending requests into the Hadron core.
     hcore_tx: mpsc::UnboundedSender<HCoreRequest>,
 
-    discovery: JoinHandle<()>,
-    network: JoinHandle<()>,
-    hcore: JoinHandle<()>,
+    _discovery: JoinHandle<()>,
+    _network: JoinHandle<()>,
+    _hcore: JoinHandle<()>,
 }
 
 impl App {
@@ -59,15 +59,15 @@ impl App {
         // TODO: ^^^
 
         Ok(Self {
-            node_id,
-            app_tx,
+            _node_id: node_id,
+            _app_tx: app_tx,
             app_rx,
             network_rx,
-            peers_rx,
+            _peers_rx: peers_rx,
             hcore_tx,
-            discovery,
-            network,
-            hcore,
+            _discovery: discovery,
+            _network: network,
+            _hcore: hcore,
         })
     }
 
@@ -84,8 +84,8 @@ impl App {
         }
     }
 
-    #[tracing::instrument(level = "trace", skip(self, msg))]
-    async fn handle_app_ctl_msg(&mut self, msg: AppCtl) {
+    #[tracing::instrument(level = "trace", skip(self, _msg))]
+    async fn handle_app_ctl_msg(&mut self, _msg: AppCtl) {
         todo!()
     }
 
@@ -104,10 +104,10 @@ impl App {
                 }
             },
             NetworkOutput::ClientRequest(client_req) => match client_req {
-                ClientRequest::EphemeralPub(req) => todo!("finish this up"),
-                ClientRequest::EphemeralSub(req) => todo!("finish this up"),
-                ClientRequest::RpcPub(req) => todo!("finish this up"),
-                ClientRequest::RpcSub(req) => todo!("finish this up"),
+                ClientRequest::EphemeralPub(_req) => todo!("finish this up"),
+                ClientRequest::EphemeralSub(_req) => todo!("finish this up"),
+                ClientRequest::RpcPub(_req) => todo!("finish this up"),
+                ClientRequest::RpcSub(_req) => todo!("finish this up"),
                 ClientRequest::Transaction(req) => {
                     let _ = self.hcore_tx.send(HCoreRequest::Client(HCoreClientRequest::Transaction(req)));
                 }

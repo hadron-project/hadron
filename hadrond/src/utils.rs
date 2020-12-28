@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: remove this.
+
 use anyhow::{bail, Context, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::oneshot::error::RecvError;

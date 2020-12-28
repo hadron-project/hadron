@@ -1,22 +1,27 @@
-Railgun
-=======
-- [Overview](./overview.md)
-- [Getting Started](./getting-started.md)
-    - [Users & Tokens](./getting-started/users-tokens.md)
-    - [Ephemeral Messaging](./getting-started/ephemeral-messaging.md)
-    - [RPC Messaging](./getting-started/rpc-messaging.md)
-    - [Durable Streams](./getting-started/durable-streams.md)
-    - [Pipelines](./getting-started/pipelines.md)
-    - [Config Management](./getting-started/config-management.md)
-    - [rgctl](./getting-started/rgctl.md)
-- [Operations](./operations.md)
+Hadron
+======
+
+# Reference
+- [Reference](./reference/index.md)
+    - [Schema Management](./reference/schema.md)
+    - [Users & Tokens](./reference/users-tokens.md)
+    - [Namespaces](./reference/namespaces.md)
+    - [Streams](./reference/streams.md)
+    - [Pipelines](./reference/pipelines.md)
+    - [Ephemeral Messaging](./reference/ephemeral-messaging.md)
+    - [RPC](./reference/rpc.md)
+    - [Config Management](./reference/config-management.md)
+    - [Hadron CLI](./reference/cli.md)
+
+# Clients
+- [Clients](./clients/index.md)
+
+# Patterns
+- [Out Table](./patterns/out-table.md)
+
+# Operations
+- [Operations](./operations/index.md)
     - [Networking](./operations/networking.md)
     - [Discovery](./operations/discovery.md)
     - [Clustering](./operations/clustering.md)
     - [Metrics](./operations/metrics.md)
-- [Development](./development.md)
-    - [Networking](./development/networking.md)
-    - [Peer Connection Management](./development/peer-connection-management.md)
-- [Clients](./clients.md)
-    - [Building a Client](./clients/building-a-client.md)
-- [WAFL Protocol](./wafl-protocol.md)
