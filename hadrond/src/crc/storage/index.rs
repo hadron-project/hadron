@@ -7,7 +7,7 @@ use anyhow::anyhow;
 use tokio::sync::RwLock;
 
 use crate::auth::{Claims, UserRole};
-use crate::core::storage::ShutdownError;
+use crate::crc::storage::ShutdownError;
 
 const ERR_INDEX_MISSING_NS: &str = "namespace not found in index, this is a bug, please open an issue";
 

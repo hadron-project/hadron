@@ -48,6 +48,9 @@ pub struct StreamPubResponse {
     #[prost(uint64, tag = "1")]
     pub id: u64,
 }
+/// TODO: add a field `overwrite` which will cause the config presented in this subscription
+/// request to overwrite the subscription's current config. Consumer apps can be deployed in such
+/// a way that rollbacks and version changes will not confict and cause unexpected sub config.
 #[derive(Clone, PartialEq, ::prost::Message, super::Serialize, super::Deserialize)]
 pub struct StreamSubClient {}
 #[derive(Clone, PartialEq, ::prost::Message, super::Serialize, super::Deserialize)]

@@ -1,7 +1,7 @@
 mod app;
 mod auth;
 mod config;
-mod core;
+mod crc;
 mod discovery;
 mod error;
 mod models;
@@ -15,8 +15,3 @@ pub use crate::{app::App, config::Config};
 
 /// A Hadron cluster node's ID.
 type NodeId = u64;
-
-/* TODO:
-- ensure ephemeral & RPC messaging is fast. All publishing & subscriptions should converge on the
-the master even via direct connection or forwarding.
-*/

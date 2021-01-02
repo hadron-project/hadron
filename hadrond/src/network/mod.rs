@@ -8,9 +8,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use futures::future::TryFutureExt;
+use futures::future::{FutureExt, TryFutureExt};
 use tokio::stream::StreamExt;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tonic::transport::{Channel, Server, Uri};
 
@@ -72,22 +72,30 @@ pub struct Network {
     /// An output signal mapping peer node IDs to their communication channels.
     peers_tx: watch::Sender<Arc<HashMap<NodeId, Channel>>>,
 
-    _peer_server: JoinHandle<Result<()>>,
-    _client_server: JoinHandle<Result<()>>,
+    /// Application shutdown signal.
+    shutdown: watch::Receiver<bool>,
+    server_shutdown_tx: broadcast::Sender<()>,
+
+    peer_server: JoinHandle<Result<()>>,
+    client_server: JoinHandle<Result<()>>,
 
     socket_to_peer_map: HashMap<PeerSrv, PeerSocketState>,
     node_id_to_socket_map: HashMap<NodeId, Channel>,
 }
 
 impl Network {
-    pub fn new(node_id: NodeId, config: Arc<Config>, discovery_rx: mpsc::Receiver<ObservedPeersChangeset>) -> Result<NetworkNewOutput> {
+    pub fn new(
+        node_id: NodeId, config: Arc<Config>, discovery_rx: mpsc::Receiver<ObservedPeersChangeset>, shutdown: watch::Receiver<bool>,
+    ) -> Result<NetworkNewOutput> {
         let (peer_network_tx, peer_network_rx) = mpsc::unbounded_channel();
         let (client_network_tx, client_network_rx) = mpsc::unbounded_channel();
         let (net_internal_tx, net_internal_rx) = mpsc::unbounded_channel();
         let (output_tx, output_rx) = mpsc::unbounded_channel();
         let (peers_tx, peers_rx) = watch::channel(Default::default());
-        let _peer_server = Self::build_peer_server(node_id, peer_network_tx, client_network_tx.clone(), config.clone())?;
-        let _client_server = Self::build_client_server(node_id, client_network_tx, config.clone())?;
+
+        let (server_shutdown_tx, server_shutdown_rx) = broadcast::channel(1);
+        let peer_server = Self::build_peer_server(node_id, peer_network_tx, client_network_tx.clone(), config.clone(), server_shutdown_rx)?;
+        let client_server = Self::build_client_server(node_id, client_network_tx, config.clone(), server_shutdown_tx.subscribe())?;
 
         // TODO:
         // - create a network maintenance loop which will check all peer sockets. Any which have disappeared from
@@ -103,8 +111,10 @@ impl Network {
             net_internal_rx,
             output_tx,
             peers_tx,
-            _peer_server,
-            _client_server,
+            peer_server,
+            client_server,
+            shutdown,
+            server_shutdown_tx,
             socket_to_peer_map: Default::default(),
             node_id_to_socket_map: Default::default(),
         };
@@ -124,8 +134,14 @@ impl Network {
                 Some(peer_req) = self.peer_network_rx.next() => self.handle_peer_request(peer_req).await,
                 Some(client_req) = self.client_network_rx.next() => self.handle_client_request(client_req).await,
                 Some(net_int) = self.net_internal_rx.next() => self.handle_network_internal_update(net_int).await,
+                Some(needs_shutdown) = self.shutdown.next() => if needs_shutdown { break } else { continue },
             }
         }
+
+        // Graceful shutdown.
+        let _ = self.server_shutdown_tx.send(()); // Shutsdown all network listeners.
+        let _ = self.peer_server.await;
+        let _ = self.client_server.await;
     }
 
     #[tracing::instrument(level = "trace", skip(self, req))]
@@ -225,6 +241,7 @@ impl Network {
 
     fn build_peer_server(
         id: NodeId, peer_tx: mpsc::UnboundedSender<peer::PeerRequest>, client_tx: mpsc::UnboundedSender<client::ClientRequest>, config: Arc<Config>,
+        mut shutdown: broadcast::Receiver<()>,
     ) -> Result<JoinHandle<Result<()>>> {
         // TODO: integrate TLS configuration.
         let addr = format!("0.0.0.0:{}", config.server_port)
@@ -232,29 +249,35 @@ impl Network {
             .context("failed to parse socket addr for internal gRPC server, probably a bad port")?;
         let peer_svc = PeerService::new(id, peer_tx);
         let client_svc = ClientService::new(id, config, client_tx);
-        let server_fut = Server::builder()
-            .tcp_keepalive(Some(Duration::from_secs(30))) // Raft heartbeats will keep this guy alive.
-            .timeout(Duration::from_secs(10))
-            .add_service(PeerServer::new(peer_svc))
-            .add_service(ClientServer::new(client_svc))
-            .serve(addr)
-            .map_err(From::from);
-        Ok(tokio::spawn(server_fut))
+        Ok(tokio::spawn(async move {
+            let server_fut = Server::builder()
+                .tcp_keepalive(Some(Duration::from_secs(30))) // Raft heartbeats will keep this guy alive.
+                .timeout(Duration::from_secs(10))
+                .add_service(PeerServer::new(peer_svc))
+                .add_service(ClientServer::new(client_svc))
+                .serve_with_shutdown(addr, shutdown.next().map(|_| ()))
+                .map_err(anyhow::Error::from);
+            Ok(server_fut.await?)
+        }))
     }
 
-    fn build_client_server(id: NodeId, tx: mpsc::UnboundedSender<client::ClientRequest>, config: Arc<Config>) -> Result<JoinHandle<Result<()>>> {
+    fn build_client_server(
+        id: NodeId, tx: mpsc::UnboundedSender<client::ClientRequest>, config: Arc<Config>, mut shutdown: broadcast::Receiver<()>,
+    ) -> Result<JoinHandle<Result<()>>> {
         // TODO: integrate TLS configuration.
         let addr = format!("0.0.0.0:{}", config.client_port)
             .parse()
             .context("failed to parse socket addr for client gRPC server, probably a bad port")?;
         let svc = ClientService::new(id, config, tx);
-        let server_fut = Server::builder()
-            .tcp_keepalive(Some(Duration::from_secs(10)))
-            .timeout(Duration::from_secs(10))
-            .add_service(ClientServer::new(svc))
-            .serve(addr)
-            .map_err(From::from);
-        Ok(tokio::spawn(server_fut))
+        Ok(tokio::spawn(async move {
+            let server_fut = Server::builder()
+                .tcp_keepalive(Some(Duration::from_secs(10)))
+                .timeout(Duration::from_secs(10))
+                .add_service(ClientServer::new(svc))
+                .serve_with_shutdown(addr, shutdown.next().map(|_| ()))
+                .map_err(anyhow::Error::from);
+            Ok(server_fut.await?)
+        }))
     }
 
     /// Build a peer connection, performing handshake after initial connection is established.

@@ -1,3 +1,17 @@
+//! Cluster Raft Controller (CRC)
+//!
+//! This controller is responsible for all cluster-wide changes, all of which go through Raft.
+//! These types of changes include but are not limited to:
+//!
+//! - Hadron cluster membership.
+//! - Leadership designations for other controllers within the Hadron cluster.
+//! - Schema management for user defined resources (Namespaces, Streams &c).
+//! - AuthN & authZ resources such as users and tokens.
+//!
+//! Leadership designation from this controller for other controllers is based on a monotonically
+//! increasing term per control group, which is disjoint from Raft's leadership terms. Conflicts
+//! between leadership designation is easily and safely resolved based on designated leadership terms.
+
 mod network;
 mod storage;
 
@@ -13,18 +27,20 @@ use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
 use crate::config::Config;
-use crate::core::network::{HCoreNetwork, RaftClientRequest, RaftClientResponse};
-use crate::core::storage::HCoreStorage;
+use crate::crc::network::{HCoreNetwork, RaftClientRequest, RaftClientResponse};
+use crate::crc::storage::HCoreStorage;
 use crate::network::{PipelineStageSub, StreamPub, StreamSub, StreamUnsub, Transaction, UpdateSchema};
 use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
 use crate::utils;
 use crate::NodeId;
 
 /// The concrete Raft type used by Hadron core.
-pub type HCoreRaft = Raft<RaftClientRequest, RaftClientResponse, HCoreNetwork, HCoreStorage>;
+pub type CRCRaft = Raft<RaftClientRequest, RaftClientResponse, HCoreNetwork, HCoreStorage>;
 
-/// Hadron core data layer.
-pub struct HCore {
+/// Cluster Raft Controller.
+///
+/// This controller is responsible for all cluster-wide changes, all of which go through Raft.
+pub struct CRC {
     /// The ID of this node in the cluster.
     id: NodeId,
     /// The application's runtime config.
@@ -38,18 +54,20 @@ pub struct HCore {
     /// A channel used for forwarding requests to a peer node.
     forward_rx: mpsc::UnboundedReceiver<(HCoreClientRequest, Option<NodeId>)>,
     /// The Raft instance used for mutating the storage layer.
-    raft: HCoreRaft,
+    raft: CRCRaft,
     /// A handle to the Raft's metrics channel.
     metrics: watch::Receiver<RaftMetrics>,
+    /// Application shutdown channel.
+    shutdown: watch::Receiver<bool>,
 
     _net: Arc<HCoreNetwork>,
     pub(self) storage: Arc<HCoreStorage>,
 }
 
-impl HCore {
+impl CRC {
     pub async fn new(
         id: NodeId, config: Arc<Config>, peer_channels: watch::Receiver<Arc<HashMap<NodeId, Channel>>>,
-        requests: mpsc::UnboundedReceiver<HCoreRequest>,
+        requests: mpsc::UnboundedReceiver<HCoreRequest>, shutdown: watch::Receiver<bool>,
     ) -> Result<Self> {
         // Initialize network & storage interfaces.
         let net = Arc::new(HCoreNetwork::new(peer_channels.clone()));
@@ -66,7 +84,7 @@ impl HCore {
                 .validate()
                 .context("invalid raft cluster configuration")?,
         );
-        let raft = HCoreRaft::new(id, raft_config, net.clone(), storage.clone());
+        let raft = CRCRaft::new(id, raft_config, net.clone(), storage.clone());
         let metrics = raft.metrics();
 
         let (forward_tx, forward_rx) = mpsc::unbounded_channel();
@@ -79,6 +97,7 @@ impl HCore {
             forward_rx,
             raft,
             metrics,
+            shutdown,
             _net: net,
             storage,
         })
@@ -98,7 +117,16 @@ impl HCore {
                     tracing::trace!(?metrics, "raft metrics update"); // TODO: wire up metrics.
                 }
                 Ok(_) = &mut form_cluster_rx => self.initialize_raft_cluster().await,
+                Some(needs_shutdown) = self.shutdown.next() => if needs_shutdown { break } else { continue },
             }
+        }
+
+        // Graceful shutdown. Here, we don't exit until all of our main channels have been drained.
+        while let Ok(req) = self.requests.try_recv() {
+            self.handle_request(req).await;
+        }
+        while let Ok(forward) = self.forward_rx.try_recv() {
+            self.handle_forward_request(forward.0, forward.1).await;
         }
     }
 

@@ -21,8 +21,8 @@ use tokio::sync::RwLock;
 
 use crate::auth::{Claims, ClaimsV1, UserRole};
 use crate::config::Config;
-use crate::core::network::{RaftClientRequest, RaftClientResponse};
-use crate::core::storage::index::{HCoreIndex, IndexWriteBatch, IndexWriteOp, NamespaceIndex, PipelineMeta, StreamMeta};
+use crate::crc::network::{RaftClientRequest, RaftClientResponse};
+use crate::crc::storage::index::{HCoreIndex, IndexWriteBatch, IndexWriteOp, NamespaceIndex, PipelineMeta, StreamMeta};
 use crate::error::AppError;
 use crate::models;
 use crate::proto::client::{PipelineStageSubClient, StreamUnsubRequest};

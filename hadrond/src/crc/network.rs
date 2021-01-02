@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tonic::transport::Channel;
 
-use crate::core::{HCore, HCoreClientRequest, HCoreRequest};
+use crate::crc::{HCoreClientRequest, HCoreRequest, CRC};
 use crate::network::{ClientRequest, PipelineStageSub, StreamPub, StreamSub, StreamUnsub, Transaction, UpdateSchema};
 use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
 use crate::proto::client::{PipelineStageSubClient, PipelineStageSubServer, StreamUnsubRequest, StreamUnsubResponse};
@@ -64,7 +64,7 @@ pub enum RaftClientResponse {
 
 impl AppDataResponse for RaftClientResponse {}
 
-impl HCore {
+impl CRC {
     #[tracing::instrument(level = "trace", skip(self, _req))]
     pub(super) async fn handle_request_transaction(&mut self, _req: Transaction) {
         todo!("")
