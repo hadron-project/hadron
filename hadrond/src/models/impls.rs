@@ -1,91 +1,81 @@
-// //! Validation code for data models.
+//! Impl code for the various models.
 
-// use std::collections::{HashMap, HashSet};
+#![allow(unused_imports)] // TODO: remove this.
+#![allow(unused_variables)] // TODO: remove this.
+#![allow(unused_mut)] // TODO: remove this.
+#![allow(dead_code)] // TODO: remove this.
 
-// use anyhow::{bail, ensure, Result};
-// use lazy_static::lazy_static;
-// use regex::Regex;
+use std::collections::{HashMap, HashSet};
 
-// use super::{ChangeSet, DDLSchemaUpdate, DDLStatement, Namespace, Pipeline, PipelineStage, PipelineStageOutput, Stream, DDL};
-// use crate::error::AppError;
-// use crate::proto::storage;
-// use crate::utils;
+use anyhow::{bail, ensure, Context, Result};
+use chrono::prelude::*;
+use lazy_static::lazy_static;
+use regex::Regex;
 
-// const ROOT_EVENT_TOKEN: &str = "root_event";
-// const MAX_DESCRIPTION_LEN: usize = 5000;
+use super::*;
+use crate::error::AppError;
+use crate::proto::client::{update_schema_request::Update, UpdateSchemaManaged, UpdateSchemaOneOff, UpdateSchemaRequest};
+use crate::proto::storage;
+use crate::utils;
 
-// const ERR_RE_CHANGESET_NAME: &str = r"invalid changeset name, must match the pattern `^[-_.a-zA-Z0-9]{1,255}$`";
-// const ERR_SCHEMA_UPDATE_BASIC: &str = "schema updates must be composed of an initial changeset followed by one or more DDL statements";
+const ROOT_EVENT_TOKEN: &str = "root_event";
+const MAX_DESCRIPTION_LEN: usize = 5000;
 
-// lazy_static! {
-//     static ref ERR_DESCRIPTION_LEN: String = format!("descriptions may contain a maximum of {} characters", MAX_DESCRIPTION_LEN);
-//     /// Regular expression used to validate changeset names.
-//     static ref RE_CHANGESET: Regex = Regex::new(r"^[-/_.a-zA-Z0-9]{1,255}$").expect("failed to compile RE_CHANGESET regex");
-//     /// Regular expression used to validate top-level resource names for which hierarchies may be formed.
-//     static ref RE_NAME: Regex = Regex::new(r"^[-_.a-zA-Z0-9]{1,100}$").expect("failed to compile RE_NAME regex");
-//     /// Regular expression used to validate pipeline stage & output names.
-//     static ref RE_BASIC_NAME: Regex = Regex::new(r"^[-_a-zA-Z0-9]{1,100}$").expect("failed to compile RE_BASIC_NAME regex");
-// }
+const ERR_RE_CHANGESET_NAME: &str = r"invalid changeset name, must match the pattern `^[-_.a-zA-Z0-9]{1,255}$`";
+const ERR_SCHEMA_UPDATE_BASIC: &str = "schema updates must be composed of an initial changeset followed by one or more DDL statements";
 
-// impl DDLStatement {
-//     /// Statically validate this object.
-//     fn validate(&self) -> Result<()> {
-//         match self {
-//             Self::ChangeSet(val) => val.validate(),
-//             Self::Namespace(val) => val.validate(),
-//             Self::Stream(val) => val.validate(),
-//             Self::Pipeline(val) => val.validate(),
-//         }
-//     }
-// }
+lazy_static! {
+    static ref ERR_DESCRIPTION_LEN: String = format!("descriptions may contain a maximum of {} characters", MAX_DESCRIPTION_LEN);
+    /// Regular expression used to validate changeset names.
+    static ref RE_CHANGESET: Regex = Regex::new(r"^[-/_.a-zA-Z0-9]{1,255}$").expect("failed to compile RE_CHANGESET regex");
+    /// Regular expression used to validate top-level resource names for which hierarchies may be formed.
+    static ref RE_NAME: Regex = Regex::new(r"^[-_.a-zA-Z0-9]{1,100}$").expect("failed to compile RE_NAME regex");
+    /// Regular expression used to validate pipeline stage & output names.
+    static ref RE_BASIC_NAME: Regex = Regex::new(r"^[-_a-zA-Z0-9]{1,100}$").expect("failed to compile RE_BASIC_NAME regex");
+}
 
-// impl DDLSchemaUpdate {
-//     /// Deserialize a DDL schema update from the given str & statically validate content.
-//     pub fn decode_and_validate(ddl_str: &str) -> Result<DDLSchemaUpdate> {
-//         // We initially pull out a vec of DDL statements.
-//         let mut ddl: Vec<DDLStatement> =
-//             serde_yaml::from_str_multidoc(ddl_str).map_err(|err| AppError::InvalidInput(format!("error parsing schema update: {}", err)))?;
-//         // Ensure we have a working set of statements, which must always consist of an initial
-//         // changeset statement followed by one or more DDL statements.
-//         if ddl.len() < 2 {
-//             bail!(AppError::InvalidInput(ERR_SCHEMA_UPDATE_BASIC.into()));
-//         }
-//         // Extract the initial changeset statement.
-//         let changeset = match ddl.remove(0) {
-//             DDLStatement::ChangeSet(changeset) => changeset,
-//             _ => bail!(AppError::InvalidInput(ERR_SCHEMA_UPDATE_BASIC.into())),
-//         };
-//         // Perform static validation on all DDL statements.
-//         changeset.validate()?;
-//         let statements = ddl.into_iter().try_fold(vec![], |mut acc, elem| {
-//             elem.validate()?;
-//             acc.push(match elem {
-//                 DDLStatement::ChangeSet(_) => bail!(AppError::InvalidInput(ERR_SCHEMA_UPDATE_BASIC.into())),
-//                 DDLStatement::Namespace(namespace) => DDL::Namespace(namespace),
-//                 DDLStatement::Stream(stream) => DDL::Stream(stream),
-//                 DDLStatement::Pipeline(pipeline) => DDL::Pipeline(pipeline),
-//             });
-//             Ok(acc)
-//         })?;
-//         Ok(DDLSchemaUpdate { changeset, statements })
-//     }
-// }
+impl SchemaUpdate {
+    /// Deserialize a schema update from the given str & statically validate its content.
+    pub fn decode_and_validate(req: &UpdateSchemaRequest) -> Result<SchemaUpdate> {
+        // Extract the schema to be processed.
+        let update = req
+            .update
+            .as_ref()
+            .ok_or_else(|| AppError::InvalidInput("invalid request, no schema update detected".into()))?;
+        let schema = match &update {
+            Update::Oneoff(inner) => &inner.schema,
+            Update::Managed(inner) => &inner.schema,
+        };
+        // We initially pull out a vec of DDL statements.
+        let statements: Vec<SchemaStatement> =
+            serde_yaml::from_str_multidoc(&schema).map_err(|err| AppError::InvalidInput(format!("error parsing schema update: {}", err)))?;
+        // Perform static validation on all schema statements.
+        for statement in statements.iter() {
+            statement.validate()?;
+        }
+        Ok(match &update {
+            Update::Oneoff(_) => SchemaUpdate::OneOff(SchemaUpdateOneOff { statements }),
+            Update::Managed(inner) => SchemaUpdate::Managed(SchemaUpdateManaged {
+                branch: inner.branch.clone(),
+                timestamp: inner.timestamp,
+                statements,
+            }),
+        })
+    }
+}
 
-// impl ChangeSet {
-//     fn validate(&self) -> Result<()> {
-//         ensure!(RE_CHANGESET.is_match(&self.name), AppError::InvalidInput(ERR_RE_CHANGESET_NAME.into()));
-//         Ok(())
-//     }
-// }
-
-// impl From<&'_ Namespace> for storage::Namespace {
-//     fn from(src: &'_ Namespace) -> Self {
-//         Self {
-//             name: src.name.clone(),
-//             description: src.description.clone(),
-//         }
-//     }
-// }
+impl SchemaStatement {
+    /// Statically validate this object.
+    fn validate(&self) -> Result<()> {
+        Ok(()) // TODO: finish this up
+               // match self {
+               //     Self::Namespace(val) => val.validate(),
+               //     Self::Stream(val) => val.validate(),
+               //     Self::Pipeline(val) => val.validate(),
+               //     Self::Endpoint(val) => val.validate(),
+               // }
+    }
+}
 
 // impl Namespace {
 //     fn validate(&self) -> Result<()> {
@@ -132,10 +122,11 @@
 // impl From<&'_ Pipeline> for storage::Pipeline {
 //     fn from(src: &'_ Pipeline) -> Self {
 //         Self {
-//             name: src.name.clone(),
-//             namespace: src.namespace.clone(),
-//             description: src.description.clone(),
-//             trigger_stream: src.trigger_stream.clone(),
+//             name: src.metadata.name.clone(),
+//             namespace: src.metadata.namespace.clone(),
+//             description: src.metadata.description.clone(),
+//             input_stream: src.input_stream.clone(),
+//             triggers: src.inputs.clone(),
 //             stages: src.stages.iter().map(From::from).collect(),
 //         }
 //     }
@@ -229,21 +220,6 @@
 //             dedup_buf.clear();
 //         }
 //         Ok(())
-//     }
-// }
-
-// impl From<&'_ PipelineStage> for storage::PipelineStage {
-//     fn from(src: &'_ PipelineStage) -> Self {
-//         Self {
-//             name: src.name.clone(),
-//             after: src.after.clone().unwrap_or_default(),
-//             dependencies: src.dependencies.clone().unwrap_or_default(),
-//             outputs: src
-//                 .outputs
-//                 .as_ref()
-//                 .map(|outputs| outputs.iter().map(From::from).collect())
-//                 .unwrap_or_default(),
-//         }
 //     }
 // }
 
@@ -368,16 +344,6 @@
 //             dedup_buf.clear();
 //         }
 //         Ok(())
-//     }
-// }
-
-// impl From<&'_ PipelineStageOutput> for storage::PipelineStageOutput {
-//     fn from(src: &'_ PipelineStageOutput) -> Self {
-//         Self {
-//             name: src.name.clone(),
-//             stream: src.stream.clone(),
-//             namespace: src.namespace.clone(),
-//         }
 //     }
 // }
 

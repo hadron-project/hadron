@@ -48,9 +48,17 @@ impl Discovery {
         let (output_tx, output_rx) = mpsc::channel(1);
         let (tx_backend, rx_backend) = tokio::sync::watch::channel(vec![]);
         let backend_handle = match &config.discovery_backend {
-            DiscoveryBackend::Dns { discovery_dns_name } => {
-                dns::DnsDiscovery::new(config.clone(), tx_backend, discovery_dns_name.clone(), shutdown.clone()).spawn()
-            }
+            DiscoveryBackend::Dns {
+                discovery_dns_name,
+                discovery_dns_interval,
+            } => dns::DnsDiscovery::new(
+                config.clone(),
+                tx_backend,
+                discovery_dns_name.clone(),
+                *discovery_dns_interval,
+                shutdown.clone(),
+            )
+            .spawn(),
         };
         let this = Self {
             observed_peers,
@@ -78,7 +86,9 @@ impl Discovery {
         }
 
         // Graceful shutdown.
+        tracing::debug!("discovery is shutting down");
         let _ = self.backend_handle.await;
+        tracing::debug!("discovery shutdown");
     }
 
     /// Handle messages coming from the DNS discovery backend.

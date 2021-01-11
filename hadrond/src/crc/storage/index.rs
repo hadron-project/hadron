@@ -15,10 +15,12 @@ const ERR_INDEX_MISSING_NS: &str = "namespace not found in index, this is a bug,
 ///
 /// Each individual field of the index must be independently locked for reading/writing. It is
 /// important to note that we must reduce lock contention as much as possible. This can easily
-/// be achieved by simply dropping the lock guard as soon as possible whenever a lock is taken.
+/// be achieved by simply dropping the lock guard as soon as possible whenever a lock is taken,
+/// especially given that all internal data is Arc'd and can be easily cloned, allowing the lock
+/// to be dropped very quickly.
 pub struct HCoreIndex {
-    /// Index of all changesets which have been applied to the system.
-    pub changesets: RwLock<HashMap<String, ()>>,
+    /// Index of all managed schema branches which have been applied to the system.
+    pub schema_branches: RwLock<HashMap<String, i64>>,
     /// Index of all live namespaces in the system.
     pub namespaces: RwLock<HashMap<String, Arc<NamespaceIndex>>>,
     /// Index of data for users data.
@@ -32,8 +34,10 @@ impl HCoreIndex {
         for op in ops.ops {
             match op {
                 IndexWriteOp::InsertNamespace { name, description } => {
-                    let mut ns = NamespaceIndex::default();
-                    ns.description = description;
+                    let ns = NamespaceIndex {
+                        description,
+                        ..Default::default()
+                    };
                     self.namespaces.write().await.insert(name, Arc::new(ns));
                 }
                 IndexWriteOp::InsertStream { namespace, name, meta } => {
@@ -49,6 +53,9 @@ impl HCoreIndex {
                         .await
                         .ok_or_else(|| ShutdownError(anyhow!(ERR_INDEX_MISSING_NS)))?;
                     ns.pipelines.write().await.insert(name, Arc::new(meta));
+                }
+                IndexWriteOp::UpdateSchemaBranch { branch, timestamp } => {
+                    self.schema_branches.write().await.insert(branch, timestamp);
                 }
             }
         }
@@ -140,4 +147,6 @@ pub(super) enum IndexWriteOp {
     InsertStream { namespace: String, name: String, meta: StreamMeta },
     /// Insert a new pipeline record into the index.
     InsertPipeline { namespace: String, name: String, meta: PipelineMeta },
+    /// Update a schema branch with a new timestamp.
+    UpdateSchemaBranch { branch: String, timestamp: i64 },
 }

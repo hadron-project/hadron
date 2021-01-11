@@ -87,7 +87,7 @@ pub async fn send_append_entries(cluster: String, payload: Vec<u8>, chan: Channe
         .context(ERR_PEER_RPC_FAILURE)?
         .into_inner()
         .payload;
-    utils::bin_decode(&response_payload).context(utils::ERR_DECODE_RAFT_RPC)
+    utils::decode_flexbuf(&response_payload).context(utils::ERR_DECODE_RAFT_RPC_RESPONSE)
 }
 
 /// Send a Raft InstallSnapshot RPC to the peer on the other side of the given channel.
@@ -100,7 +100,7 @@ pub async fn send_install_snapshot(cluster: String, payload: Vec<u8>, chan: Chan
         .context(ERR_PEER_RPC_FAILURE)?
         .into_inner()
         .payload;
-    utils::bin_decode(&response_payload).context(utils::ERR_DECODE_RAFT_RPC)
+    utils::decode_flexbuf(&response_payload).context(utils::ERR_DECODE_RAFT_RPC_RESPONSE)
 }
 
 /// Send a Raft Vote RPC to the peer on the other side of the given channel.
@@ -113,5 +113,5 @@ pub async fn send_vote(cluster: String, payload: Vec<u8>, chan: Channel) -> Resu
         .context(ERR_PEER_RPC_FAILURE)?
         .into_inner()
         .payload;
-    utils::bin_decode(&response_payload).context(utils::ERR_DECODE_RAFT_RPC)
+    utils::decode_flexbuf(&response_payload).context(utils::ERR_DECODE_RAFT_RPC_RESPONSE)
 }

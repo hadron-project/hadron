@@ -97,9 +97,8 @@ impl Network {
         let peer_server = Self::build_peer_server(node_id, peer_network_tx, client_network_tx.clone(), config.clone(), server_shutdown_rx)?;
         let client_server = Self::build_client_server(node_id, client_network_tx, config.clone(), server_shutdown_tx.subscribe())?;
 
-        // TODO:
-        // - create a network maintenance loop which will check all peer sockets. Any which have disappeared from
-        // the discovery system will be liveness checked and reaped if they are dead. Emit update on peers_tx channel.
+        // TODO: setup an unordered futures stream of peers which have disappeared from the discovery system
+        // and which need to be healthchecked until we can safely remove them or until they reappear and we preserve.
 
         let this = Self {
             node_id,
@@ -139,9 +138,11 @@ impl Network {
         }
 
         // Graceful shutdown.
+        tracing::debug!("network is shutting down");
         let _ = self.server_shutdown_tx.send(()); // Shutsdown all network listeners.
         let _ = self.peer_server.await;
         let _ = self.client_server.await;
+        tracing::debug!("network shutdown");
     }
 
     #[tracing::instrument(level = "trace", skip(self, req))]
@@ -172,7 +173,8 @@ impl Network {
         tracing::trace!("handling discovery changeset");
         // Create a new peer connection for each newly discovered peer.
         for addr in changeset.new_peers {
-            if self.socket_to_peer_map.contains_key(&addr) {
+            if let Some(socket_info) = self.socket_to_peer_map.get_mut(&addr) {
+                socket_info.discovery_state = DiscoveryState::Observed;
                 continue;
             }
             self.socket_to_peer_map.insert(

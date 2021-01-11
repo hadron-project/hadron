@@ -1,52 +1,6 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Details of a client ephemeral messaging subscription.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MessagingSub {
-    /// The namespace which this subscription pertains to.
-    #[prost(string, tag = "1")]
-    pub namespace: std::string::String,
-    /// The topic matcher this subscription is using.
-    #[prost(string, tag = "2")]
-    pub topic: std::string::String,
-}
-/// Details of a client RPC subscription.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RpcSub {
-    /// The namespace which this subscription pertains to.
-    #[prost(string, tag = "1")]
-    pub namespace: std::string::String,
-    /// The endpoint which this subscription pertains to.
-    #[prost(string, tag = "2")]
-    pub endpoint: std::string::String,
-}
-/// Details of a client Stream subscription.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StreamSub {
-    /// The namespace which this subscription pertains to.
-    #[prost(string, tag = "1")]
-    pub namespace: std::string::String,
-    /// The name of the stream which the subscription pertains to.
-    #[prost(string, tag = "2")]
-    pub stream: std::string::String,
-    /// The name of the consumer group which the subscription pertains to.
-    #[prost(string, tag = "3")]
-    pub consumer_group: std::string::String,
-}
-/// Details of a client Pipeline subscription.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PipelineSub {
-    /// The namespace which this subscription pertains to.
-    #[prost(string, tag = "1")]
-    pub namespace: std::string::String,
-    /// The name of the pieline which the subscription pertains to.
-    #[prost(string, tag = "2")]
-    pub pipeline: std::string::String,
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// A handshake frame holding all data needed for a successful handshake between peers.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HandshakeMsg {

@@ -28,7 +28,7 @@ statefulSet:
   ## Server Config
   server:
     ## Logging configuration.
-    logging: "error,hadron=trace"
+    logging: "error,hadrond=trace"
     ## The port which client network traffic is to use.
     clientPort: 7000
     ## The port which cluster internal network traffic is to use.
@@ -70,6 +70,8 @@ statefulSet:
     discoveryBackend: DNS
     ## The DNS name to use for service discovery.
     dnsName: "*.hadron-internal.default.svc.cluster.local."
+    ## The interval in seconds which the DNS backend will poll for DNS updates.
+    dnsInterval: 5
 
   ## Client Config
   client:

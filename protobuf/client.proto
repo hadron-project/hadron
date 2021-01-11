@@ -77,11 +77,6 @@ service Client {
   rpc PipelineStageSub(stream PipelineStageSubClient) returns (stream PipelineStageSubServer);
 
   // Update the schema of the Hadron cluster.
-  //
-  // This is the one endpoint used for making updates to a Hadron cluster's schema. The given
-  // payload should be an array of YAML documents describing schema updates.
-  //
-  // TODO: update guide on how schema management is setup, changeset docs, &c.
   rpc UpdateSchema(UpdateSchemaRequest) returns (UpdateSchemaResponse);
 }
 
@@ -154,8 +149,28 @@ message PipelineStageSubServer {}
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 message UpdateSchemaRequest {
+  oneof update {
+    UpdateSchemaOneOff oneoff = 1;
+    UpdateSchemaManaged managed = 2;
+  }
+}
+
+// A one-off schema update, which is not guaranteed to be idempotent.
+message UpdateSchemaOneOff {
   // A set of Hadron schema documents to apply to the system.
   string schema = 1;
+}
+
+// An idempotent managed schema update.
+message UpdateSchemaManaged {
+  // The branch name of this set of schema updates.
+  string branch = 1;
+  // The timestamp of this set of schema updates.
+  //
+  // This should be an epoch timestamp with millisecond precision.
+  int64 timestamp = 2;
+  // A set of Hadron schema documents to apply to the system.
+  string schema = 3;
 }
 
 message UpdateSchemaResponse {}

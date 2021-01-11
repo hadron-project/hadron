@@ -63,6 +63,8 @@ spec:
               value: {{.Values.statefulSet.clustering.discoveryBackend}}
             - name: DISCOVERY_DNS_NAME
               value: {{.Values.statefulSet.clustering.dnsName | quote}}
+            - name: DISCOVERY_DNS_INTERVAL
+              value: {{.Values.statefulSet.clustering.dnsInterval | quote}}
 
             ## Client Config
             - name: CLIENT_LIVENESS_THRESHOLD

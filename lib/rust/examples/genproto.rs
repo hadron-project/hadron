@@ -1,3 +1,5 @@
+//! Generate the protobuf code used by the client.
+
 use anyhow::{Context, Result};
 
 fn main() -> Result<()> {
@@ -5,7 +7,7 @@ fn main() -> Result<()> {
     tonic_build::configure()
         .build_server(true)
         .out_dir("src/proto")
-        .compile(&["../protobuf/client.proto"], &["../protobuf"])
+        .compile(&["../../protobuf/client.proto"], &["../../protobuf"])
         .context("error during client.proto build")?;
 
     Ok(())

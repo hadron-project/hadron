@@ -18,6 +18,7 @@ const DNS_SYS_CONF_ERR: &str = "failed to read system DNS config; on *nix system
 pub struct DnsDiscovery {
     _config: Arc<Config>,
     discovery_dns_name: String,
+    discovery_dns_interval: u16,
     tx: watch::Sender<Vec<PeerSrv>>,
     /// Application shutdown signal.
     shutdown: watch::Receiver<bool>,
@@ -25,10 +26,14 @@ pub struct DnsDiscovery {
 
 impl DnsDiscovery {
     /// Create a new DNS peer discovery backend instance.
-    pub fn new(_config: Arc<Config>, tx: watch::Sender<Vec<PeerSrv>>, discovery_dns_name: String, shutdown: watch::Receiver<bool>) -> Self {
+    pub fn new(
+        _config: Arc<Config>, tx: watch::Sender<Vec<PeerSrv>>, discovery_dns_name: String, discovery_dns_interval: u16,
+        shutdown: watch::Receiver<bool>,
+    ) -> Self {
         Self {
             _config,
             discovery_dns_name,
+            discovery_dns_interval,
             tx,
             shutdown,
         }
@@ -39,22 +44,27 @@ impl DnsDiscovery {
     }
 
     async fn run(self) {
+        let resolver = self.build_resolver().await;
+        self.discovery_loop(resolver).await;
+        tracing::debug!("dns discovery shutdown");
+    }
+
+    async fn build_resolver(&self) -> TokioAsyncResolver {
         loop {
-            // Build the async resolver.
-            let resolver = match TokioAsyncResolver::tokio_from_system_conf().await {
-                Ok(resolver) => resolver,
+            match TokioAsyncResolver::tokio_from_system_conf().await {
+                // If we've successfully built the resolver, then return it.
+                Ok(resolver) => return resolver,
+                // Else, we delay for a bit, and attempt to build it again by continuing the loop.
                 Err(err) => {
                     tracing::error!(error = %err, "{}", DNS_SYS_CONF_ERR);
-                    tokio::time::delay_for(std::time::Duration::from_secs(10)).await;
+                    tokio::time::delay_for(std::time::Duration::from_secs(self.discovery_dns_interval as u64)).await;
                     continue;
                 }
             };
-
-            // Perform a discovery cycle based on the configured cycle interval.
-            self.discovery_loop(resolver).await;
         }
     }
 
+    /// Execute the DNS discovery loop, and don't stop until the shutdown signal is received.
     async fn discovery_loop(&self, resolver: TokioAsyncResolver) {
         loop {
             if *self.shutdown.borrow() {
@@ -63,8 +73,8 @@ impl DnsDiscovery {
             let discovery_fut = resolver.srv_lookup(self.discovery_dns_name.as_str());
             let timeout = std::time::Duration::from_secs(10);
             match tokio::time::timeout(timeout, discovery_fut).await {
-                Err(err) => tracing::error!(error = %err, "timeout during DNS discovery cycle"),
-                Ok(Err(err)) => tracing::error!(error = %err, "error during DNS discovery cycle"),
+                Err(err) => tracing::debug!(error = %err, "timeout during DNS discovery cycle"),
+                Ok(Err(err)) => tracing::debug!(error = %err, "error during DNS discovery cycle"),
                 Ok(Ok(srv_records)) => {
                     let addrs = srv_records
                         .into_iter()
@@ -79,7 +89,7 @@ impl DnsDiscovery {
             if *self.shutdown.borrow() {
                 return;
             }
-            tokio::time::delay_for(std::time::Duration::from_secs(10)).await; // TODO: make the cycle configurable.
+            tokio::time::delay_for(std::time::Duration::from_secs(self.discovery_dns_interval as u64)).await;
         }
     }
 }

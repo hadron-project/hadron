@@ -8,6 +8,7 @@ use tonic::{async_trait, transport::Channel, Request, Response, Status, Streamin
 
 use crate::auth::TokenCredentials;
 use crate::config::Config;
+use crate::models;
 pub use crate::proto::client::client_client::ClientClient;
 use crate::proto::client::client_server::Client;
 pub use crate::proto::client::client_server::ClientServer;
@@ -124,9 +125,10 @@ impl Client for ClientService {
 
     async fn update_schema(&self, req: Request<UpdateSchemaRequest>) -> TonicResult<Response<UpdateSchemaResponse>> {
         let creds = self.must_get_token(req.metadata())?;
-        let (tx, rx) = oneshot::channel();
         let req = req.into_inner();
-        let _ = self.network.send(ClientRequest::UpdateSchema(UpdateSchema { req, tx, creds }));
+        let validated = models::SchemaUpdate::decode_and_validate(&req).map_err(utils::status_from_err)?;
+        let (tx, rx) = oneshot::channel();
+        let _ = self.network.send(ClientRequest::UpdateSchema(UpdateSchema { req, validated, tx, creds }));
         rx.await.map_err(status_from_rcv_error).and_then(|res| res).map(Response::new)
     }
 }
@@ -201,6 +203,7 @@ pub struct PipelineStageSub {
 
 pub struct UpdateSchema {
     pub req: UpdateSchemaRequest,
+    pub validated: models::SchemaUpdate,
     pub tx: oneshot::Sender<TonicResult<UpdateSchemaResponse>>,
     pub creds: TokenCredentials,
 }
@@ -287,6 +290,6 @@ async fn forward_update_schema(req: UpdateSchema, mut client: ClientClient<Chann
 
 fn build_request_with_creds<T>(req: T, creds: TokenCredentials) -> Request<T> {
     let mut request = Request::new(req);
-    request.metadata_mut().insert(utils::HEADER_X_HADRON_AUTH, creds.auth_header);
+    request.metadata_mut().insert(utils::HEADER_X_HADRON_AUTH, creds.header);
     request
 }

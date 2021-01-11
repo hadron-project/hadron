@@ -1,17 +1,54 @@
 //! Cluster Raft Controller (CRC)
 //!
-//! This controller is responsible for all cluster-wide changes, all of which go through Raft.
-//! These types of changes include but are not limited to:
+//! The CRC is responsible for controlling the state of the Hadron cluster as a whole, and
+//! exposes a control signal to the application in order to drive the system. All cluster-wide
+//! changes go through Raft. These types of changes include but are not limited to:
 //!
 //! - Hadron cluster membership.
-//! - Leadership designations for other controllers within the Hadron cluster.
+//! - Leadership designations for other control groups within the Hadron cluster.
 //! - Schema management for user defined resources (Namespaces, Streams &c).
 //! - AuthN & authZ resources such as users and tokens.
 //!
-//! Leadership designation from this controller for other controllers is based on a monotonically
+//! ## Control Groups
+//! The CRC manages other control groups within the Hadron system. Controllers form groups based
+//! on the controller type, and other assignments from the CRC. All control group assignments go
+//! through the CRC Raft, and all nodes in the cluster use that data from Raft to drive control
+//! group resources.
+//!
+//! ### CRC Control Group Heartbeats
+//! The CRC uses a cluster-wide Raft. The AppendEntries RPC system is used to detect when nodes in the
+//! cluster begin to fail heartbeats. This data is immediately available to the CRC leader, which uses
+//! this data to drive the control group leader nomination algorithm. The heartbeat algorithm follows:
+//!
+//! - Raft uses the AppendEntries RPC system to heartbeat members of the cluster.
+//! - The CRC uses this same heartbeat system to detect when follower nodes of the cluster are failing
+//!   to respond to heartbeats.
+//! - If too many consecutive heartbeat failures occur, the CRC will reckon that node as being down
+//!   with respect to control group leadership. If that node is a control group leader, then the CRC
+//!   will need to nominate a new leader.
+//!
+//! ### CRC Control Group Leader Nomination Algorithm
+//! Leadership nomination from the CRC for other control groups is based on a monotonically
 //! increasing term per control group, which is disjoint from Raft's leadership terms. Conflicts
-//! between leadership designation is easily and safely resolved based on designated leadership terms.
+//! between leadership designation is easily and safely resolved based on designated leadership
+//! terms. The algorithm is as follows:
+//!
+//! - CRC detects a dead control group leader & will immediately commit a Raft entry which
+//!   increments the term for the control group. Other nodes will detect this change via the
+//!   cluster Raft & then the members of the control group will no longer accept replication
+//!   requests from the old leader if it were to restart.
+//! - Once that Raft term change has committed, the control group will be without a leader. The
+//!   CRC will then query all control group members asking for commit index & current term. Once
+//!   a majority of nodes have responded with the correct term, the CRC will select a new leader
+//!   from the group bearing the majority consensus on the commit index. That nomination will go
+//!   through Raft.
+//! - All control group members will receive the new leader nomination for the term, and will then
+//!   continue as normal.
 
+#![allow(dead_code)] // TODO: remove this
+
+pub mod command;
+mod macros;
 mod network;
 mod storage;
 
@@ -27,9 +64,10 @@ use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
 use crate::config::Config;
+use crate::crc::command::CRCCommand;
 use crate::crc::network::{HCoreNetwork, RaftClientRequest, RaftClientResponse};
 use crate::crc::storage::HCoreStorage;
-use crate::network::{PipelineStageSub, StreamPub, StreamSub, StreamUnsub, Transaction, UpdateSchema};
+use crate::network::UpdateSchema;
 use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
 use crate::utils;
 use crate::NodeId;
@@ -48,11 +86,11 @@ pub struct CRC {
     /// All active communication channels managed by the network layer.
     peer_channels: watch::Receiver<Arc<HashMap<NodeId, Channel>>>,
     /// A channel of requests coming in from clients & peers.
-    requests: mpsc::UnboundedReceiver<HCoreRequest>,
+    requests: mpsc::UnboundedReceiver<CRCRequest>,
     /// A channel used for forwarding requests to a peer node.
-    forward_tx: mpsc::UnboundedSender<(HCoreClientRequest, Option<NodeId>)>,
+    forward_tx: mpsc::UnboundedSender<(CRCClientRequest, Option<NodeId>)>,
     /// A channel used for forwarding requests to a peer node.
-    forward_rx: mpsc::UnboundedReceiver<(HCoreClientRequest, Option<NodeId>)>,
+    forward_rx: mpsc::UnboundedReceiver<(CRCClientRequest, Option<NodeId>)>,
     /// The Raft instance used for mutating the storage layer.
     raft: CRCRaft,
     /// A handle to the Raft's metrics channel.
@@ -60,18 +98,18 @@ pub struct CRC {
     /// Application shutdown channel.
     shutdown: watch::Receiver<bool>,
 
-    _net: Arc<HCoreNetwork>,
+    net: Arc<HCoreNetwork>,
     pub(self) storage: Arc<HCoreStorage>,
 }
 
 impl CRC {
     pub async fn new(
         id: NodeId, config: Arc<Config>, peer_channels: watch::Receiver<Arc<HashMap<NodeId, Channel>>>,
-        requests: mpsc::UnboundedReceiver<HCoreRequest>, shutdown: watch::Receiver<bool>,
-    ) -> Result<Self> {
+        requests: mpsc::UnboundedReceiver<CRCRequest>, shutdown: watch::Receiver<bool>,
+    ) -> Result<(Self, mpsc::UnboundedReceiver<CRCCommand>)> {
         // Initialize network & storage interfaces.
         let net = Arc::new(HCoreNetwork::new(peer_channels.clone()));
-        let storage = HCoreStorage::new(id, config.clone()).await?;
+        let (storage, commands_rx) = HCoreStorage::new(id, config.clone()).await?;
         let storage = Arc::new(storage);
 
         // Initialize Raft.
@@ -80,7 +118,7 @@ impl CRC {
                 .heartbeat_interval(config.raft_heartbeat_interval_millis as u64)
                 .election_timeout_min(config.raft_election_timeout_min as u64)
                 .election_timeout_max(config.raft_election_timeout_max as u64)
-                .snapshot_policy(SnapshotPolicy::LogsSinceLast(200_000))
+                .snapshot_policy(SnapshotPolicy::LogsSinceLast(200_000)) // TODO: make this configurable.
                 .validate()
                 .context("invalid raft cluster configuration")?,
         );
@@ -88,7 +126,7 @@ impl CRC {
         let metrics = raft.metrics();
 
         let (forward_tx, forward_rx) = mpsc::unbounded_channel();
-        Ok(Self {
+        let this = Self {
             id,
             config,
             peer_channels,
@@ -98,9 +136,15 @@ impl CRC {
             raft,
             metrics,
             shutdown,
-            _net: net,
+            net,
             storage,
-        })
+        };
+        Ok((this, commands_rx))
+        // TODO: RESUME HERE <<<<<<<<<
+        // - this CRC controller is responsible for control group placement based on node IDs of cluster members.
+        // - if this node, by ID, does not need to create a new SPC (stream partition controller), then the
+        // CRC should not emit an event indicating such.
+        // - this is a control signal.
     }
 
     pub fn spawn(self) -> JoinHandle<()> {
@@ -122,20 +166,22 @@ impl CRC {
         }
 
         // Graceful shutdown. Here, we don't exit until all of our main channels have been drained.
+        tracing::debug!("crc is shutting down");
         while let Ok(req) = self.requests.try_recv() {
             self.handle_request(req).await;
         }
         while let Ok(forward) = self.forward_rx.try_recv() {
             self.handle_forward_request(forward.0, forward.1).await;
         }
+        tracing::debug!("crc shutdown");
     }
 
     #[tracing::instrument(level = "trace", skip(self, req))]
-    async fn handle_request(&mut self, req: HCoreRequest) {
+    async fn handle_request(&mut self, req: CRCRequest) {
         match req {
-            HCoreRequest::Client(client_req) => {
+            CRCRequest::Client(client_req) => {
                 // Forward the request if needed.
-                match self.metrics.borrow().current_leader {
+                match self.raft.current_leader().await {
                     Some(leader) if leader == self.id => (), // This is the leader node, continue.
                     other_node_or_unknown => {
                         // A different node is the leader, so forward the request.
@@ -144,17 +190,12 @@ impl CRC {
                     }
                 }
                 match client_req {
-                    HCoreClientRequest::Transaction(req) => self.handle_request_transaction(req).await,
-                    HCoreClientRequest::StreamPub(req) => self.handle_request_stream_pub(req).await,
-                    HCoreClientRequest::StreamSub(req) => self.handle_request_stream_sub(req).await,
-                    HCoreClientRequest::StreamUnsub(req) => self.handle_request_stream_unsub(req).await,
-                    HCoreClientRequest::PipelineStageSub(req) => self.handle_request_pipeline_stage_sub(req).await,
-                    HCoreClientRequest::UpdateSchema(req) => self.handle_request_update_schema(req).await,
+                    CRCClientRequest::UpdateSchema(req) => self.handle_request_update_schema(req).await,
                 }
             }
-            HCoreRequest::RaftAppendEntries(req) => self.handle_raft_append_entries_rpc(req).await,
-            HCoreRequest::RaftInstallSnapshot(req) => self.handle_raft_install_snapshot_rpc(req).await,
-            HCoreRequest::RaftVote(req) => self.handle_raft_vote_rpc(req).await,
+            CRCRequest::RaftAppendEntries(req) => self.handle_raft_append_entries_rpc(req).await,
+            CRCRequest::RaftInstallSnapshot(req) => self.handle_raft_install_snapshot_rpc(req).await,
+            CRCRequest::RaftVote(req) => self.handle_raft_vote_rpc(req).await,
         }
     }
 
@@ -198,60 +239,40 @@ impl CRC {
 }
 
 /// All request variants which the Hadron core data layer can handle.
-pub enum HCoreRequest {
-    Client(HCoreClientRequest),
+pub enum CRCRequest {
+    Client(CRCClientRequest),
     RaftAppendEntries(RaftAppendEntries),
     RaftVote(RaftVote),
     RaftInstallSnapshot(RaftInstallSnapshot),
 }
 
-impl HCoreRequest {
+impl CRCRequest {
     pub(super) fn respond_with_error(self, err: anyhow::Error) {
         match self {
-            HCoreRequest::Client(HCoreClientRequest::Transaction(val)) => {
+            CRCRequest::Client(CRCClientRequest::UpdateSchema(val)) => {
                 let _ = val.tx.send(utils::map_result_to_status(Err(err)));
             }
-            HCoreRequest::Client(HCoreClientRequest::StreamPub(val)) => {
+            CRCRequest::RaftAppendEntries(val) => {
                 let _ = val.tx.send(utils::map_result_to_status(Err(err)));
             }
-            HCoreRequest::Client(HCoreClientRequest::StreamSub(val)) => {
+            CRCRequest::RaftVote(val) => {
                 let _ = val.tx.send(utils::map_result_to_status(Err(err)));
             }
-            HCoreRequest::Client(HCoreClientRequest::StreamUnsub(val)) => {
-                let _ = val.tx.send(utils::map_result_to_status(Err(err)));
-            }
-            HCoreRequest::Client(HCoreClientRequest::PipelineStageSub(val)) => {
-                let _ = val.tx.send(utils::map_result_to_status(Err(err)));
-            }
-            HCoreRequest::Client(HCoreClientRequest::UpdateSchema(val)) => {
-                let _ = val.tx.send(utils::map_result_to_status(Err(err)));
-            }
-            HCoreRequest::RaftAppendEntries(val) => {
-                let _ = val.tx.send(utils::map_result_to_status(Err(err)));
-            }
-            HCoreRequest::RaftVote(val) => {
-                let _ = val.tx.send(utils::map_result_to_status(Err(err)));
-            }
-            HCoreRequest::RaftInstallSnapshot(val) => {
+            CRCRequest::RaftInstallSnapshot(val) => {
                 let _ = val.tx.send(utils::map_result_to_status(Err(err)));
             }
         }
     }
 }
 
-impl From<HCoreClientRequest> for HCoreRequest {
-    fn from(src: HCoreClientRequest) -> Self {
-        HCoreRequest::Client(src)
+impl From<CRCClientRequest> for CRCRequest {
+    fn from(src: CRCClientRequest) -> Self {
+        CRCRequest::Client(src)
     }
 }
 
 /// All requests variants which the Hadron core data layer can handle, specifically those which
 /// can come from clients.
-pub enum HCoreClientRequest {
-    Transaction(Transaction),
-    StreamPub(StreamPub),
-    StreamSub(StreamSub),
-    StreamUnsub(StreamUnsub),
-    PipelineStageSub(PipelineStageSub),
+pub enum CRCClientRequest {
     UpdateSchema(UpdateSchema),
 }

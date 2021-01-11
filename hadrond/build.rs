@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     // Compile client communications protobuf code.
     tonic_build::configure()
         .build_server(true)
-        .type_attribute(".", "#[derive(super::Serialize, super::Deserialize)]")
+        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .out_dir("src/proto")
         .compile(&[&client_path], &[&proto_dir])
         .context("error during client.proto build")?;

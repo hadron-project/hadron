@@ -2,8 +2,8 @@ Pipelines
 =========
 Pipelines are multi-stage data workflows, composed of multiple streams, structured as a directed acyclic graph (DAG). Pipelines provide transactional guarantees for multi-stage asynchronous workflows. Pipelines orchestrate the delivery of events to specific pipeline stages, collect outputs from pipeline stages, and enforce stage execution order. Pipelines provide a source of truth for codifying asynchronous event-driven architectures.
 
-## DDL
-Pipelines are declared in YAML as part of the [Schema Management system](./schema.md). The DDL for the `Pipeline` object is as follows:
+## Schema
+Pipelines are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Pipeline` object is as follows:
 
 ```yaml
 ## The kind of object being defined. In this case, a pipeline.
@@ -16,10 +16,26 @@ spec:
   name: required string
 
   ## The stream from which this pipeline may be triggered. Only events on this
-  ## stream may be used to trigger this pipeline, though triggering piplines
-  ## must still be explicit. The trigger stream must exist in the same
-  ## namespace as the pipeline.
-  triggerStream: required string
+  ## stream may be used to trigger this pipeline. The trigger stream must exist
+  ## in the same namespace as the pipeline.
+  inputStream: required string
+
+  ## Optional automatic triggers for this pipeline based on event types of
+  ## events on the input stream.
+  ##
+  ## Pipelines can be triggered manually at any point in time, both while
+  ## publishing events to the input stream, or via direct trigger call.
+  ## Additionally, pipelines can be configured with automatic triggers which
+  ## will match the event type of events published to the input stream and will
+  ## trigger the pipeline if a match is found.
+  ##
+  ## Manual and automatic triggers are only ever evaluated after an event has been
+  ## committed to the partition on which it was published, i.e. when it has been
+  ## replicated to a majority of replicas of the partition. Furthermore, pipeline
+  ## triggers are evaluated by separate controllers within the Hadron system, as
+  ## such they do not have an impact on stream throughput.
+  triggers:
+    - string
 
   ## A number used to track consecutive updates to the pipeline definition. If
   ## the pipeline is updated using an old serial number or the same number

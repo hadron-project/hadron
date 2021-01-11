@@ -1,8 +1,11 @@
+#![allow(unused_imports)] // TODO: remove this.
+#![allow(unused_variables)] // TODO: remove this.
+#![allow(unused_mut)] // TODO: remove this.
 #![allow(dead_code)] // TODO: remove this.
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use serde::{Deserialize, Serialize};
-use tonic::metadata::{Ascii, MetadataValue};
+use tonic::metadata::AsciiMetadataValue;
 
 use crate::config::Config;
 use crate::error::AppError;
@@ -16,28 +19,38 @@ const BEARER_PREFIX: &str = "bearer ";
 /// A token credenitals set, containing the ID of the token and other associated data.
 ///
 /// This is construct by cryptographically verifying a token, and validating its claims.
+#[derive(Clone)]
 pub struct TokenCredentials {
     /// The ID of this token.
     pub id: u64,
-    /// The original value of auth the header.
-    pub auth_header: MetadataValue<Ascii>,
+    /// The raw string token.
+    pub token: String,
+    /// The original token header of these credentials.
+    pub header: AsciiMetadataValue,
 }
 
 impl TokenCredentials {
     /// Extract a token from the given header value bytes.
-    pub fn from_auth_header(header: MetadataValue<Ascii>, _config: &Config) -> Result<Self> {
+    pub fn from_auth_header(header: AsciiMetadataValue, _config: &Config) -> Result<Self> {
         let header_str = header
             .to_str()
             .map_err(|_| anyhow!("invalid credentials provided, must be a valid string value"))?;
+
+        // Split the header on the bearer prefix & ensure the leading segment is empty.
+        let mut splits = header_str.splitn(2, BEARER_PREFIX);
         ensure!(
-            header_str.starts_with(BEARER_PREFIX),
+            splits.next() == Some(""),
             "invalid credentials provided, token credentials header must begin with 'bearer '",
         );
-        ensure!(header_str.len() > 7, "invalid credentials provided, no token detected");
-        let token = &header_str[8..];
+
+        // Check the final segment and ensure we have a populated value.
+        let token = match splits.next() {
+            Some(token) if !token.is_empty() => token.to_string(),
+            _ => bail!("invalid credentials provided, no token detected"),
+        };
         tracing::trace!(%token, "auth token detected");
         // let claims: Claims = jsonwebtoken::decode(token.as_ref()) // TODO: finish this up and remove stubbed claims below.
-        Ok(TokenCredentials { id: 0, auth_header: header })
+        Ok(TokenCredentials { id: 0, token, header })
     }
 }
 

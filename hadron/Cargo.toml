@@ -1,22 +1,23 @@
 [package]
 authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
 edition = "2018"
-name = "hadron"
+name = "hadron-cli"
 version = "0.1.0"
-description = "The Hadron client."
+description = "The Hadron CLI."
 
 [dependencies]
-anyhow = "1"
+anyhow = "1.0.37"
 futures = "0.3"
+hadron = { version = "0.1.0", path = "../lib/rust" }
+lazy_static = "1.4.0"
 prost = "0.6"
+regex = "1.4.3"
+serde = { version = "1.0.120", features = ["derive"] }
+serde_yaml = "0.8.15"
+structopt = "0.3.21"
+structopt-derive = "0.4.14"
+tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "io-driver", "io-util", "time", "macros", "fs"] }
 tonic = { version = "0.3", default-features = false, features = ["transport", "codegen", "tls", "prost"] }
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-futures = "0.2.4"
 tracing-subscriber = "0.2.15"
-
-[dev-dependencies]
-tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "io-driver", "io-util", "time", "macros", "fs"] }
-
-[build-dependencies]
-anyhow = "1"
-tonic-build = "0.3"

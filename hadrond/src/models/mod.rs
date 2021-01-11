@@ -1,75 +1,65 @@
-//! Data Definition Language (DDL) models.
+//! Data schema models.
 
 #![allow(dead_code)] // TODO: remove this.
 
-mod validation;
+mod impls;
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
-/// All Data Definition Language statements availabe in Hadron.
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
+/// A schema update to be applied to the system.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(tag = "updateType")]
+pub enum SchemaUpdate {
+    OneOff(SchemaUpdateOneOff),
+    Managed(SchemaUpdateManaged),
+}
+
+/// A one-off schema update to be applied to the system.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub struct SchemaUpdateOneOff {
+    /// The set of schema statements of this schema update.
+    pub statements: Vec<SchemaStatement>,
+}
+
+/// A managed schema update to be applied to the system.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub struct SchemaUpdateManaged {
+    /// The branch name of the schema update.
+    pub branch: String,
+    /// The timestamp of the schema update.
+    pub timestamp: i64,
+    /// The set of schema statements of this schema update.
+    pub statements: Vec<SchemaStatement>,
+}
+
+/// All available schema statements in Hadron.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(tag = "kind")]
-pub enum DDLStatement {
-    /// A changeset statement.
-    ChangeSet(Object<ChangeSet>),
+pub enum SchemaStatement {
     /// A namespace definition.
     Namespace(Namespace),
     /// A stream definition.
-    Stream(Object<Stream>),
+    Stream(Stream),
     /// A pipeline definition.
-    Pipeline(Object<Pipeline>),
+    Pipeline(Pipeline),
+    /// An RPC endpoint definition.
+    Endpoint(Endpoint),
 }
 
-/// A DDL schema update to be applied to the system.
-#[derive(Debug, Eq, PartialEq)]
-pub struct DDLSchemaUpdate {
-    /// The changeset declaration.
-    pub changeset: ChangeSet,
-    /// The set of DDL statements composing this changeset.
-    pub statements: Vec<DDL>,
-}
-
-/// All Data Definition Language variants availabe in Hadron.
-#[derive(Debug, Eq, PartialEq)]
-pub enum DDL {
-    Namespace(Namespace),
-    Stream(Object<Stream>),
-    Pipeline(Object<Pipeline>),
-}
-
-/// Common metadata found as part of most DDL objects.
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
+/// Common metadata found as part of most schema statements.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Metadata {
-    /// The name associated with the object.
+    /// The name associated with this object.
     pub name: String,
-    /// The namespace to which the object applies.
+    /// The namespace to which this object applies.
     pub namespace: String,
-    /// A description of the object.
+    /// A description of this object.
     #[serde(default)]
     pub description: String,
 }
 
-/// A wrapper type for objects with metadata and a spec.
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub struct Object<T: Serialize + DeserializeOwned + Eq + PartialEq> {
-    pub metadata: Metadata,
-    #[serde(bound = "T: Serialize + DeserializeOwned + Eq + PartialEq")]
-    pub spec: T,
-}
-
-/// A DDL changeset.
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(tag = "kind")]
-pub enum ChangeSet {
-    OneOff,
-    Branch {
-        /// The name of the DDL branch to which this changeset belongs.
-        name: String,
-    },
-}
-
 /// A namespace for grouping resources.
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Namespace {
     /// The unique identifier of this namespace.
     pub name: String,
@@ -79,58 +69,75 @@ pub struct Namespace {
 }
 
 /// A durable log of events.
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(tag = "streamType")]
 pub enum Stream {
-    /// A standard stream with a configurable number of partitions.
-    Standard {
-        /// The number of partitions to create for this stream.
-        ///
-        /// Partitions in Hadron are used solely for increasing write throughput. They have no
-        /// impact on stream consumers. That is, even if a stream has a single partition, a
-        /// single consumer group with multiple consumers is still able to process the stream in
-        /// parallel. Consult the documentation on stream consumers for more details.
-        partitions: u8,
-        /// The replication factor of each partition of this stream.
-        #[serde(rename = "replicationFactor")]
-        replication_factor: u8,
-        /// An optional TTL duration specifying how long records are to be kept on the stream.
-        ///
-        /// If not specified, then records will stay on the stream forever.
-        ttl: Option<String>,
-    },
-    /// A single-partition stream optimized for use with a database "out table" CDC pattern.
+    Standard(StandardStream),
+    OutTable(OutTableStream),
+}
+/// A standard stream with a configurable number of partitions.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StandardStream {
+    /// Object metadata.
+    #[serde(flatten)]
+    pub metadata: Metadata,
+    /// The number of partitions to create for this stream.
     ///
-    /// Every message written to an OutTable stream must have a unique, orderd ID. This is commonly
-    /// seen in RDBMS systems as the monotonically increasing ID sequence for table primary keys.
+    /// Partitions in Hadron are used solely for increasing write throughput. They have no
+    /// impact on stream consumers. That is, even if a stream has a single partition, a
+    /// single consumer group with multiple consumers is still able to process the stream in
+    /// parallel. Consult the documentation on stream consumers for more details.
+    pub partitions: u32,
+    /// The replication factor of each partition of this stream.
+    pub replication_factor: u32,
+    /// An optional TTL duration specifying how long records are to be kept on the stream.
     ///
-    /// This stream type guarantees exactly once production of messages to this stream. If a
-    /// duplicate message — a message bearing the same ID — is published to this stream, it will
-    /// no-op. This provides a strict server-side guarantee that there will be no duplicates on
-    /// OutTable streams.
-    OutTable {
-        /// The replication factor for this stream's single partition.
-        #[serde(rename = "replicationFactor")]
-        replication_factor: u8,
-        /// An optional TTL duration specifying how long records are to be kept on the stream.
-        ///
-        /// If not specified, then records will stay on the stream forever.
-        ttl: Option<String>,
-    },
+    /// If not specified, then records will stay on the stream forever.
+    pub ttl: Option<String>,
+}
+
+/// A single-partition stream optimized for use with a database "out table" CDC pattern.
+///
+/// Every message written to an OutTable stream must have a unique, orderd ID. This is commonly
+/// seen in RDBMS systems as the monotonically increasing ID sequence for table primary keys.
+///
+/// This stream type guarantees exactly once production of messages to this stream. If a
+/// duplicate message — a message bearing the same ID — is published to this stream, it will
+/// no-op. This provides a strict server-side guarantee that there will be no duplicates on
+/// OutTable streams.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OutTableStream {
+    /// Object metadata.
+    #[serde(flatten)]
+    pub metadata: Metadata,
+    /// The replication factor for this stream's single partition.
+    pub replication_factor: u8,
+    /// An optional TTL duration specifying how long records are to be kept on the stream.
+    ///
+    /// If not specified, then records will stay on the stream forever.
+    pub ttl: Option<String>,
 }
 
 /// A multi-stage data workflow.
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Pipeline {
-    /// The name of the stream which can trigger this pipeline.
-    #[serde(rename = "triggerStream")]
-    pub trigger_stream: String,
+    /// Object metadata.
+    #[serde(flatten)]
+    pub metadata: Metadata,
+    /// The name of the stream which will trigger this pipeline.
+    pub input_stream: String,
+    /// Event type matchers which will trigger this pipeline.
+    #[serde(default)]
+    pub triggers: Vec<String>,
     /// The stages of this pipeline.
     pub stages: Vec<PipelineStage>,
 }
 
 /// A single pipeline stage.
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct PipelineStage {
     /// The name of this pipeline stage, which is unique per pipeline.
     pub name: String,
@@ -143,7 +150,7 @@ pub struct PipelineStage {
 }
 
 /// A pipeline stage output definition.
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct PipelineStageOutput {
     /// The name of this pipeline stage output, which is unique per pipeline stage.
     pub name: String,
@@ -151,4 +158,31 @@ pub struct PipelineStageOutput {
     pub stream: String,
     /// The namespace of the output stream.
     pub namespace: String,
+}
+
+/// A RPC endpoint definition.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub struct Endpoint {
+    /// Object metadata.
+    #[serde(flatten)]
+    pub metadata: Metadata,
+    /// The input RPC mode.
+    #[serde(default)]
+    pub input: EndpointMessageFlow,
+    /// The output RPC mode.
+    #[serde(default)]
+    pub output: EndpointMessageFlow,
+}
+
+/// A RPC endpoint message mode.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub enum EndpointMessageFlow {
+    Single,
+    Stream,
+}
+
+impl Default for EndpointMessageFlow {
+    fn default() -> Self {
+        Self::Single
+    }
 }

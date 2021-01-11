@@ -2,6 +2,11 @@ todo
 ====
 Kafka and others help with building EDA apps, Hadron helps more. Pipelines provide a native mechainism which greatly simplifies the building of complex applications.
 
+- two outstanding RESUME statements in code:
+    - Raft peer liveness metrics to be exposed in Raft lib (need to do work there first).
+    - Finish up CRC control signal up to app.
+
+
 ## Controllers
 Build remaining controllers:
 - [ ] stream partition controller (SPC): participates with a group of other SPCs responsible for a single partition of a stream. One leader, >= 0 replicas.
@@ -29,7 +34,7 @@ Build remaining controllers:
     - [ ] perform cycle tests to ensure stage `after` & `dependencies` constraints do not form cycles in the graph
 
 ---
-
+- [ ] design for stream's to optionally register WASM functions as schema validators for events.
 - [ ] open issue for creating initial streams for
     - CRUD on objects in the system
     - stream for metrics
@@ -188,6 +193,8 @@ CONSUMER PATTERNS:
         - stage handler objects are responsible for fetching all of the stage dependencies, which are known by namespace/stream/eventID and which are contained in the stage handler invocation. The handler is then able to pass that info down to the actual stage consumer via channel.
         - the fact that a consumer is actively consuming a stage event is volatile, and held in memory only. A server crash will cause redelivery if the stage was not successfully completed before the crash.
 
+- make pipelines configurable such that they can be automatically triggered by their trigger stream based on the "event type" of the record being published to the stream.
+- pipelines should still be able to be manually triggered based on stream event+id.
 
 
 

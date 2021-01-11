@@ -1,5 +1,7 @@
 #![allow(clippy::unit_arg)]
 #![allow(unused_imports)] // TODO: remove this.
+#![allow(unused_variables)] // TODO: remove this.
+#![allow(unused_mut)] // TODO: remove this.
 #![allow(dead_code)] // TODO: remove this.
 
 mod index;
@@ -13,14 +15,16 @@ use async_raft::async_trait::async_trait;
 use async_raft::raft::{Entry, EntryPayload, MembershipConfig};
 use async_raft::storage::{CurrentSnapshotData, HardState, InitialState};
 use async_raft::RaftStorage;
+use models::SchemaUpdate;
 use prost::Message;
 use sled::{transaction::ConflictableTransactionResult as TxResult, Batch, Config as SledConfig, Db, IVec, Transactional, Tree};
 use tokio::fs::File;
 use tokio::stream::StreamExt;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
-use crate::auth::{Claims, ClaimsV1, UserRole};
+use crate::auth::{Claims, ClaimsV1, TokenCredentials, UserRole};
 use crate::config::Config;
+use crate::crc::command::CRCCommand;
 use crate::crc::network::{RaftClientRequest, RaftClientResponse};
 use crate::crc::storage::index::{HCoreIndex, IndexWriteBatch, IndexWriteOp, NamespaceIndex, PipelineMeta, StreamMeta};
 use crate::error::AppError;
@@ -65,6 +69,8 @@ const TREE_STREAM_INDICES: &str = "stream_indices";
 const TREE_PIPELINES: &str = "pipelines";
 /// The DB tree for pipeline indices data.
 const TREE_PIPELINE_INDICES: &str = "pipeline_indices";
+/// The DB tree for schema branches data.
+const TREE_SCHEMA_BRANCHES: &str = "schema_branches";
 // /// The DB tree for users data.
 // const TREE_USERS: &str = "users";
 // /// The DB tree for tokens data.
@@ -102,6 +108,8 @@ pub struct HCoreStorage {
     /// important to note that we must reduce lock contention as much as possible. This can easily
     /// be achieved by simply dropping the lock guard as soon as possible whenever a lock is taken.
     index: HCoreIndex,
+    /// A channel used for sending CRC commands.
+    commands: mpsc::UnboundedSender<CRCCommand>,
 }
 
 impl HCoreStorage {
@@ -109,7 +117,7 @@ impl HCoreStorage {
     ///
     /// This constructor is fallible as it will attempt to recover state from disk when first
     /// initialized.
-    pub async fn new(id: NodeId, config: Arc<Config>) -> Result<Self> {
+    pub async fn new(id: NodeId, config: Arc<Config>) -> Result<(Self, mpsc::UnboundedReceiver<CRCCommand>)> {
         // Ensure the needed paths are in place for the DB and other needed paths.
         let dbpath = PathBuf::from(&config.storage_data_path).join(CORE_DATA_DIR).join(CORE_DATA_DIR_DB);
         let snapshot_dir = PathBuf::from(&config.storage_data_path).join(CORE_DATA_DIR).join(CORE_DATA_DIR_SNAPS);
@@ -120,20 +128,25 @@ impl HCoreStorage {
             .await
             .context("error creating dir for hadron core database snapshots")?;
 
+        // Build the CRC command channel.
+        let (commands, commands_rx) = mpsc::unbounded_channel();
+
         // Prep DB, open for usage & recover initial system state, building indices &c.
         let (db, trees) = Self::open_db(dbpath).await?;
         let index = Self::recover_system_state(&db).await?;
 
         // TODO: all DB interaction needs to flush_async
 
-        Ok(Self {
+        let this = Self {
             id,
             _config: config,
             snapshot_dir,
             db,
             trees: RwLock::new(trees),
             index,
-        })
+            commands,
+        };
+        Ok((this, commands_rx))
     }
 
     /// Open the database for usage.
@@ -178,7 +191,7 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
         let cfg = Self::spawn_blocking(move || -> Result<Option<MembershipConfig>> {
             for log_entry_res in log.iter().values().rev() {
                 let log_entry = log_entry_res.context(ERR_ITER_FAILURE)?;
-                let entry: Entry<RaftClientRequest> = utils::bin_decode(&log_entry).context(ERR_DECODE_LOG_ENTRY)?;
+                let entry: Entry<RaftClientRequest> = utils::decode_flexbuf(&log_entry).context(ERR_DECODE_LOG_ENTRY)?;
                 match entry.payload {
                     EntryPayload::ConfigChange(cfg) => return Ok(Some(cfg.membership)),
                     _ => continue,
@@ -225,18 +238,18 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
             let hs: HardState = db
                 .get(KEY_HARD_STATE)
                 .context("error getting hard state from storage")?
-                .map(|val| utils::bin_decode(val.as_ref()).context("error decoding hard state"))
+                .map(|val| utils::decode_flexbuf(val.as_ref()).context("error decoding hard state"))
                 .ok_or_else(|| anyhow!("no hard state record found on disk"))??;
             // Get last log info.
             let last_log: Entry<RaftClientRequest> = log
                 .last()?
                 .ok_or_else(|| anyhow!("error fetching last entry of log, though first entry exists"))
-                .map(|(_, val)| utils::bin_decode(&val).context(ERR_DECODE_LOG_ENTRY))??;
+                .map(|(_, val)| utils::decode_flexbuf(&val).context(ERR_DECODE_LOG_ENTRY))??;
             // Get last applied log index.
             let last_applied_log_index = db
                 .get(KEY_LAST_APPLIED_LOG)
                 .context("error fetching last applied log index")?
-                .map(|raw| utils::bin_decode::<u64>(raw.as_ref()).context("failed to decode last applied log index"))
+                .map(|raw| utils::decode_bin::<u64>(raw.as_ref()).context("failed to decode last applied log index"))
                 .unwrap_or(Ok(0))?;
             Ok(InitialState {
                 last_log_index: last_log.index,
@@ -253,7 +266,7 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     /// Save Raft's hard-state.
     #[tracing::instrument(level = "trace", skip(self, hs), err)]
     async fn save_hard_state(&self, hs: &HardState) -> Result<()> {
-        let raw = utils::bin_encode(hs).context("error encoding hard state")?;
+        let raw = utils::encode_flexbuf(hs).context("error encoding hard state")?;
         let db = self.db.clone();
         Self::spawn_blocking(move || -> Result<()> {
             db.insert(KEY_HARD_STATE, raw).context("error saving hard state to disk")?;
@@ -269,13 +282,13 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     /// The start value is inclusive in the search and the stop value is non-inclusive: `[start, stop)`.
     #[tracing::instrument(level = "trace", skip(self, start, stop), err)]
     async fn get_log_entries(&self, start: u64, stop: u64) -> Result<Vec<Entry<RaftClientRequest>>> {
-        let (start, stop) = (utils::encode_u64(start), utils::encode_u64(stop));
+        let (start, stop) = (utils::encode_bin(&start)?, utils::encode_bin(&stop)?);
         let log = self.get_tree(TREE_LOG).await?;
         let entries = Self::spawn_blocking(move || -> Result<Vec<Entry<RaftClientRequest>>> {
             let mut entries = vec![];
             for val_res in log.range(start..stop).values() {
                 let val = val_res.context(ERR_ITER_FAILURE)?;
-                let entry: Entry<RaftClientRequest> = utils::bin_decode(&val).context(ERR_DECODE_LOG_ENTRY)?;
+                let entry: Entry<RaftClientRequest> = utils::decode_flexbuf(&val).context(ERR_DECODE_LOG_ENTRY)?;
                 entries.push(entry);
             }
             Ok(entries)
@@ -288,12 +301,12 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     /// of the log if `stop` is `None`.
     #[tracing::instrument(level = "trace", skip(self, start, stop), err)]
     async fn delete_logs_from(&self, start: u64, stop: Option<u64>) -> Result<()> {
-        let (log, start) = (self.get_tree(TREE_LOG).await?, utils::encode_u64(start));
+        let (log, start) = (self.get_tree(TREE_LOG).await?, utils::encode_bin(&start)?);
         Self::spawn_blocking(move || -> Result<()> {
             // Build an atomic batch of delete operations.
             let mut batch = Batch::default();
             let iter = if let Some(stop) = stop {
-                log.range(start..utils::encode_u64(stop))
+                log.range(start..utils::encode_bin(&stop)?)
             } else {
                 log.range(start..)
             };
@@ -314,8 +327,8 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     #[tracing::instrument(level = "trace", skip(self, entry), err)]
     async fn append_entry_to_log(&self, entry: &Entry<RaftClientRequest>) -> Result<()> {
         let log = self.get_tree(TREE_LOG).await?;
-        let entry_key = utils::encode_u64(entry.index);
-        let entry_bytes = utils::bin_encode(&entry).context(ERR_ENCODE_LOG_ENTRY)?;
+        let entry_key = utils::encode_bin(&entry.index)?;
+        let entry_bytes = utils::encode_flexbuf(&entry).context(ERR_ENCODE_LOG_ENTRY)?;
         Self::spawn_blocking(move || -> Result<()> {
             log.insert(entry_key, entry_bytes).context("error inserting log entry")?;
             Ok(())
@@ -335,9 +348,9 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
         let log = self.get_tree(TREE_LOG).await?;
         let mut batch = Batch::default();
         for entry in entries {
-            let entry_key = utils::encode_u64(entry.index);
-            let entry_bytes = utils::bin_encode(&entry).context(ERR_ENCODE_LOG_ENTRY)?;
-            batch.insert(&entry_key, entry_bytes);
+            let entry_key = utils::encode_bin(&entry.index)?;
+            let entry_bytes = utils::encode_flexbuf(&entry).context(ERR_ENCODE_LOG_ENTRY)?;
+            batch.insert(entry_key.as_slice(), entry_bytes.as_slice());
         }
         // Apply insert batch.
         Self::spawn_blocking(move || -> Result<()> {
@@ -368,12 +381,7 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     #[tracing::instrument(level = "trace", skip(self, index, data))]
     async fn apply_entry_to_state_machine(&self, index: &u64, data: &RaftClientRequest) -> Result<RaftClientResponse> {
         let res = match data {
-            RaftClientRequest::Transaction(req) => self.apply_transaction(index, req).await,
-            RaftClientRequest::StreamPub(req) => self.apply_stream_pub(index, req).await,
-            RaftClientRequest::StreamSub(req) => self.apply_stream_sub(index, req).await,
-            RaftClientRequest::StreamUnsub(req) => self.apply_stream_unsub(index, req).await,
-            RaftClientRequest::PipelineStageSub(req) => self.apply_pipeline_stage_sub(index, req).await,
-            RaftClientRequest::UpdateSchema(req) => self.apply_update_schema(index, req).await,
+            RaftClientRequest::UpdateSchema(inner) => self.apply_update_schema(index, &inner.validated, &inner.token_id).await,
         };
         let err = match res {
             Ok(res) => return Ok(res),
@@ -384,9 +392,9 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
             return Err(err);
         }
         // Else, we will write the last applied log.
-        let (db, index_val) = (self.db.clone(), utils::encode_u64(*index));
+        let (db, index_val) = (self.db.clone(), utils::encode_bin(index)?);
         let task_res = Self::spawn_blocking(move || -> std::result::Result<(), ShutdownError> {
-            db.insert(KEY_LAST_APPLIED_LOG, &index_val)
+            db.insert(KEY_LAST_APPLIED_LOG, index_val.as_slice())
                 .map(|_| ())
                 .map_err(|err| ShutdownError::from(anyhow::Error::from(err)))
         })
@@ -409,12 +417,7 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
     async fn replicate_to_state_machine(&self, entries: &[(&u64, &RaftClientRequest)]) -> Result<()> {
         for (index, data) in entries {
             let res = match data {
-                RaftClientRequest::Transaction(req) => self.apply_transaction(index, req).await,
-                RaftClientRequest::StreamPub(req) => self.apply_stream_pub(index, req).await,
-                RaftClientRequest::StreamSub(req) => self.apply_stream_sub(index, req).await,
-                RaftClientRequest::StreamUnsub(req) => self.apply_stream_unsub(index, req).await,
-                RaftClientRequest::PipelineStageSub(req) => self.apply_pipeline_stage_sub(index, req).await,
-                RaftClientRequest::UpdateSchema(req) => self.apply_update_schema(index, req).await,
+                RaftClientRequest::UpdateSchema(inner) => self.apply_update_schema(index, &inner.validated, &inner.token_id).await,
             };
             let err = match res {
                 Ok(_) => continue,
@@ -425,9 +428,9 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
                 return Err(err);
             }
             // Else, we will write the last applied log.
-            let (db, index_val) = (self.db.clone(), utils::encode_u64(**index));
+            let (db, index_val) = (self.db.clone(), utils::encode_bin(index)?);
             Self::spawn_blocking(move || -> std::result::Result<(), ShutdownError> {
-                db.insert(KEY_LAST_APPLIED_LOG, &index_val)
+                db.insert(KEY_LAST_APPLIED_LOG, index_val.as_slice())
                     .map(|_| ())
                     .map_err(|err| ShutdownError::from(anyhow::Error::from(err)))
             })
@@ -503,14 +506,14 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
 
         // Create the snapshot pointer & update log.
         let snapshot_entry = Entry::<RaftClientRequest>::new_snapshot_pointer(index, term, id.clone(), membership);
-        let snapshot_entry_enc = utils::bin_encode(&snapshot_entry).context(ERR_ENCODE_LOG_ENTRY)?;
-        let snapshot_entry_idx = utils::encode_u64(snapshot_entry.index);
-        let (log, start) = (self.get_tree(TREE_LOG).await?, utils::encode_u64(0));
+        let snapshot_entry_enc = utils::encode_flexbuf(&snapshot_entry).context(ERR_ENCODE_LOG_ENTRY)?;
+        let snapshot_entry_idx = utils::encode_bin(&snapshot_entry.index)?;
+        let (log, start) = (self.get_tree(TREE_LOG).await?, utils::encode_bin(&0)?);
         Self::spawn_blocking(move || -> Result<()> {
             // Build an atomic batch of delete operations.
             let mut batch = Batch::default();
             let iter = if let Some(stop) = delete_through {
-                log.range(start..utils::encode_u64(stop))
+                log.range(start..utils::encode_bin(&stop)?)
             } else {
                 log.range(start..)
             };
@@ -520,7 +523,7 @@ impl RaftStorage<RaftClientRequest, RaftClientResponse> for HCoreStorage {
             }
             // Insert the new snapshot pointer & apply the batch.
             // TODO: test to ensure that the insertion stays after the deletes.
-            batch.insert(&snapshot_entry_idx, snapshot_entry_enc.as_slice());
+            batch.insert(snapshot_entry_idx.as_slice(), snapshot_entry_enc.as_slice());
             log.apply_batch(batch).context("error applying batch log operations")?;
             Ok(())
         })
@@ -605,11 +608,9 @@ impl HCoreStorage {
     /// Gets the target DB tree by name, creating it if it does not exist.
     async fn get_tree(&self, name: &str) -> std::result::Result<Tree, ShutdownError> {
         // If we already have the tree in our mapping, clone it and return.
-        let trees = self.trees.read().await;
-        if let Some(tree) = trees.get(name.as_bytes()).cloned() {
+        if let Some(tree) = self.trees.read().await.get(name.as_bytes()).cloned() {
             return Ok(tree);
         }
-        drop(trees);
 
         // Else, we need to create the tree.
         let (db, ivname) = (self.db.clone(), IVec::from(name));
@@ -665,140 +666,108 @@ impl HCoreStorage {
             .and_then(|res| res)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, _index, _req), err)]
-    async fn apply_transaction(&self, _index: &u64, _req: &TransactionClient) -> Result<RaftClientResponse> {
-        todo!("")
-    }
+    /// Apply a schema update to the system.
+    #[tracing::instrument(level = "trace", skip(self, index, req, token_id))]
+    async fn apply_update_schema(&self, index: &u64, req: &models::SchemaUpdate, token_id: &u64) -> Result<RaftClientResponse> {
+        tracing::debug!(index, "applying update schema request to system");
 
-    #[tracing::instrument(level = "trace", skip(self, index, req))]
-    async fn apply_stream_pub(&self, index: &u64, req: &StreamPubRequest) -> Result<RaftClientResponse> {
-        tracing::info!(index, "applying stream pub request to stream");
-        // Fetch the stream's metadata, get the next index to use, and increment it for later use.
-        let stream = self
-            .index
-            .get_stream(&req.namespace, &req.stream)
-            .await
-            .ok_or_else(|| AppError::InvalidInput("target stream does not exist".into()))?;
-        let id = {
-            let mut id = stream.next_id.write().await;
-            let id_to_use = *id;
-            *id += 1;
-            id_to_use
+        // If this is a managed schema change, then we check the branch and timestamp to see if
+        // the schema change has already been applied to the system.
+        let (statements, branch, timestamp) = match &req {
+            models::SchemaUpdate::Managed(inner) => (&inner.statements, Some(&inner.branch), Some(inner.timestamp)),
+            models::SchemaUpdate::OneOff(inner) => (&inner.statements, None, None),
         };
+        if let (Some(branch), Some(timestamp)) = (branch, timestamp) {
+            if let Some(last_applied) = self.index.schema_branches.read().await.get(branch) {
+                if last_applied >= &timestamp {
+                    // TODO: include Noop response variant.
+                    return Ok(RaftClientResponse::UpdateSchema(UpdateSchemaResponse {}));
+                }
+            }
+        }
 
-        // Write the payload to the target stream.
-        let tree = self.get_tree(&format!("streams/{}/{}", &req.namespace, &req.stream)).await?;
-        let key = utils::encode_u64(id);
-        let payload = req.payload.clone();
+        // Perform full dynamic validation of this content, checking indices, and then falling back to
+        // checking other statements in the given document.
+        // TODO: ^^^
+
+        // Attempt to apply each schema statement to the system.
+        let (mut batch, mut nsmodels, mut streams, mut stream_indices, mut pipelines, mut pipeline_indices, mut branches) = (
+            Batch::default(),
+            Batch::default(),
+            Batch::default(),
+            Batch::default(),
+            Batch::default(),
+            Batch::default(),
+            Batch::default(),
+        );
+        batch.insert(KEY_LAST_APPLIED_LOG.as_bytes(), utils::encode_bin(index)?.as_slice());
+        let mut index_batch = IndexWriteBatch::default();
+        for statement in statements {
+            match statement {
+                models::SchemaStatement::Namespace(namespace) => self.create_namespace(namespace, &mut nsmodels, &mut index_batch).await?,
+                _ => todo!(),
+                // models::SchemaStatement::Stream(stream) => self.create_stream(stream, &mut streams, &mut stream_indices, &mut index_batch).await?,
+                // models::SchemaStatement::Pipeline(pipeline) => {
+                //     self.create_pipeline(pipeline, &mut pipelines, &mut pipeline_indices, &mut index_batch)
+                //         .await?
+                // }
+                // models::SchemaStatement::Endpoint(endpoint) => todo!("finish up endpoint creation"),
+            }
+        }
+
+        // Record the branch name & timestamp to disk & index if applicable.
+        if let (Some(branch), Some(timestamp)) = (branch, timestamp) {
+            self.update_schema_branch(branch, timestamp, &mut branches, &mut index_batch)
+                .context("error while updating schema branch")?;
+        }
+
+        // Apply the batch of changes.
+        // TODO: refactor this to use a vec of trees & a corresponding vec of batches.
+        let db = self.db.clone();
+        let ns = self.get_tree(TREE_NAMESPACES).await?;
+        let st = self.get_tree(TREE_STREAMS).await?;
+        let sti = self.get_tree(TREE_STREAM_INDICES).await?;
+        let pi = self.get_tree(TREE_PIPELINES).await?;
+        let pii = self.get_tree(TREE_PIPELINE_INDICES).await?;
+        let sbr = self.get_tree(TREE_SCHEMA_BRANCHES).await?;
         Self::spawn_blocking(move || {
-            tree.insert(&key, payload.as_slice())
+            let trees = (&db as &Tree, &ns, &st, &sti, &pi, &pii, &sbr);
+            trees
+                .transaction(
+                    |(tx_def, tx_ns, tx_streams, tx_streamidx, tx_pipe, tx_pipeidx, tx_brs)| -> TxResult<(), sled::Error> {
+                        tx_def.apply_batch(&batch)?;
+                        tx_ns.apply_batch(&nsmodels)?;
+                        tx_streams.apply_batch(&streams)?;
+                        tx_streamidx.apply_batch(&stream_indices)?;
+                        tx_pipe.apply_batch(&pipelines)?;
+                        tx_pipeidx.apply_batch(&pipeline_indices)?;
+                        tx_brs.apply_batch(&branches)?;
+                        Ok(())
+                    },
+                )
                 .map_err(|err| ShutdownError::from(anyhow::Error::from(err)))
         })
         .await??;
-
-        Ok(RaftClientResponse::StreamPub(StreamPubResponse { id }))
-    }
-
-    #[tracing::instrument(level = "trace", skip(self, _index, _req), err)]
-    async fn apply_stream_sub(&self, _index: &u64, _req: &StreamSubClient) -> Result<RaftClientResponse> {
-        todo!("")
-    }
-
-    #[tracing::instrument(level = "trace", skip(self, _index, _req), err)]
-    async fn apply_stream_unsub(&self, _index: &u64, _req: &StreamUnsubRequest) -> Result<RaftClientResponse> {
-        todo!("")
-    }
-
-    #[tracing::instrument(level = "trace", skip(self, _index, _req), err)]
-    async fn apply_pipeline_stage_sub(&self, _index: &u64, _req: &PipelineStageSubClient) -> Result<RaftClientResponse> {
-        todo!("")
-    }
-
-    /// Apply a schema update to the system.
-    #[tracing::instrument(level = "trace", skip(self, index, req))]
-    async fn apply_update_schema(&self, index: &u64, req: &UpdateSchemaRequest) -> Result<RaftClientResponse> {
-        tracing::info!(index, schema = %req.schema, "applying update schema request to system");
-        // TODO: DDL is in flux, update this once ready.
-        // // Decode & statically validate the request.
-        // let update = models::DDLSchemaUpdate::decode_and_validate(&req.schema)?;
-        // TODO: perform full dynamic validation of this content, checking indices, and then falling back to
-        // checking other statements in the given document.
-
-        // // Now, we check to see if the changeset has already been applied to the system.
-        // let is_applied = self.index.changesets.read().await.get(&update.changeset.name).is_some();
-        // if is_applied {
-        //     // TODO: probably add a no-op inner variant for better info
-        //     return Ok(RaftClientResponse::UpdateSchema(UpdateSchemaResponse {}));
-        // }
-
-        // // If not, then we continue and attempt to apply each DDL entry to the system.
-        // let (mut batch, mut nsmodels, mut streams, mut stream_indices, mut pipelines, mut pipeline_indices) = (
-        //     Batch::default(),
-        //     Batch::default(),
-        //     Batch::default(),
-        //     Batch::default(),
-        //     Batch::default(),
-        //     Batch::default(),
-        // );
-        // batch.insert(KEY_LAST_APPLIED_LOG.as_bytes(), &utils::encode_u64(*index));
-        // let mut index_batch = IndexWriteBatch::default();
-        // for entry in update.statements {
-        //     match entry {
-        //         models::DDL::Namespace(namespace) => self.create_namespace(namespace, &mut nsmodels, &mut index_batch).await?,
-        //         models::DDL::Stream(stream) => self.create_stream(stream, &mut streams, &mut stream_indices, &mut index_batch).await?,
-        //         models::DDL::Pipeline(pipeline) => {
-        //             self.create_pipeline(pipeline, &mut pipelines, &mut pipeline_indices, &mut index_batch)
-        //                 .await?
-        //         }
-        //     }
-        // }
-
-        // // TODO: also record the changeset to disk & index batch.
-
-        // // Apply the batch of changes.
-        // let db = self.db.clone();
-        // let ns = self.get_tree(TREE_NAMESPACES).await?;
-        // let st = self.get_tree(TREE_STREAMS).await?;
-        // let sti = self.get_tree(TREE_STREAM_INDICES).await?;
-        // let pi = self.get_tree(TREE_PIPELINES).await?;
-        // let pii = self.get_tree(TREE_PIPELINE_INDICES).await?;
-        // Self::spawn_blocking(move || {
-        //     let trees = (&db as &Tree, &ns, &st, &sti, &pi, &pii);
-        //     trees
-        //         .transaction(
-        //             |(tx_def, tx_ns, tx_streams, tx_streamidx, tx_pipe, tx_pipeidx)| -> TxResult<(), sled::Error> {
-        //                 tx_def.apply_batch(&batch)?;
-        //                 tx_ns.apply_batch(&nsmodels)?;
-        //                 tx_streams.apply_batch(&streams)?;
-        //                 tx_streamidx.apply_batch(&stream_indices)?;
-        //                 tx_pipe.apply_batch(&pipelines)?;
-        //                 tx_pipeidx.apply_batch(&pipeline_indices)?;
-        //                 Ok(())
-        //             },
-        //         )
-        //         .map_err(|err| ShutdownError::from(anyhow::Error::from(err)))
-        // })
-        // .await??;
-        // self.index.apply_batch(index_batch).await?;
+        self.index.apply_batch(index_batch).await?;
         Ok(RaftClientResponse::UpdateSchema(UpdateSchemaResponse {}))
     }
 
-    // /// Create a new namespace in the database.
-    // #[tracing::instrument(level = "trace", skip(self, ns, models, index_batch))]
-    // async fn create_namespace(&self, ns: models::Namespace, models: &mut Batch, index_batch: &mut IndexWriteBatch) -> Result<()> {
-    //     // Check if the namespace already exists. If so, done.
-    //     if self.index.get_namespace(&ns.name).await.is_some() {
-    //         return Ok(());
-    //     }
-    //     // Namespace does not yet exist, so we create an entry for it.
-    //     let meta = utils::encode_proto(proto_storage::Namespace::from(&ns))?;
-    //     models.insert(ns.name.as_str(), meta.as_slice());
-    //     index_batch.push(IndexWriteOp::InsertNamespace {
-    //         name: ns.name,
-    //         description: ns.description,
-    //     });
-    //     Ok(())
-    // }
+    /// Create a new namespace in the database.
+    #[tracing::instrument(level = "trace", skip(self, ns, models, index_batch))]
+    async fn create_namespace(&self, ns: &models::Namespace, models: &mut Batch, index_batch: &mut IndexWriteBatch) -> Result<()> {
+        // Check if the namespace already exists. If so, done.
+        if self.index.get_namespace(&ns.name).await.is_some() {
+            return Ok(());
+        }
+        // Namespace does not yet exist, so we create an entry for it.
+        let proto = utils::encode_flexbuf(&ns)?;
+        models.insert(ns.name.as_str(), proto.as_slice());
+        index_batch.push(IndexWriteOp::InsertNamespace {
+            name: ns.name.clone(),
+            description: ns.description.clone(),
+        });
+        Ok(())
+    }
 
     // /// Create a new stream in the database.
     // #[tracing::instrument(level = "trace", skip(self, stream, models, indices, index_batch))]
@@ -808,10 +777,10 @@ impl HCoreStorage {
     //         return Ok(());
     //     }
     //     // Stream does not yet exist, so we create an entry for it, setting its initial index to 0.
-    //     let model = utils::encode_proto(proto_storage::Stream::from(&stream))?;
+    //     let model = utils::encode_flexbuf(proto_storage::Stream::from(&stream))?;
     //     let nsname = format!("{}/{}", &stream.namespace, &stream.name);
     //     models.insert(nsname.as_str(), model);
-    //     indices.insert(nsname.as_str(), &utils::encode_u64(0));
+    //     indices.insert(nsname.as_str(), &utils::encode_bin(0));
     //     index_batch.push(IndexWriteOp::InsertStream {
     //         namespace: stream.namespace,
     //         name: stream.name,
@@ -832,10 +801,10 @@ impl HCoreStorage {
     //         return Ok(());
     //     }
     //     // Stream does not yet exist, so we create an entry for it, setting its initial index to 0.
-    //     let model = utils::encode_proto(proto_storage::Pipeline::from(&pipeline))?;
+    //     let model = utils::encode_flexbuf(proto_storage::Pipeline::from(&pipeline))?;
     //     let nsname = format!("{}/{}", &pipeline.namespace, &pipeline.name);
     //     models.insert(nsname.as_str(), model);
-    //     indices.insert(nsname.as_str(), &utils::encode_u64(0));
+    //     indices.insert(nsname.as_str(), &utils::encode_bin(0));
     //     let meta = PipelineMeta::new(pipeline.trigger_stream, pipeline.description);
     //     index_batch.push(IndexWriteOp::InsertPipeline {
     //         namespace: pipeline.namespace,
@@ -847,6 +816,17 @@ impl HCoreStorage {
     //     Ok(())
     // }
 
+    /// Update a schema branch.
+    #[tracing::instrument(level = "trace", skip(self, branch, timestamp, branches, index_batch))]
+    fn update_schema_branch(&self, branch: &str, timestamp: i64, branches: &mut Batch, index_batch: &mut IndexWriteBatch) -> Result<()> {
+        branches.insert(branch, utils::encode_bin(&timestamp)?.as_slice());
+        index_batch.push(IndexWriteOp::UpdateSchemaBranch {
+            branch: branch.to_string(),
+            timestamp,
+        });
+        Ok(())
+    }
+
     //////////////////////////////////////////////////////////////////////////////////////////////
     // System State Recovery /////////////////////////////////////////////////////////////////////
 
@@ -857,7 +837,7 @@ impl HCoreStorage {
         let tokens = RwLock::new(Self::recover_token_permissions(db).await?);
         // TODO: finish recovering data from disk
         Ok(HCoreIndex {
-            changesets: Default::default(),
+            schema_branches: Default::default(),
             namespaces: Default::default(),
             users,
             tokens,

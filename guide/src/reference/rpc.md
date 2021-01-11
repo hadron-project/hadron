@@ -2,8 +2,8 @@ RPC Endpoints
 =============
 RPC Endpoints provide a service-oriented request/response system, akin to traditional REST APIs or other RPC systems like gRPC.
 
-## DDL
-RPC Endpoints are declared in YAML as part of the [Schema Management system](./schema.md). The DDL for the `Endpoint` object is as follows:
+## Schema
+RPC Endpoints are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Endpoint` object is as follows:
 
 ```yaml
 ## The kind of object being defined. In this case, a pipeline.
@@ -14,6 +14,10 @@ spec:
   namespace: required string
   ## The name of the endpoint. Each endpoint must have a unique name per namespace.
   name: required string
+  ## The input RPC mode.
+  input: oneof Single | Stream
+  ## The output RPC mode.
+  output: oneof Single | Stream
 ```
 
 ### Details

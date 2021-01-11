@@ -8,6 +8,7 @@
 use std::time::Duration;
 
 use serde::Deserialize;
+use serde_aux::prelude::*;
 
 use crate::storage;
 
@@ -53,6 +54,9 @@ pub enum DiscoveryBackend {
     Dns {
         /// The base DNS name to use for discoverying peers via DNS.
         discovery_dns_name: String,
+        /// The interval in seconds which the DNS backend will poll for DNS updates.
+        #[serde(deserialize_with = "deserialize_number_from_string")]
+        discovery_dns_interval: u16,
     },
 }
 

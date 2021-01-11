@@ -1,5 +1,5 @@
 # NOTE WELL: this Dockerfile assumes a context from the root of this repo.
-FROM rust:1.48.0
+FROM rust:1.49.0
 
 LABEL maintainer="Anthony Dodd <dodd.anthonyjosiah@gmail.com>"
 WORKDIR /hadron

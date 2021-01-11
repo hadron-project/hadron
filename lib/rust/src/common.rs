@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: remove this
+
 use std::time::Duration;
 
 /// The default interval for the HTTP2 keep alive interval.

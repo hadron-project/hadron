@@ -2,8 +2,8 @@ Streams
 =======
 Streams are append-only, immutable logs of data.
 
-## DDL
-Streams are declared in YAML as part of the [Schema Management system](./schema.md). The DDL for the `Stream` object is as follows:
+## Schema
+Streams are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Stream` object is as follows:
 
 ```yaml
 ## The kind of object being defined. In this case, a stream.

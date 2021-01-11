@@ -1,16 +1,16 @@
-build-hadrond:
+buildHadrond:
     cargo build --manifest-path hadrond/Cargo.toml --release
 
-kind-cluster:
+kindCreateCluster:
     kind create cluster --name hadron
 
-build-and-load-kind:
+buildAndLoadKind:
     docker-compose run builder && \
         docker-compose build --no-cache hadron && \
         kind load docker-image --name hadron hadron-local-release:latest
 
-helm-upgrade-kind:
-    helm upgrade hadron ./kubernetes/helm -i \
+helmUp:
+    helm --kube-context="kind-hadron" upgrade hadron ./kubernetes/helm -i \
         --set image.fullName=hadron-local-release:latest \
         --set image.pullPolicy=Never \
         --set-string statefulSet.replicas=3

@@ -2,8 +2,8 @@ Namespaces
 ==========
 Namespaces are the central unit of resource grouping and access control in Hadron.
 
-## DDL
-Namespaces are declared in YAML as part of the [Schema Management system](./schema.md). The DDL for the `Namespace` object is as follows:
+## Schema
+Namespaces are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Namespace` object is as follows:
 
 ```yaml
 ## The kind of object being defined. In this case, a namespace.
@@ -12,6 +12,8 @@ kind: Namespace
 spec:
   ## The name of the namespace. Each namespace must have a unique name.
   name: required string
+  ## A description of this namespace.
+  description: required string
 ```
 
 ### Details
