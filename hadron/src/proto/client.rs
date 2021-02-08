@@ -48,6 +48,9 @@ pub struct StreamPubResponse {
     #[prost(uint64, tag = "1")]
     pub id: u64,
 }
+/// TODO: add a field `overwrite` which will cause the config presented in this subscription
+/// request to overwrite the subscription's current config. Consumer apps can be deployed in such
+/// a way that rollbacks and version changes will not confict and cause unexpected sub config.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamSubClient {}
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -68,8 +71,36 @@ pub struct PipelineStageSubServer {}
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSchemaRequest {
+    #[prost(oneof = "update_schema_request::Update", tags = "1, 2")]
+    pub update: ::std::option::Option<update_schema_request::Update>,
+}
+pub mod update_schema_request {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Update {
+        #[prost(message, tag = "1")]
+        Oneoff(super::UpdateSchemaOneOff),
+        #[prost(message, tag = "2")]
+        Managed(super::UpdateSchemaManaged),
+    }
+}
+/// A one-off schema update, which is not guaranteed to be idempotent.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateSchemaOneOff {
     /// A set of Hadron schema documents to apply to the system.
     #[prost(string, tag = "1")]
+    pub schema: std::string::String,
+}
+/// An idempotent managed schema update.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateSchemaManaged {
+    /// The branch name of this set of schema updates.
+    #[prost(string, tag = "1")]
+    pub branch: std::string::String,
+    /// The timestamp of this set of schema updates.
+    #[prost(string, tag = "2")]
+    pub timestamp: std::string::String,
+    /// A set of Hadron schema documents to apply to the system.
+    #[prost(string, tag = "3")]
     pub schema: std::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -267,11 +298,6 @@ pub mod client_client {
             self.inner.streaming(request.into_streaming_request(), path, codec).await
         }
         #[doc = " Update the schema of the Hadron cluster."]
-        #[doc = ""]
-        #[doc = " This is the one endpoint used for making updates to a Hadron cluster's schema. The given"]
-        #[doc = " payload should be an array of YAML documents describing schema updates."]
-        #[doc = ""]
-        #[doc = " TODO: update guide on how schema management is setup, changeset docs, &c."]
         pub async fn update_schema(
             &mut self, request: impl tonic::IntoRequest<super::UpdateSchemaRequest>,
         ) -> Result<tonic::Response<super::UpdateSchemaResponse>, tonic::Status> {
@@ -398,11 +424,6 @@ pub mod client_server {
             &self, request: tonic::Request<tonic::Streaming<super::PipelineStageSubClient>>,
         ) -> Result<tonic::Response<Self::PipelineStageSubStream>, tonic::Status>;
         #[doc = " Update the schema of the Hadron cluster."]
-        #[doc = ""]
-        #[doc = " This is the one endpoint used for making updates to a Hadron cluster's schema. The given"]
-        #[doc = " payload should be an array of YAML documents describing schema updates."]
-        #[doc = ""]
-        #[doc = " TODO: update guide on how schema management is setup, changeset docs, &c."]
         async fn update_schema(
             &self, request: tonic::Request<super::UpdateSchemaRequest>,
         ) -> Result<tonic::Response<super::UpdateSchemaResponse>, tonic::Status>;

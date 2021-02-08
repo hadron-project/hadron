@@ -34,26 +34,39 @@ pub struct Discovery {
     /// The configured recipient to receive changeset notifications.
     output_tx: mpsc::Sender<ObservedPeersChangeset>,
     rx_backend: watch::Receiver<Vec<PeerSrv>>,
+    /// Application shutdown signal.
+    shutdown: watch::Receiver<bool>,
 
     _config: Arc<Config>,
-    _backend_handle: JoinHandle<()>,
+    backend_handle: JoinHandle<()>,
 }
 
 impl Discovery {
     /// Create a new discovery instance configured to use the specified backend.
-    pub fn new(config: Arc<Config>) -> (Self, mpsc::Receiver<ObservedPeersChangeset>) {
+    pub fn new(config: Arc<Config>, shutdown: watch::Receiver<bool>) -> (Self, mpsc::Receiver<ObservedPeersChangeset>) {
         let observed_peers = ObservedSet::default();
         let (output_tx, output_rx) = mpsc::channel(1);
         let (tx_backend, rx_backend) = tokio::sync::watch::channel(vec![]);
-        let _backend_handle = match &config.discovery_backend {
-            DiscoveryBackend::Dns { discovery_dns_name } => dns::DnsDiscovery::new(tx_backend, discovery_dns_name.clone(), config.clone()).spawn(),
+        let backend_handle = match &config.discovery_backend {
+            DiscoveryBackend::Dns {
+                discovery_dns_name,
+                discovery_dns_interval,
+            } => dns::DnsDiscovery::new(
+                config.clone(),
+                tx_backend,
+                discovery_dns_name.clone(),
+                *discovery_dns_interval,
+                shutdown.clone(),
+            )
+            .spawn(),
         };
         let this = Self {
             observed_peers,
             output_tx,
             rx_backend,
+            shutdown,
             _config: config,
-            _backend_handle,
+            backend_handle,
         };
         (this, output_rx)
     }
@@ -63,9 +76,19 @@ impl Discovery {
     }
 
     async fn run(mut self) {
-        while let Some(addrs) = self.rx_backend.next().await {
-            self.handle_discovery_output(addrs).await;
+        loop {
+            tokio::select! {
+                Some(addrs) = self.rx_backend.next() => {
+                    self.handle_discovery_output(addrs).await;
+                }
+                Some(needs_shutdown) = self.shutdown.next() => if needs_shutdown { break } else { continue },
+            }
         }
+
+        // Graceful shutdown.
+        tracing::debug!("discovery is shutting down");
+        let _ = self.backend_handle.await;
+        tracing::debug!("discovery shutdown");
     }
 
     /// Handle messages coming from the DNS discovery backend.

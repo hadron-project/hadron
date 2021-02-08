@@ -1,0 +1,22 @@
+[package]
+authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
+edition = "2018"
+name = "hadron"
+version = "0.1.0"
+description = "The Hadron Rust client library."
+
+[dependencies]
+anyhow = "1.0.37"
+base64 = "0.12"
+futures = "0.3"
+lazy_static = "1.4.0"
+prost = "0.6"
+regex = "1.4.3"
+tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "io-driver", "io-util", "time", "macros", "fs"] }
+tonic = { version = "0.3", default-features = false, features = ["transport", "codegen", "tls", "prost"] }
+tracing = { version = "0.1", features = ["attributes"] }
+tracing-futures = "0.2.4"
+
+[dev-dependencies]
+anyhow = "1"
+tonic-build = "0.3"

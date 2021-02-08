@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
 use tokio::sync::{mpsc, oneshot};
-use tonic::metadata::{MetadataMap, MetadataValue};
+use tonic::metadata::MetadataMap;
 use tonic::{async_trait, transport::Channel, Request, Response, Status, Streaming};
 
 use crate::auth::TokenCredentials;
 use crate::config::Config;
+use crate::models;
 pub use crate::proto::client::client_client::ClientClient;
 use crate::proto::client::client_server::Client;
 pub use crate::proto::client::client_server::ClientServer;
@@ -125,9 +125,10 @@ impl Client for ClientService {
 
     async fn update_schema(&self, req: Request<UpdateSchemaRequest>) -> TonicResult<Response<UpdateSchemaResponse>> {
         let creds = self.must_get_token(req.metadata())?;
-        let (tx, rx) = oneshot::channel();
         let req = req.into_inner();
-        let _ = self.network.send(ClientRequest::UpdateSchema(UpdateSchema { req, tx, creds }));
+        let validated = models::SchemaUpdate::decode_and_validate(&req).map_err(utils::status_from_err)?;
+        let (tx, rx) = oneshot::channel();
+        let _ = self.network.send(ClientRequest::UpdateSchema(UpdateSchema { req, validated, tx, creds }));
         rx.await.map_err(status_from_rcv_error).and_then(|res| res).map(Response::new)
     }
 }
@@ -202,6 +203,7 @@ pub struct PipelineStageSub {
 
 pub struct UpdateSchema {
     pub req: UpdateSchemaRequest,
+    pub validated: models::SchemaUpdate,
     pub tx: oneshot::Sender<TonicResult<UpdateSchemaResponse>>,
     pub creds: TokenCredentials,
 }
@@ -224,28 +226,28 @@ pub async fn forward_client_request(req: ClientRequest, chan: Channel) {
     }
 }
 
-#[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_transaction(req: Transaction, client: ClientClient<Channel>) {
+#[tracing::instrument(level = "trace", skip(_req, _client))]
+async fn forward_transaction(_req: Transaction, _client: ClientClient<Channel>) {
     todo!("")
 }
 
-#[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_ephemeral_pub(req: EphemeralPub, client: ClientClient<Channel>) {
+#[tracing::instrument(level = "trace", skip(_req, _client))]
+async fn forward_ephemeral_pub(_req: EphemeralPub, _client: ClientClient<Channel>) {
     todo!("")
 }
 
-#[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_ephemeral_sub(req: EphemeralSub, client: ClientClient<Channel>) {
+#[tracing::instrument(level = "trace", skip(_req, _client))]
+async fn forward_ephemeral_sub(_req: EphemeralSub, _client: ClientClient<Channel>) {
     todo!("")
 }
 
-#[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_rpc_pub(req: RpcPub, client: ClientClient<Channel>) {
+#[tracing::instrument(level = "trace", skip(_req, _client))]
+async fn forward_rpc_pub(_req: RpcPub, _client: ClientClient<Channel>) {
     todo!("")
 }
 
-#[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_rpc_sub(req: RpcSub, client: ClientClient<Channel>) {
+#[tracing::instrument(level = "trace", skip(_req, _client))]
+async fn forward_rpc_sub(_req: RpcSub, _client: ClientClient<Channel>) {
     todo!("")
 }
 
@@ -260,18 +262,18 @@ async fn forward_stream_pub(req: StreamPub, mut client: ClientClient<Channel>) {
     let _ = tx.send(res);
 }
 
-#[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_stream_sub(req: StreamSub, client: ClientClient<Channel>) {
+#[tracing::instrument(level = "trace", skip(_req, _client))]
+async fn forward_stream_sub(_req: StreamSub, _client: ClientClient<Channel>) {
     todo!("")
 }
 
-#[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_stream_unsub(req: StreamUnsub, client: ClientClient<Channel>) {
+#[tracing::instrument(level = "trace", skip(_req, _client))]
+async fn forward_stream_unsub(_req: StreamUnsub, _client: ClientClient<Channel>) {
     todo!("")
 }
 
-#[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_pipeline_stage_sub(req: PipelineStageSub, client: ClientClient<Channel>) {
+#[tracing::instrument(level = "trace", skip(_req, _client))]
+async fn forward_pipeline_stage_sub(_req: PipelineStageSub, _client: ClientClient<Channel>) {
     todo!("")
 }
 
@@ -288,6 +290,6 @@ async fn forward_update_schema(req: UpdateSchema, mut client: ClientClient<Chann
 
 fn build_request_with_creds<T>(req: T, creds: TokenCredentials) -> Request<T> {
     let mut request = Request::new(req);
-    request.metadata_mut().insert(utils::HEADER_X_HADRON_AUTH, creds.auth_header);
+    request.metadata_mut().insert(utils::HEADER_X_HADRON_AUTH, creds.header);
     request
 }

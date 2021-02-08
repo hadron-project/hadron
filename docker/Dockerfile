@@ -1,5 +1,5 @@
 # NOTE WELL: this Dockerfile assumes a context from the root of this repo.
-ARG RUST_TAG=1.48.0
+ARG RUST_TAG=1.49.0
 ARG ALPINE_TAG=3.12
 FROM rust:${RUST_TAG} as builder
 

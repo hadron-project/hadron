@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: remove this.
+
 use anyhow::{bail, Context, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::oneshot::error::RecvError;
@@ -9,6 +11,7 @@ const ERR_BINCODE_ENCODE: &str = "error from bincode while serializing message t
 const ERR_BINCODE_DECODE: &str = "error from bincode while deserializing message from bytes";
 
 pub const ERR_DECODE_RAFT_RPC: &str = "error decoding Raft RPC";
+pub const ERR_DECODE_RAFT_RPC_RESPONSE: &str = "error decoding Raft RPC response";
 pub const ERR_ENCODE_RAFT_RPC: &str = "error encoding Raft RPC";
 
 pub const HEADER_X_HADRON_AUTH: &str = "x-hadron-authorization";
@@ -19,30 +22,23 @@ pub const HIERARCHY_TOKEN: &str = ".";
 pub type TonicResult<T> = std::result::Result<T, Status>;
 
 /// Encode the given payload using bincode.
-pub fn bin_encode<T: Serialize>(payload: &T) -> Result<Vec<u8>> {
+pub fn encode_bin<T: Serialize>(payload: &T) -> Result<Vec<u8>> {
     bincode::serialize(payload).context(ERR_BINCODE_ENCODE)
 }
+
 /// Decode the given payload using bincode.
-pub fn bin_decode<T: DeserializeOwned>(payload: &[u8]) -> Result<T> {
+pub fn decode_bin<T: DeserializeOwned>(payload: &[u8]) -> Result<T> {
     bincode::deserialize(payload).context(ERR_BINCODE_DECODE)
 }
-/// Encode the given u64 as a bytes array.
-///
-/// This encodes the bytes in little-endian format. ANY CHANGE to this will cause data corruption.
-pub fn encode_u64(val: u64) -> [u8; 8] {
-    val.to_le_bytes()
+
+/// Encode the given object as Flexbuffers bytes.
+pub fn encode_flexbuf<T: Serialize>(msg: &T) -> Result<Vec<u8>> {
+    Ok(flexbuffers::to_vec(msg).context("error encoding object as flexbuf")?)
 }
 
-/// Encode the given protobuf message as bytes.
-pub fn encode_proto<T: prost::Message>(msg: T) -> Result<Vec<u8>> {
-    let mut buf = vec![0u8; msg.encoded_len()];
-    msg.encode(&mut buf)?;
-    Ok(buf)
-}
-
-/// Decode a buffer of bytes as a protobuf message.
-pub fn decode_proto<T: prost::Message + Default>(buf: &[u8]) -> Result<T> {
-    Ok(prost::Message::decode(buf)?)
+/// Decode the given Flexbuffers bytes as the target object.
+pub fn decode_flexbuf<T: DeserializeOwned>(buf: &[u8]) -> Result<T> {
+    Ok(flexbuffers::from_slice(buf).context("error decoding object as flexbuf")?)
 }
 
 /// Create an internal gRPC error variant based on oneshot recv error.
