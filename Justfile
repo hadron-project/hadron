@@ -1,14 +1,16 @@
-buildHadrond:
-    cargo build --manifest-path hadrond/Cargo.toml --release
-
+# Create a kind cluster used for local development.
 kindCreateCluster:
     kind create cluster --name hadron
 
-buildAndLoadKind:
-    docker-compose run builder && \
-        docker-compose build --no-cache hadron && \
-        kind load docker-image --name hadron hadron-local-release:latest
+# Build Hadron docker image.
+dockerBuild:
+    docker-compose run builder && docker-compose build --no-cache hadron
 
+# Load Hadron docker image into kind cluster.
+kindLoadImage:
+    kind load docker-image --name hadron hadron-local-release:latest
+
+# Perform a upgrade --install of the Hadron chart into the kind cluster.
 helmUp:
     helm --kube-context="kind-hadron" upgrade hadron ./kubernetes/helm -i \
         --set image.fullName=hadron-local-release:latest \

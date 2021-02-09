@@ -1,3 +1,8 @@
+#![allow(unused_imports)] // TODO: remove this.
+#![allow(unused_variables)] // TODO: remove this.
+#![allow(unused_mut)] // TODO: remove this.
+#![allow(dead_code)] // TODO: remove this.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,15 +14,17 @@ use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
 use crate::config::Config;
-use crate::crc::command::{CRCCommand, PLCSpec, SCCSpec, SPCSpec};
-use crate::crc::{CRCClientRequest, CRCRequest, CRC};
+use crate::ctl_placement::CPC;
+use crate::ctl_raft::{CRCClientRequest, CRCRequest, HCoreIndex, CRC};
+use crate::database::Database;
 use crate::discovery::Discovery;
 use crate::network::{ClientRequest, Network, NetworkOutput, PeerRequest};
-use crate::storage;
 
 pub struct App {
     /// The ID of this node in the Raft cluster.
     _node_id: u64,
+    /// The system data index.
+    index: Arc<HCoreIndex>,
 
     /// A channel of data flowing in from the network layer.
     network_rx: mpsc::UnboundedReceiver<NetworkOutput>,
@@ -26,8 +33,6 @@ pub struct App {
 
     /// A channel used for sending requests into the Hadron core.
     crc_tx: mpsc::UnboundedSender<CRCRequest>,
-    /// A channel of application commands coming from the CRC.
-    crc_commands: mpsc::UnboundedReceiver<CRCCommand>,
 
     /// A channel used for triggering graceful shutdown.
     shutdown_tx: watch::Sender<bool>,
@@ -35,6 +40,7 @@ pub struct App {
     discovery: JoinHandle<()>,
     network: JoinHandle<()>,
     crc: JoinHandle<()>,
+    cpc: JoinHandle<()>,
 }
 
 impl App {
@@ -43,7 +49,8 @@ impl App {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         // Fetch this node's ID from disk.
-        let node_id = storage::get_node_id(&*config).await?;
+        let db = Database::new(config.clone()).await.context("error opening database")?;
+        let node_id = db.get_node_id().await.context("error getting node ID")?;
         tracing::info!(node_id);
 
         // Spawn the discovery layer.
@@ -56,19 +63,24 @@ impl App {
 
         // Spawn the CRC.
         let (crc_tx, crc_rx) = mpsc::unbounded_channel();
-        let (crc, crc_commands) = CRC::new(node_id, config.clone(), peers_rx.clone(), crc_rx, shutdown_rx).await?;
+        let (crc, index, crc_events, raft_metrics) =
+            CRC::new(node_id, config.clone(), db.clone(), peers_rx.clone(), crc_rx, shutdown_rx.clone()).await?;
         let crc = crc.spawn();
+
+        // Spawn the CPC.
+        let cpc = CPC::new(node_id, config.clone(), shutdown_rx, raft_metrics, crc_events).spawn();
 
         Ok(Self {
             _node_id: node_id,
+            index,
             network_rx,
             _peers_rx: peers_rx,
             crc_tx,
-            crc_commands,
             shutdown_tx,
             discovery,
             network,
             crc,
+            cpc,
         })
     }
 
@@ -83,7 +95,6 @@ impl App {
 
         loop {
             tokio::select! {
-                Some(crc_command) = self.crc_commands.next() => self.handle_crc_command(crc_command).await,
                 Some(net_req) = self.network_rx.next() => self.handle_network_request(net_req).await,
                 Some((_, sig)) = signals.next() => {
                     tracing::debug!(signal = ?sig, "signal received, beginning graceful shutdown");
@@ -104,27 +115,12 @@ impl App {
         if let Err(err) = self.crc.await {
             tracing::error!(error = ?err);
         }
+        if let Err(err) = self.cpc.await {
+            tracing::error!(error = ?err);
+        }
         tracing::debug!("Hadron shutdown");
         Ok(())
     }
-
-    #[tracing::instrument(level = "trace", skip(self, msg))]
-    async fn handle_crc_command(&mut self, msg: CRCCommand) {
-        match msg {
-            CRCCommand::CreateSPC(spec) => self.spawn_spc(spec),
-            CRCCommand::CreateSCC(spec) => self.spawn_scc(spec),
-            CRCCommand::CreatePLC(spec) => self.spawn_plc(spec),
-        }
-    }
-
-    #[tracing::instrument(level = "trace", skip(self, _spec))]
-    fn spawn_spc(&mut self, _spec: SPCSpec) {}
-
-    #[tracing::instrument(level = "trace", skip(self, _spec))]
-    fn spawn_scc(&mut self, _spec: SCCSpec) {}
-
-    #[tracing::instrument(level = "trace", skip(self, _spec))]
-    fn spawn_plc(&mut self, _spec: PLCSpec) {}
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     async fn handle_network_request(&mut self, req: NetworkOutput) {

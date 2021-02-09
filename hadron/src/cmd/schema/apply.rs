@@ -111,11 +111,11 @@ impl Apply {
         let client = base.get_client().await?.schema();
         for file in schema_files {
             tracing::info!(file = %file.filename, timestamp = file.timestamp, "syncing file");
-            let _res = client
+            let res = client
                 .update_schema(&file.contents, &state.branch, file.timestamp)
                 .await
                 .context(crate::error::ERR_REQUEST)?;
-            // TODO: show response info so that users will know if the schema has already been applied &c.
+            tracing::info!("response: {:?}", res);
         }
         Ok(())
     }

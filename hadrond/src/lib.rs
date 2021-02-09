@@ -1,13 +1,14 @@
 mod app;
 mod auth;
 mod config;
-mod crc;
+mod ctl_placement;
+mod ctl_raft;
+mod database;
 mod discovery;
 mod error;
 mod models;
 mod network;
 mod proto;
-mod storage;
 mod utils;
 
 // Public exports for binaries.

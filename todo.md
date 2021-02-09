@@ -2,13 +2,22 @@ todo
 ====
 Kafka and others help with building EDA apps, Hadron helps more. Pipelines provide a native mechainism which greatly simplifies the building of complex applications.
 
-- two outstanding RESUME statements in code:
-    - Raft peer liveness metrics to be exposed in Raft lib (need to do work there first).
-    - Finish up CRC control signal up to app.
-
+- [x] placement system is receiving initial payload and is receiving events as they take place.
+- [ ] placement driver needs reconciliation loop to be implemented.
+    - implement placement algorithm & update CRC Raft based on this info.
+    - movement of a replica from one node to another will simply be the process of adding the new node, and once it is up-to-date, we remove the old.
+    - spawn controllers based on data. As soon as placement is determined, controller can be spawned.
+    - Initialize control group rafts.
+        - Easy. Exactly the same as the CRC. Initial set of members is used as config for initialization.
+    - Control groups must be resilient to old members joining and disrupting clusters.
+        - When PreVote is implemented in Raft, that will help.
+        - For now, controllers only accept traffic from nodes which the CPC says are part of its cluster.
+    - Add and remove members from control group rafts.
+        - CPC can simply pass this data down to controllers and the controllers can take action based on the data. Only when controller is raft leader.
 
 ## Controllers
 Build remaining controllers:
+- [ ] cluster placement controller (CPC): this is the controller which maintains state on all active objects across the cluster, and when it is running on the Raft leader node, it will take executive action to make placement decisions and the like.
 - [ ] stream partition controller (SPC): participates with a group of other SPCs responsible for a single partition of a stream. One leader, >= 0 replicas.
 - [ ] stream consumer controller (SCC):
 - [ ] pipeline consumer controller (PCC):
@@ -23,9 +32,10 @@ Build remaining controllers:
 - controller leadership designation is based on a monotonically increasing term per control group, which is disjoint from Raft's leadership terms.
 - conflicts between leadership designation is easily and safely resolved based on designated leadership terms.
 
-
+- [ ] clients should have a configurable behavior where the client may reconnect to a specific node of the cluster in order to reduce forwarding between nodes.
 - [ ] given that storage initialization may take some time, pass a signal emitter down to the storage engine so that it can tell the rest of the app when initialization has actually finished.
     - [ ] the network layer should refuse to perform peer handshakes and refuse client connections until the system is ready.
+- [ ] if Raft triggers a shutdown, the rest of the node should be notified and should go into shutdown.
 - [ ] build dynamic membership system, most everything is in place.
 - [ ] ensure delays are set on raft requests when a peer channel has been disconnected.
 - [ ] finish up tests on DDL.
@@ -34,6 +44,8 @@ Build remaining controllers:
     - [ ] perform cycle tests to ensure stage `after` & `dependencies` constraints do not form cycles in the graph
 
 ---
+
+- [ ] https://github.com/async-raft/async-raft/issues/101 for more stable & robust consensus.
 - [ ] design for stream's to optionally register WASM functions as schema validators for events.
 - [ ] open issue for creating initial streams for
     - CRUD on objects in the system
@@ -41,14 +53,10 @@ Build remaining controllers:
 - [ ] open an issue on future integration with Vault as a token provider.
 - [ ] open issue for having admin UI setup with OAuth handler so that orgs can grant viewer permissions to anyone in their org.
 - [x] combine all internal error types to a single type for more uniform handling.
-<!--
 
+---
 
-
-
-
-
-
+# Designs WIP
 ### stream storage
 Writing data to streams through Raft is a bad idea. Instead, use Raft to nominate stable leader of a stream, and that node will handle all writes to the stream.
 - partitions are basically the only way to scale out write throughput.

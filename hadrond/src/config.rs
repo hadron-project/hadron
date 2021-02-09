@@ -10,8 +10,6 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_aux::prelude::*;
 
-use crate::storage;
-
 /// Runtime configuration data.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -30,7 +28,7 @@ pub struct Config {
     pub raft_election_timeout_min: u16,
 
     /// The path to the database on disk.
-    #[serde(default = "storage::default_data_path")]
+    #[serde(default = "crate::database::default_data_path")]
     pub storage_data_path: String,
 
     /// The number of seconds to wait before issuing the initial cluster formation commands.

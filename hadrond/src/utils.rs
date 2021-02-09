@@ -21,14 +21,30 @@ pub const HIERARCHY_TOKEN: &str = ".";
 /// A result type used for the gRPC layer.
 pub type TonicResult<T> = std::result::Result<T, Status>;
 
-/// Encode the given payload using bincode.
-pub fn encode_bin<T: Serialize>(payload: &T) -> Result<Vec<u8>> {
-    bincode::serialize(payload).context(ERR_BINCODE_ENCODE)
+/// Encode the given u64 as an array of big-endian bytes.
+pub fn encode_u64(val: u64) -> [u8; 8] {
+    val.to_be_bytes()
 }
 
-/// Decode the given payload using bincode.
-pub fn decode_bin<T: DeserializeOwned>(payload: &[u8]) -> Result<T> {
-    bincode::deserialize(payload).context(ERR_BINCODE_DECODE)
+/// Decode the given bytes as a u64.
+pub fn decode_u64(val: &[u8]) -> Result<u64> {
+    match val {
+        [b0, b1, b2, b3, b4, b5, b6, b7] => Ok(u64::from_be_bytes([*b0, *b1, *b2, *b3, *b4, *b5, *b6, *b7])),
+        _ => bail!("invalid byte array given to decode as u64, invalid len {} needed 8", val.len()),
+    }
+}
+
+/// Encode the given i64 as an array of big-endian bytes.
+pub fn encode_i64(val: i64) -> [u8; 8] {
+    val.to_be_bytes()
+}
+
+/// Decode the given bytes as a i64.
+pub fn decode_i64(val: &[u8]) -> Result<i64> {
+    match val {
+        [b0, b1, b2, b3, b4, b5, b6, b7] => Ok(i64::from_be_bytes([*b0, *b1, *b2, *b3, *b4, *b5, *b6, *b7])),
+        _ => bail!("invalid byte array given to decode as i64, invalid len {} needed 8", val.len()),
+    }
 }
 
 /// Encode the given object as Flexbuffers bytes.

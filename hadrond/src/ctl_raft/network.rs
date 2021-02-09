@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tonic::transport::Channel;
 
-use crate::crc::{CRCClientRequest, CRCRequest, CRC};
+use crate::ctl_raft::{CRCClientRequest, CRCRequest, CRC};
 use crate::models;
 use crate::network::{ClientRequest, UpdateSchema};
 use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
@@ -172,9 +172,6 @@ impl RaftNetwork<RaftClientRequest> for HCoreNetwork {
         match crate::network::send_append_entries(RAFT_CLUSTER.into(), payload, chan).await {
             Ok(res) => Ok(res),
             Err(err) => match err.downcast_ref::<tonic::Status>() {
-                // TODO: RESUME HERE <<<<<<
-                // - use our own timeouts here.
-                // - if we timeout, or hit any of these cases, then we increment heartbeat failures.
                 Some(status) => match status.code() {
                     code @ tonic::Code::DeadlineExceeded | code @ tonic::Code::Unavailable => {
                         tracing::info!(code = %code, "AppendEntries RPC failed");

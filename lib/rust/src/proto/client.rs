@@ -106,7 +106,11 @@ pub struct UpdateSchemaManaged {
     pub schema: std::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpdateSchemaResponse {}
+pub struct UpdateSchemaResponse {
+    /// A bool indicating if the request completed as a no-op.
+    #[prost(bool, tag = "1")]
+    pub was_noop: bool,
+}
 #[doc = r" Generated client implementations."]
 pub mod client_client {
     #![allow(unused_variables, dead_code, missing_docs)]

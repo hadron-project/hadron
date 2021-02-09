@@ -173,4 +173,7 @@ message UpdateSchemaManaged {
   string schema = 3;
 }
 
-message UpdateSchemaResponse {}
+message UpdateSchemaResponse {
+  // A bool indicating if the request completed as a no-op.
+  bool was_noop = 1;
+}

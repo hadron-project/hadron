@@ -3,8 +3,11 @@
 #![allow(dead_code)] // TODO: remove this.
 
 mod impls;
+mod traits;
 
 use serde::{Deserialize, Serialize};
+
+pub use traits::Namespaced;
 
 /// A schema update to be applied to the system.
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -90,7 +93,7 @@ pub struct StandardStream {
     /// parallel. Consult the documentation on stream consumers for more details.
     pub partitions: u32,
     /// The replication factor of each partition of this stream.
-    pub replication_factor: u32,
+    pub replication_factor: u8,
     /// An optional TTL duration specifying how long records are to be kept on the stream.
     ///
     /// If not specified, then records will stay on the stream forever.
@@ -134,6 +137,8 @@ pub struct Pipeline {
     pub triggers: Vec<String>,
     /// The stages of this pipeline.
     pub stages: Vec<PipelineStage>,
+    /// The replication factor for this pipeline's data.
+    pub replication_factor: u8,
 }
 
 /// A single pipeline stage.
@@ -185,4 +190,13 @@ impl Default for EndpointMessageFlow {
     fn default() -> Self {
         Self::Single
     }
+}
+
+/// A schema branch model.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub struct SchemaBranch {
+    /// The name of the branch.
+    pub name: String,
+    /// The most recently applied timestamp for this branch.
+    pub timestamp: i64,
 }

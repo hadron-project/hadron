@@ -33,3 +33,11 @@ impl From<&'_ AppError> for Status {
         }
     }
 }
+
+/// The error type used to indicate that Raft shutdown is required.
+#[derive(Debug, thiserror::Error)]
+#[error("fatal storage error: {0}")]
+pub struct ShutdownError(#[from] pub anyhow::Error);
+
+/// A result type where the error is a `ShutdownError`.
+pub type ShutdownResult<T> = std::result::Result<T, ShutdownError>;

@@ -26,8 +26,6 @@ const ERR_SCHEMA_UPDATE_BASIC: &str = "schema updates must be composed of an ini
 
 lazy_static! {
     static ref ERR_DESCRIPTION_LEN: String = format!("descriptions may contain a maximum of {} characters", MAX_DESCRIPTION_LEN);
-    /// Regular expression used to validate changeset names.
-    static ref RE_CHANGESET: Regex = Regex::new(r"^[-/_.a-zA-Z0-9]{1,255}$").expect("failed to compile RE_CHANGESET regex");
     /// Regular expression used to validate top-level resource names for which hierarchies may be formed.
     static ref RE_NAME: Regex = Regex::new(r"^[-_.a-zA-Z0-9]{1,100}$").expect("failed to compile RE_NAME regex");
     /// Regular expression used to validate pipeline stage & output names.
@@ -101,23 +99,38 @@ impl SchemaStatement {
 //     }
 // }
 
-// impl Stream {
-//     fn validate(&self) -> Result<()> {
-//         ensure!(
-//             RE_NAME.is_match(&self.name),
-//             AppError::InvalidInput(format!(
-//                 "stream name `{}` is invalid, must match the pattern `{}`",
-//                 &self.name,
-//                 RE_NAME.as_str()
-//             ))
-//         );
-//         utils::validate_name_hierarchy(&self.name)?;
-//         if self.description.len() > MAX_DESCRIPTION_LEN {
-//             bail!(AppError::InvalidInput(ERR_DESCRIPTION_LEN.clone()));
-//         }
-//         Ok(())
-//     }
-// }
+impl Stream {
+    /// The number of partitions configured for this stream.
+    pub fn partitions(&self) -> u32 {
+        match self {
+            Stream::Standard(inner) => inner.partitions,
+            Stream::OutTable(_) => 1,
+        }
+    }
+    /// The number of replicas per partition configured for this stream.
+    pub fn replication_factor(&self) -> u8 {
+        match self {
+            Stream::Standard(inner) => inner.replication_factor,
+            Stream::OutTable(inner) => inner.replication_factor,
+        }
+    }
+
+    // fn validate(&self) -> Result<()> {
+    //     ensure!(
+    //         RE_NAME.is_match(&self.name),
+    //         AppError::InvalidInput(format!(
+    //             "stream name `{}` is invalid, must match the pattern `{}`",
+    //             &self.name,
+    //             RE_NAME.as_str()
+    //         ))
+    //     );
+    //     utils::validate_name_hierarchy(&self.name)?;
+    //     if self.description.len() > MAX_DESCRIPTION_LEN {
+    //         bail!(AppError::InvalidInput(ERR_DESCRIPTION_LEN.clone()));
+    //     }
+    //     Ok(())
+    // }
+}
 
 // impl From<&'_ Pipeline> for storage::Pipeline {
 //     fn from(src: &'_ Pipeline) -> Self {

@@ -47,7 +47,7 @@
 
 #![allow(dead_code)] // TODO: remove this
 
-pub mod command;
+pub mod events;
 mod macros;
 mod network;
 mod storage;
@@ -64,13 +64,16 @@ use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
 use crate::config::Config;
-use crate::crc::command::CRCCommand;
-use crate::crc::network::{HCoreNetwork, RaftClientRequest, RaftClientResponse};
-use crate::crc::storage::HCoreStorage;
+use crate::ctl_raft::events::CRCEvent;
+use crate::ctl_raft::network::{HCoreNetwork, RaftClientRequest, RaftClientResponse};
+use crate::ctl_raft::storage::HCoreStorage;
+use crate::database::Database;
 use crate::network::UpdateSchema;
 use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
 use crate::utils;
 use crate::NodeId;
+
+pub use storage::HCoreIndex;
 
 /// The concrete Raft type used by Hadron core.
 pub type CRCRaft = Raft<RaftClientRequest, RaftClientResponse, HCoreNetwork, HCoreStorage>;
@@ -104,12 +107,12 @@ pub struct CRC {
 
 impl CRC {
     pub async fn new(
-        id: NodeId, config: Arc<Config>, peer_channels: watch::Receiver<Arc<HashMap<NodeId, Channel>>>,
+        id: NodeId, config: Arc<Config>, db: Database, peer_channels: watch::Receiver<Arc<HashMap<NodeId, Channel>>>,
         requests: mpsc::UnboundedReceiver<CRCRequest>, shutdown: watch::Receiver<bool>,
-    ) -> Result<(Self, mpsc::UnboundedReceiver<CRCCommand>)> {
+    ) -> Result<(Self, Arc<HCoreIndex>, mpsc::UnboundedReceiver<CRCEvent>, watch::Receiver<RaftMetrics>)> {
         // Initialize network & storage interfaces.
         let net = Arc::new(HCoreNetwork::new(peer_channels.clone()));
-        let (storage, commands_rx) = HCoreStorage::new(id, config.clone()).await?;
+        let (storage, index, events_rx) = HCoreStorage::new(id, config.clone(), db).await?;
         let storage = Arc::new(storage);
 
         // Initialize Raft.
@@ -134,17 +137,12 @@ impl CRC {
             forward_tx,
             forward_rx,
             raft,
-            metrics,
+            metrics: metrics.clone(),
             shutdown,
             net,
             storage,
         };
-        Ok((this, commands_rx))
-        // TODO: RESUME HERE <<<<<<<<<
-        // - this CRC controller is responsible for control group placement based on node IDs of cluster members.
-        // - if this node, by ID, does not need to create a new SPC (stream partition controller), then the
-        // CRC should not emit an event indicating such.
-        // - this is a control signal.
+        Ok((this, index, events_rx, metrics))
     }
 
     pub fn spawn(self) -> JoinHandle<()> {
@@ -152,6 +150,8 @@ impl CRC {
     }
 
     async fn run(mut self) {
+        tracing::debug!("Cluster Raft Controller is online");
+
         let mut form_cluster_rx = Self::spawn_cluster_formation_delay_timer(self.config.clone()).fuse();
         loop {
             tokio::select! {
@@ -166,14 +166,14 @@ impl CRC {
         }
 
         // Graceful shutdown. Here, we don't exit until all of our main channels have been drained.
-        tracing::debug!("crc is shutting down");
+        tracing::debug!("CRC is shutting down");
         while let Ok(req) = self.requests.try_recv() {
             self.handle_request(req).await;
         }
         while let Ok(forward) = self.forward_rx.try_recv() {
             self.handle_forward_request(forward.0, forward.1).await;
         }
-        tracing::debug!("crc shutdown");
+        tracing::debug!("CRC has shutdown");
     }
 
     #[tracing::instrument(level = "trace", skip(self, req))]
