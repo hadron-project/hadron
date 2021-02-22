@@ -14,15 +14,22 @@ use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
 use crate::config::Config;
+use crate::ctl_placement::events::CPCEvent;
 use crate::ctl_placement::CPC;
-use crate::ctl_raft::{CRCClientRequest, CRCRequest, HCoreIndex, CRC};
+use crate::ctl_raft::models::{CRCClientRequest, CRCRequest};
+use crate::ctl_raft::{HCoreIndex, CRC};
+use crate::ctl_stream::SPC;
 use crate::database::Database;
 use crate::discovery::Discovery;
+use crate::models::placement;
 use crate::network::{ClientRequest, Network, NetworkOutput, PeerRequest};
+use crate::NodeId;
 
 pub struct App {
     /// The ID of this node in the Raft cluster.
-    _node_id: u64,
+    id: NodeId,
+    /// The application's runtime config.
+    config: Arc<Config>,
     /// The system data index.
     index: Arc<HCoreIndex>,
 
@@ -33,7 +40,11 @@ pub struct App {
 
     /// A channel used for sending requests into the Hadron core.
     crc_tx: mpsc::UnboundedSender<CRCRequest>,
+    /// A channel of messages coming out of the CPC.
+    cpc_rx: mpsc::UnboundedReceiver<CPCEvent>,
 
+    /// A channel used for triggering graceful shutdown.
+    shutdown_rx: watch::Receiver<bool>,
     /// A channel used for triggering graceful shutdown.
     shutdown_tx: watch::Sender<bool>,
 
@@ -68,14 +79,18 @@ impl App {
         let crc = crc.spawn();
 
         // Spawn the CPC.
-        let cpc = CPC::new(node_id, config.clone(), shutdown_rx, raft_metrics, crc_events).spawn();
+        let (cpc, cpc_rx) = CPC::new(node_id, config.clone(), shutdown_rx.clone(), raft_metrics, crc_events, crc_tx.clone());
+        let cpc = cpc.spawn();
 
         Ok(Self {
-            _node_id: node_id,
+            id: node_id,
+            config,
             index,
             network_rx,
             _peers_rx: peers_rx,
             crc_tx,
+            cpc_rx,
+            shutdown_rx,
             shutdown_tx,
             discovery,
             network,
@@ -96,6 +111,7 @@ impl App {
         loop {
             tokio::select! {
                 Some(net_req) = self.network_rx.next() => self.handle_network_request(net_req).await,
+                Some(event) = self.cpc_rx.next() => self.handle_placement_event(event).await,
                 Some((_, sig)) = signals.next() => {
                     tracing::debug!(signal = ?sig, "signal received, beginning graceful shutdown");
                     let _ = self.shutdown_tx.broadcast(true);
@@ -122,8 +138,36 @@ impl App {
         Ok(())
     }
 
+    /// Handle a placement event coming from the CPC.
+    ///
+    /// Each event indicates some pertinent scheduling event related to this node. This handle
+    /// is used to spawn all other dynamic controllers for this node.
+    #[tracing::instrument(level = "trace", skip(self, event))]
+    async fn handle_placement_event(&mut self, event: CPCEvent) {
+        match event {
+            CPCEvent::StreamReplicaScheduled(replica) => self.spawn_stream_replica(replica).await,
+            CPCEvent::PipelineReplicaScheduled(replica) => self.spawn_pipeline_replica(replica).await,
+        }
+    }
+
+    /// Spawn a stream replica controller on this node.
+    #[tracing::instrument(level = "trace", skip(self, replica))]
+    async fn spawn_stream_replica(&mut self, replica: Arc<placement::StreamReplica>) {
+        // TODO: CRITICAL PATH >>> spawn a stream partition controller for the given replica
+        let _ = SPC::new(self.id, self.config.clone(), self.shutdown_rx.clone(), replica).spawn();
+    }
+
+    /// Spawn a pipeline replica controller on this node.
+    #[tracing::instrument(level = "trace", skip(self, replica))]
+    async fn spawn_pipeline_replica(&mut self, replica: Arc<placement::PipelineReplica>) {
+        // TODO: CRITICAL PATH >>> spawn a stream partition controller for the given replica
+    }
+
+    /// Handle a network request.
     #[tracing::instrument(level = "trace", skip(self, req))]
     async fn handle_network_request(&mut self, req: NetworkOutput) {
+        // TODO: maybe refactor this to push this logic into the networking layer to reduce
+        // the number of hops.
         match req {
             NetworkOutput::PeerRequest(peer_req) => match peer_req {
                 PeerRequest::RaftAppendEntries(req) => {

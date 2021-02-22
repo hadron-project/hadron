@@ -6,16 +6,17 @@ use async_raft::async_trait::async_trait;
 use async_raft::raft::{
     AppendEntriesRequest, AppendEntriesResponse, ClientWriteRequest, InstallSnapshotRequest, InstallSnapshotResponse, VoteRequest, VoteResponse,
 };
-use async_raft::{error::ClientWriteError, AppData, AppDataResponse, RaftNetwork};
-use serde::{Deserialize, Serialize};
+use async_raft::{error::ClientWriteError, RaftNetwork};
 use tokio::sync::watch;
 use tonic::transport::Channel;
 
-use crate::ctl_raft::{CRCClientRequest, CRCRequest, CRC};
-use crate::models;
+use crate::ctl_raft::models::{
+    AssignStreamReplicaToNode, CRCClientRequest, CRCRequest, RaftAssignStreamReplicaToNode, RaftClientRequest, RaftClientResponse,
+    RaftUpdateSchemaRequest,
+};
+use crate::ctl_raft::CRC;
 use crate::network::{ClientRequest, UpdateSchema};
 use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
-use crate::proto::client::UpdateSchemaResponse;
 use crate::proto::peer::{RaftAppendEntriesMsg, RaftInstallSnapshotMsg, RaftVoteMsg};
 use crate::utils;
 use crate::NodeId;
@@ -25,39 +26,10 @@ const RAFT_CLUSTER: &str = "hadron";
 const ERR_UNEXPECTED_RAFT_RESPONSE_VARIANT: &str = "error handling response from storage layer, unexpected variant";
 const ERR_FORWARD_LEADER_UNKNOWN: &str = "error forwarding request, cluster leadership is transitioning";
 
-/// The Raft request type used for the Hadron core Raft.
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(tag = "type")]
-pub enum RaftClientRequest {
-    UpdateSchema(RaftUpdateSchemaRequest),
-}
-
-/// A request to perform a schema update.
-#[derive(Serialize, Deserialize, Clone)]
-pub struct RaftUpdateSchemaRequest {
-    /// The validated form of the request.
-    pub validated: models::SchemaUpdate,
-    /// The ID of the token provided on the request.
-    pub token_id: u64,
-}
-
-impl AppData for RaftClientRequest {}
-
-/// The Raft response type used for the Hadron core Raft.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum RaftClientResponse {
-    UpdateSchema(UpdateSchemaResponse),
-}
-
-impl AppDataResponse for RaftClientResponse {}
-
 impl CRC {
     #[tracing::instrument(level = "trace", skip(self, req))]
     pub(super) async fn handle_request_update_schema(&mut self, req: UpdateSchema) {
         let _claims = ok_or_else_tx_err!(self.storage.must_get_token_claims(&req.creds.id).await, req);
-        // ok_or_else_tx_err!(claims.check_schema_auth(), req); // TODO: update this code to have
-        // the UpdateSchema request be statically validated initially, as was done originally, and
-        // a field declaring all namespaces manipulated should be built. The auth check can use that field.
         let (raft, forward_tx) = (self.raft.clone(), self.forward_tx.clone());
         tokio::spawn(async move {
             let client_request = ClientWriteRequest::new(RaftClientRequest::UpdateSchema(RaftUpdateSchemaRequest {
@@ -122,6 +94,31 @@ impl CRC {
         });
     }
 
+    /// Handle a stream replica assignment request from the CPC.
+    #[tracing::instrument(level = "trace", skip(self, req))]
+    pub(super) async fn handle_cpc_stream_replica_assignment(&mut self, req: AssignStreamReplicaToNode) {
+        let raft = self.raft.clone();
+        tokio::spawn(async move {
+            let client_request = ClientWriteRequest::new(RaftClientRequest::AssignStreamReplicaToNode(RaftAssignStreamReplicaToNode {
+                change: req.change,
+                replica: req.replica.id,
+            }));
+            match raft.client_write(client_request).await {
+                Ok(res) => match res.data {
+                    RaftClientResponse::AssignStreamReplicaToNode(res) => {
+                        let _ = req.tx.send(Ok(res));
+                    }
+                    _ => {
+                        let _ = req.tx.send(Err(anyhow!(ERR_UNEXPECTED_RAFT_RESPONSE_VARIANT)));
+                    }
+                },
+                Err(err) => {
+                    let _ = req.tx.send(Err(err.into()));
+                }
+            }
+        });
+    }
+
     /// Handle forwarding of requests to peer nodes.
     #[tracing::instrument(level = "trace", skip(self, req, node_opt))]
     pub(super) async fn handle_forward_request(&mut self, req: CRCClientRequest, node_opt: Option<NodeId>) {
@@ -175,7 +172,7 @@ impl RaftNetwork<RaftClientRequest> for HCoreNetwork {
                 Some(status) => match status.code() {
                     code @ tonic::Code::DeadlineExceeded | code @ tonic::Code::Unavailable => {
                         tracing::info!(code = %code, "AppendEntries RPC failed");
-                        Err(err) // TODO: handle these.
+                        Err(err) // TODO: finish up this error handling.
                     }
                     _ => Err(err),
                 },
@@ -196,13 +193,5 @@ impl RaftNetwork<RaftClientRequest> for HCoreNetwork {
         let chan = self.get_peer_channel(&target).await?;
         let payload = utils::encode_flexbuf(&rpc).context(utils::ERR_ENCODE_RAFT_RPC)?;
         crate::network::send_vote(RAFT_CLUSTER.into(), payload, chan).await
-    }
-}
-
-impl From<CRCClientRequest> for ClientRequest {
-    fn from(src: CRCClientRequest) -> Self {
-        match src {
-            CRCClientRequest::UpdateSchema(req) => ClientRequest::UpdateSchema(req),
-        }
     }
 }

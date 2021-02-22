@@ -49,6 +49,7 @@
 
 pub mod events;
 mod macros;
+pub mod models;
 mod network;
 mod storage;
 
@@ -65,12 +66,10 @@ use tonic::transport::Channel;
 
 use crate::config::Config;
 use crate::ctl_raft::events::CRCEvent;
-use crate::ctl_raft::network::{HCoreNetwork, RaftClientRequest, RaftClientResponse};
+use crate::ctl_raft::models::{CRCClientRequest, CRCRequest, RaftClientRequest, RaftClientResponse};
+use crate::ctl_raft::network::HCoreNetwork;
 use crate::ctl_raft::storage::HCoreStorage;
 use crate::database::Database;
-use crate::network::UpdateSchema;
-use crate::network::{RaftAppendEntries, RaftInstallSnapshot, RaftVote};
-use crate::utils;
 use crate::NodeId;
 
 pub use storage::HCoreIndex;
@@ -193,6 +192,7 @@ impl CRC {
                     CRCClientRequest::UpdateSchema(req) => self.handle_request_update_schema(req).await,
                 }
             }
+            CRCRequest::Placement(req) => self.handle_cpc_stream_replica_assignment(req).await,
             CRCRequest::RaftAppendEntries(req) => self.handle_raft_append_entries_rpc(req).await,
             CRCRequest::RaftInstallSnapshot(req) => self.handle_raft_install_snapshot_rpc(req).await,
             CRCRequest::RaftVote(req) => self.handle_raft_vote_rpc(req).await,
@@ -236,43 +236,4 @@ impl CRC {
             .cloned()
             .ok_or_else(|| anyhow!("no active connection to target peer"))
     }
-}
-
-/// All request variants which the Hadron core data layer can handle.
-pub enum CRCRequest {
-    Client(CRCClientRequest),
-    RaftAppendEntries(RaftAppendEntries),
-    RaftVote(RaftVote),
-    RaftInstallSnapshot(RaftInstallSnapshot),
-}
-
-impl CRCRequest {
-    pub(super) fn respond_with_error(self, err: anyhow::Error) {
-        match self {
-            CRCRequest::Client(CRCClientRequest::UpdateSchema(val)) => {
-                let _ = val.tx.send(utils::map_result_to_status(Err(err)));
-            }
-            CRCRequest::RaftAppendEntries(val) => {
-                let _ = val.tx.send(utils::map_result_to_status(Err(err)));
-            }
-            CRCRequest::RaftVote(val) => {
-                let _ = val.tx.send(utils::map_result_to_status(Err(err)));
-            }
-            CRCRequest::RaftInstallSnapshot(val) => {
-                let _ = val.tx.send(utils::map_result_to_status(Err(err)));
-            }
-        }
-    }
-}
-
-impl From<CRCClientRequest> for CRCRequest {
-    fn from(src: CRCClientRequest) -> Self {
-        CRCRequest::Client(src)
-    }
-}
-
-/// All requests variants which the Hadron core data layer can handle, specifically those which
-/// can come from clients.
-pub enum CRCClientRequest {
-    UpdateSchema(UpdateSchema),
 }

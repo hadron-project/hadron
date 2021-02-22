@@ -14,8 +14,7 @@ async fn main() -> Result<()> {
         // Send a copy of all spans to stdout in compact form.
         .with(
             tracing_subscriber::fmt::layer()
-                .with_thread_names(true)
-                .with_target(false)
+                .with_target(true)
                 .with_level(true)
                 .with_ansi(true)
         )

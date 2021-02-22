@@ -1,3 +1,7 @@
+//! Model related traits.
+
+use crate::models::schema;
+
 /// A type which is associated with a namespace, and has a name.
 pub trait Namespaced {
     /// The namespace of the object.
@@ -15,7 +19,7 @@ pub trait Namespaced {
     }
 }
 
-impl Namespaced for super::Stream {
+impl Namespaced for schema::Stream {
     fn namespace(&self) -> &str {
         match self {
             Self::Standard(inner) => &inner.metadata.namespace,
@@ -36,7 +40,7 @@ impl Namespaced for super::Stream {
     }
 }
 
-impl Namespaced for super::Pipeline {
+impl Namespaced for schema::Pipeline {
     fn namespace(&self) -> &str {
         &self.metadata.namespace
     }
@@ -48,7 +52,7 @@ impl Namespaced for super::Pipeline {
     }
 }
 
-impl Namespaced for super::Endpoint {
+impl Namespaced for schema::Endpoint {
     fn namespace(&self) -> &str {
         &self.metadata.namespace
     }

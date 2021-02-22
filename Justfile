@@ -16,3 +16,8 @@ helmUp:
         --set image.fullName=hadron-local-release:latest \
         --set image.pullPolicy=Never \
         --set-string statefulSet.replicas=3
+
+# Purge all Hadron data in the local kind cluster.
+purgeKind:
+    helm --kube-context="kind-hadron" uninstall hadron
+    kubectl --context="kind-hadron" delete persistentvolumeclaims -l app=hadron

@@ -12,8 +12,8 @@ use chrono::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
 
-use super::*;
 use crate::error::AppError;
+use crate::models::schema::*;
 use crate::proto::client::{update_schema_request::Update, UpdateSchemaManaged, UpdateSchemaOneOff, UpdateSchemaRequest};
 use crate::proto::storage;
 use crate::utils;

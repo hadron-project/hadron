@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use dashmap::DashMap;
-use models::Namespaced;
 use tokio::sync::RwLock;
 
 use crate::auth::{Claims, User, UserRole};
-use crate::ctl_placement::models::{PipelineReplica, StreamReplica};
 use crate::ctl_raft::storage::ShutdownError;
-use crate::models;
+use crate::models::placement::{PipelineReplica, StreamReplica};
+use crate::models::prelude::*;
+use crate::models::schema;
 
 const ERR_INDEX_MISSING_NS: &str = "namespace not found in index, this is a bug, please open an issue";
 
@@ -28,6 +28,10 @@ pub struct HCoreIndex {
     pub schema_branches: DashMap<String, i64>,
     /// Index of all live namespaces in the system.
     pub namespaces: DashMap<String, Arc<NamespaceIndex>>,
+    /// Index of all stream replicas.
+    pub stream_replicas: DashMap<u64, Arc<StreamReplica>>,
+    /// Index of all pipeline replicas.
+    pub pipeline_replicas: DashMap<u64, Arc<PipelineReplica>>,
     /// Index of data for users data.
     pub users: DashMap<String, Arc<UserRole>>,
     /// Index of data for tokens data.
@@ -37,8 +41,8 @@ pub struct HCoreIndex {
 impl HCoreIndex {
     /// Create a new instance.
     pub fn new(
-        users: Vec<User>, tokens: Vec<(u64, Claims)>, namespaces: Vec<models::Namespace>, streams: Vec<models::Stream>,
-        pipelines: Vec<models::Pipeline>, schema_branches: Vec<models::SchemaBranch>,
+        users: Vec<User>, tokens: Vec<(u64, Claims)>, namespaces: Vec<schema::Namespace>, streams: Vec<schema::Stream>,
+        pipelines: Vec<schema::Pipeline>, schema_branches: Vec<schema::SchemaBranch>,
     ) -> Self {
         let index = Self::default();
         for val in schema_branches {
@@ -91,6 +95,14 @@ impl HCoreIndex {
         new.tokens.into_iter().for_each(|(key, val)| {
             let _ = self.tokens.insert(key, val);
         });
+        self.stream_replicas.clear();
+        new.stream_replicas.into_iter().for_each(|(key, val)| {
+            let _ = self.stream_replicas.insert(key, val);
+        });
+        self.pipeline_replicas.clear();
+        new.pipeline_replicas.into_iter().for_each(|(key, val)| {
+            let _ = self.pipeline_replicas.insert(key, val);
+        });
     }
 
     pub(super) async fn apply_batch(&self, ops: IndexWriteBatch) -> Result<(), ShutdownError> {
@@ -115,6 +127,12 @@ impl HCoreIndex {
                 IndexWriteOp::UpdateSchemaBranch { branch, timestamp } => {
                     self.schema_branches.insert(branch, timestamp);
                 }
+                IndexWriteOp::InsertStreamReplica { replica } => {
+                    self.stream_replicas.insert(replica.id, replica);
+                }
+                IndexWriteOp::InsertPipelineReplica { replica } => {
+                    self.pipeline_replicas.insert(replica.id, replica);
+                }
             }
         }
         Ok(())
@@ -124,13 +142,13 @@ impl HCoreIndex {
         self.namespaces.get(ns).map(|val| val.value().clone())
     }
 
-    pub fn get_stream(&self, ns: &str, stream: &str) -> Option<Arc<models::Stream>> {
+    pub fn get_stream(&self, ns: &str, stream: &str) -> Option<Arc<schema::Stream>> {
         let ns = self.get_namespace(ns)?;
         let meta_opt = ns.streams.get(stream).map(|val| val.value().clone());
         meta_opt
     }
 
-    pub fn get_pipeline(&self, ns: &str, pipeline: &str) -> Option<Arc<models::Pipeline>> {
+    pub fn get_pipeline(&self, ns: &str, pipeline: &str) -> Option<Arc<schema::Pipeline>> {
         let ns = self.get_namespace(ns)?;
         let meta_opt = ns.pipelines.get(pipeline).map(|val| val.value().clone());
         meta_opt
@@ -145,9 +163,9 @@ pub struct NamespaceIndex {
     /// Index of endpoints in this namespace.
     pub endpoints: DashMap<String, ()>,
     /// Index of streams in this namespace.
-    pub streams: DashMap<String, Arc<models::Stream>>,
+    pub streams: DashMap<String, Arc<schema::Stream>>,
     /// Index of pipelines in this namespace.
-    pub pipelines: DashMap<String, Arc<models::Pipeline>>,
+    pub pipelines: DashMap<String, Arc<schema::Pipeline>>,
 }
 
 impl NamespaceIndex {
@@ -178,9 +196,13 @@ pub(super) enum IndexWriteOp {
     /// Insert a new namespace record into the index.
     InsertNamespace { name: String, description: String },
     /// Insert a new stream record into the index.
-    InsertStream { stream: models::Stream },
+    InsertStream { stream: schema::Stream },
     /// Insert a new pipeline record into the index.
-    InsertPipeline { pipeline: models::Pipeline },
+    InsertPipeline { pipeline: schema::Pipeline },
     /// Update a schema branch with a new timestamp.
     UpdateSchemaBranch { branch: String, timestamp: i64 },
+    /// Insert a new stream replica record into the index.
+    InsertStreamReplica { replica: Arc<StreamReplica> },
+    /// Insert a new pipeline replica record into the index.
+    InsertPipelineReplica { replica: Arc<PipelineReplica> },
 }

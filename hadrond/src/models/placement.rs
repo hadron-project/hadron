@@ -4,6 +4,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::NodeId;
 
+/// Assignment variants which can be issued from the CPC.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub enum Assignment {
+    /// An assignment for an object which was in pristine state, not having a previous assignment.
+    InitialPlacement {
+        /// The target node of the initial placement.
+        node: NodeId,
+    },
+}
+
 /// A stream partition replica.
 ///
 /// Each replica is uniquely identified via the compound key

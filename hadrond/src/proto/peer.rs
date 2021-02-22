@@ -70,48 +70,60 @@ pub mod peer_client {
         }
         #[doc = " A handshake request, part of the initial peer connection setup."]
         pub async fn handshake(
-            &mut self, request: impl tonic::IntoRequest<super::HandshakeMsg>,
+            &mut self,
+            request: impl tonic::IntoRequest<super::HandshakeMsg>,
         ) -> Result<tonic::Response<super::HandshakeMsg>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/peer.Peer/Handshake");
             self.inner.unary(request.into_request(), path, codec).await
         }
         #[doc = " A Raft AppendEntries RPC."]
         pub async fn raft_append_entries(
-            &mut self, request: impl tonic::IntoRequest<super::RaftAppendEntriesMsg>,
+            &mut self,
+            request: impl tonic::IntoRequest<super::RaftAppendEntriesMsg>,
         ) -> Result<tonic::Response<super::RaftAppendEntriesMsg>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/peer.Peer/RaftAppendEntries");
             self.inner.unary(request.into_request(), path, codec).await
         }
         #[doc = " A Raft Vote RPC."]
         pub async fn raft_vote(
-            &mut self, request: impl tonic::IntoRequest<super::RaftVoteMsg>,
+            &mut self,
+            request: impl tonic::IntoRequest<super::RaftVoteMsg>,
         ) -> Result<tonic::Response<super::RaftVoteMsg>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/peer.Peer/RaftVote");
             self.inner.unary(request.into_request(), path, codec).await
         }
         #[doc = " A Raft InstallSnapshot RPC."]
         pub async fn raft_install_snapshot(
-            &mut self, request: impl tonic::IntoRequest<super::RaftInstallSnapshotMsg>,
+            &mut self,
+            request: impl tonic::IntoRequest<super::RaftInstallSnapshotMsg>,
         ) -> Result<tonic::Response<super::RaftInstallSnapshotMsg>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/peer.Peer/RaftInstallSnapshot");
             self.inner.unary(request.into_request(), path, codec).await
@@ -119,7 +131,9 @@ pub mod peer_client {
     }
     impl<T: Clone> Clone for PeerClient<T> {
         fn clone(&self) -> Self {
-            Self { inner: self.inner.clone() }
+            Self {
+                inner: self.inner.clone(),
+            }
         }
     }
     impl<T> std::fmt::Debug for PeerClient<T> {
@@ -136,16 +150,24 @@ pub mod peer_server {
     #[async_trait]
     pub trait Peer: Send + Sync + 'static {
         #[doc = " A handshake request, part of the initial peer connection setup."]
-        async fn handshake(&self, request: tonic::Request<super::HandshakeMsg>) -> Result<tonic::Response<super::HandshakeMsg>, tonic::Status>;
+        async fn handshake(
+            &self,
+            request: tonic::Request<super::HandshakeMsg>,
+        ) -> Result<tonic::Response<super::HandshakeMsg>, tonic::Status>;
         #[doc = " A Raft AppendEntries RPC."]
         async fn raft_append_entries(
-            &self, request: tonic::Request<super::RaftAppendEntriesMsg>,
+            &self,
+            request: tonic::Request<super::RaftAppendEntriesMsg>,
         ) -> Result<tonic::Response<super::RaftAppendEntriesMsg>, tonic::Status>;
         #[doc = " A Raft Vote RPC."]
-        async fn raft_vote(&self, request: tonic::Request<super::RaftVoteMsg>) -> Result<tonic::Response<super::RaftVoteMsg>, tonic::Status>;
+        async fn raft_vote(
+            &self,
+            request: tonic::Request<super::RaftVoteMsg>,
+        ) -> Result<tonic::Response<super::RaftVoteMsg>, tonic::Status>;
         #[doc = " A Raft InstallSnapshot RPC."]
         async fn raft_install_snapshot(
-            &self, request: tonic::Request<super::RaftInstallSnapshotMsg>,
+            &self,
+            request: tonic::Request<super::RaftInstallSnapshotMsg>,
         ) -> Result<tonic::Response<super::RaftInstallSnapshotMsg>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -186,7 +208,10 @@ pub mod peer_server {
                     impl<T: Peer> tonic::server::UnaryService<super::HandshakeMsg> for HandshakeSvc<T> {
                         type Response = super::HandshakeMsg;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::HandshakeMsg>) -> Self::Future {
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::HandshakeMsg>,
+                        ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).handshake(request).await };
                             Box::pin(fut)
@@ -214,7 +239,10 @@ pub mod peer_server {
                     impl<T: Peer> tonic::server::UnaryService<super::RaftAppendEntriesMsg> for RaftAppendEntriesSvc<T> {
                         type Response = super::RaftAppendEntriesMsg;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::RaftAppendEntriesMsg>) -> Self::Future {
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RaftAppendEntriesMsg>,
+                        ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).raft_append_entries(request).await };
                             Box::pin(fut)
@@ -242,7 +270,10 @@ pub mod peer_server {
                     impl<T: Peer> tonic::server::UnaryService<super::RaftVoteMsg> for RaftVoteSvc<T> {
                         type Response = super::RaftVoteMsg;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::RaftVoteMsg>) -> Self::Future {
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RaftVoteMsg>,
+                        ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).raft_vote(request).await };
                             Box::pin(fut)
@@ -267,10 +298,15 @@ pub mod peer_server {
                 "/peer.Peer/RaftInstallSnapshot" => {
                     #[allow(non_camel_case_types)]
                     struct RaftInstallSnapshotSvc<T: Peer>(pub Arc<T>);
-                    impl<T: Peer> tonic::server::UnaryService<super::RaftInstallSnapshotMsg> for RaftInstallSnapshotSvc<T> {
+                    impl<T: Peer> tonic::server::UnaryService<super::RaftInstallSnapshotMsg>
+                        for RaftInstallSnapshotSvc<T>
+                    {
                         type Response = super::RaftInstallSnapshotMsg;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::RaftInstallSnapshotMsg>) -> Self::Future {
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RaftInstallSnapshotMsg>,
+                        ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).raft_install_snapshot(request).await };
                             Box::pin(fut)

@@ -8,7 +8,7 @@ use tonic::{async_trait, transport::Channel, Request, Response, Status, Streamin
 
 use crate::auth::TokenCredentials;
 use crate::config::Config;
-use crate::models;
+use crate::models::schema;
 pub use crate::proto::client::client_client::ClientClient;
 use crate::proto::client::client_server::Client;
 pub use crate::proto::client::client_server::ClientServer;
@@ -126,7 +126,7 @@ impl Client for ClientService {
     async fn update_schema(&self, req: Request<UpdateSchemaRequest>) -> TonicResult<Response<UpdateSchemaResponse>> {
         let creds = self.must_get_token(req.metadata())?;
         let req = req.into_inner();
-        let validated = models::SchemaUpdate::decode_and_validate(&req).map_err(utils::status_from_err)?;
+        let validated = schema::SchemaUpdate::decode_and_validate(&req).map_err(utils::status_from_err)?;
         let (tx, rx) = oneshot::channel();
         let _ = self.network.send(ClientRequest::UpdateSchema(UpdateSchema { req, validated, tx, creds }));
         rx.await.map_err(status_from_rcv_error).and_then(|res| res).map(Response::new)
@@ -203,7 +203,7 @@ pub struct PipelineStageSub {
 
 pub struct UpdateSchema {
     pub req: UpdateSchemaRequest,
-    pub validated: models::SchemaUpdate,
+    pub validated: schema::SchemaUpdate,
     pub tx: oneshot::Sender<TonicResult<UpdateSchemaResponse>>,
     pub creds: TokenCredentials,
 }

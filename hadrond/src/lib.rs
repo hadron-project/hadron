@@ -3,6 +3,7 @@ mod auth;
 mod config;
 mod ctl_placement;
 mod ctl_raft;
+mod ctl_stream;
 mod database;
 mod discovery;
 mod error;
