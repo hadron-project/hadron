@@ -47,7 +47,7 @@ service Client {
   rpc RpcSub(stream RpcSubClient) returns (stream RpcSubServer);
 
   // Publish an event to a stream.
-  rpc StreamPub(StreamPubRequest) returns (StreamPubResponse);
+  rpc StreamPub(stream StreamPubClient) returns (stream StreamPubServer);
   // Subscribe as an event handler for a specific stream.
   //
   // This gRPC endpoint uses a bi-direction stream. The client sends `StreamSubClient` messages and
@@ -55,9 +55,9 @@ service Client {
   // the stream and the server will send an initial message to confirm initialization.
   //
   // From there, the server will send a `StreamSubServer` message any time an event has been published
-  // to the corresponding stream and this client connection has been chosen to handle event. The client
-  // is then expected to handle the event and respond with a `StreamSubClient` message, which will
-  // either acknowledge (`ack`) the event indicating that it was successfully processed, or will
+  // to the corresponding stream and this client connection has been chosen to handle the event. The
+  // client is then expected to handle the event and respond with a `StreamSubClient` message, which
+  // will either acknowledge (`ack`) the event indicating that it was successfully processed, or will
   // negatively acknowledge (`nack`) the event indicating that the event was not processed successfully.
   rpc StreamSub(stream StreamSubClient) returns (stream StreamSubServer);
   // Unsubscribes a stream consumer group, deleting the consumer group's offsets for the associated stream.
@@ -112,24 +112,72 @@ message RpcSubServer {}
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-message StreamPubRequest {
-  // The namespace of the stream to which this event will be published.
-  string namespace = 1;
-  // The stream to which this event will be published.
-  string stream = 2;
-  // The payload of this event.
-  bytes payload = 3;
+message StreamPubClient {
+  oneof request {
+    StreamPubConnectRequest connect = 1;
+    StreamPubPayloadRequest payload = 2;
+  }
 }
 
-message StreamPubResponse {
-  // The ID of the newly created event.
-  uint64 id = 1;
+message StreamPubServer {
+  oneof response {
+    StreamPubConnectResponse connect = 1;
+    StreamPubPayloadResponse payload = 2;
+  }
 }
+
+// A request to connect to the target stream partition as a publisher.
+message StreamPubConnectRequest {
+  // The namespace of the target stream.
+  string namespace = 1;
+  // The target stream with which to connect.
+  string stream = 2;
+  // The partition of the target stream with which to connect.
+  uint32 partition = 3;
+}
+
+// A response to an earlier stream pub connect request.
+message StreamPubConnectResponse {
+  // A bool indicating if the connection is ready to receive publish requests.
+  bool is_ready = 1;
+  // The DNS name of the cluster node which is the leader of the target stream partition.
+  //
+  // This field will only be pupulated if `is_ready` is `false`. In such cases, the client should
+  // create a new connection with the given leader node and restart the StreamPub connection there.
+  string leader = 2;
+}
+
+// A request to publish a payload of data to the connected stream.
+message StreamPubPayloadRequest {
+  // The batch of entries to be published.
+  repeated Record batch = 1;
+}
+
+// A response to an earlier sent stream pub payload request.
+message StreamPubPayloadResponse {
+  // The number of event records written as part of this request.
+  uint64 records_written = 1;
+}
+
+// An event record.
+message Record {
+  // The offset of this record on its stream partition.
+  uint64 offset = 1;
+  // The unix epoch milliseconds timestamp of this event record.
+  int64 timestamp = 2;
+  // The key of this event record.
+  string key = 3;
+  // The data payload of this event record.
+  bytes value = 4;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////
 
 message StreamSubClient {
   // TODO: add a field `overwrite` which will cause the config presented in this subscription
   // request to overwrite the subscription's current config. Consumer apps can be deployed in such
-  // a way that rollbacks and version changes will not confict and cause unexpected sub config.
+  // a way that rollbacks and version changes will not conflict and cause unexpected sub config.
 }
 
 message StreamSubServer {}

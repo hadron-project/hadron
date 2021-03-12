@@ -1,36 +1,44 @@
 //! The Client gRPC service implementation module.
 
+use std::hash::Hasher;
 use std::sync::Arc;
 
+use tokio::stream::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 use tonic::metadata::MetadataMap;
 use tonic::{async_trait, transport::Channel, Request, Response, Status, Streaming};
 
 use crate::auth::TokenCredentials;
 use crate::config::Config;
-use crate::models::schema;
+use crate::ctl_raft::CRCIndex;
+use crate::models::{placement::ControlGroup, schema};
 pub use crate::proto::client::client_client::ClientClient;
 use crate::proto::client::client_server::Client;
 pub use crate::proto::client::client_server::ClientServer;
+use crate::proto::client::{
+    stream_pub_client::Request as StreamPubClientRequest, stream_pub_server::Response as StreamPubServerResponse, StreamPubClient,
+    StreamPubConnectResponse, StreamPubServer, StreamSubClient, StreamSubServer,
+};
 use crate::proto::client::{EphemeralPubRequest, EphemeralPubResponse, EphemeralSubClient, EphemeralSubServer};
 use crate::proto::client::{PipelineStageSubClient, PipelineStageSubServer, StreamUnsubRequest, StreamUnsubResponse};
 use crate::proto::client::{RpcPubRequest, RpcPubResponse, RpcSubClient, RpcSubServer};
-use crate::proto::client::{StreamPubRequest, StreamPubResponse, StreamSubClient, StreamSubServer};
 use crate::proto::client::{TransactionClient, TransactionServer, UpdateSchemaRequest, UpdateSchemaResponse};
 use crate::utils::{self, map_result_to_status, status_from_rcv_error, TonicResult};
 use crate::NodeId;
 
 pub(super) struct ClientService {
     /// This node's ID.
-    _id: NodeId,
+    id: NodeId,
     config: Arc<Config>,
+    /// The CRC data index.
+    index: Arc<CRCIndex>,
     /// The channel used for propagating requests into the network actor, which flows into the rest of the system.
     network: mpsc::UnboundedSender<ClientRequest>, // TODO: In the future, we will want to document this & make capacity configurable.
 }
 
 impl ClientService {
-    pub fn new(_id: NodeId, config: Arc<Config>, network: mpsc::UnboundedSender<ClientRequest>) -> Self {
-        Self { _id, config, network }
+    pub fn new(id: NodeId, config: Arc<Config>, index: Arc<CRCIndex>, network: mpsc::UnboundedSender<ClientRequest>) -> Self {
+        Self { id, config, index, network }
     }
 
     /// Deserialize token credentials provided in the given metadata map, or reject as unauthorized.
@@ -89,12 +97,74 @@ impl Client for ClientService {
         Ok(Response::new(rx))
     }
 
-    async fn stream_pub(&self, req: Request<StreamPubRequest>) -> TonicResult<Response<StreamPubResponse>> {
+    type StreamPubStream = mpsc::UnboundedReceiver<TonicResult<StreamPubServer>>;
+    async fn stream_pub(&self, req: Request<Streaming<StreamPubClient>>) -> TonicResult<Response<Self::StreamPubStream>> {
+        // Authenticate request & ensure caller is authorized to publish to the target stream.
         let creds = self.must_get_token(req.metadata())?;
-        let (tx, rx) = oneshot::channel();
-        let req = req.into_inner();
-        let _ = self.network.send(ClientRequest::StreamPub(StreamPub { req, tx, creds }));
-        rx.await.map_err(status_from_rcv_error).and_then(|res| res).map(Response::new)
+        let _claims = self.index.must_get_token_claims(&creds.id).map_err(utils::status_from_err)?;
+        // TODO: authz
+
+        // Unpack the initial connection frame for determining exactly where
+        // this streaming connection needs to be sent.
+        let mut req = req.into_inner();
+        let conn = req
+            .next()
+            .await
+            .unwrap_or_else(|| Err(Status::cancelled("channel closed by client")))
+            .and_then(|frame| match frame.request {
+                Some(StreamPubClientRequest::Connect(conn)) => Ok(conn),
+                _ => Err(Status::invalid_argument("expected an initial connect frame")),
+            })?;
+
+        // Fetch the stream's ID.
+        let (tx, rx) = mpsc::unbounded_channel();
+        let mut hasher = seahash::SeaHasher::new();
+        hasher.write(conn.namespace.as_bytes());
+        hasher.write_u8(b'/');
+        hasher.write(conn.stream.as_bytes());
+        let hash = hasher.finish();
+        let stream_id = match self.index.stream_names.get(&hash).map(|res| *res.value()) {
+            Some(stream_id) => stream_id,
+            None => {
+                let _ = tx.send(Err(Status::invalid_argument("metadata on the target stream does not exist on this node")));
+                return Ok(Response::new(rx));
+            }
+        };
+
+        // Fetch the target control group for the partition.
+        let cg_opt = self
+            .index
+            .stream_control_groups
+            .get(&(stream_id, conn.partition))
+            .map(|res| *res.value())
+            .and_then(|idx| self.index.control_groups.get(&idx).map(|res| res.value().clone()));
+        let cg = match cg_opt {
+            Some(cg) => cg,
+            None => {
+                tracing::error!("inconsistent data index, this is a bug"); // TOOD: make these consistent.
+                let _ = tx.send(Err(tonic::Status::failed_precondition("inconsistent data index, this is a bug")));
+                return Ok(Response::new(rx));
+            }
+        };
+
+        // If this node is not the partition leader, then respond with info on the leader node.
+        if let Some((leader, _)) = &cg.leader {
+            if &self.id != leader {
+                // Fetch DNS info on leader host.
+                // TODO: CRITICAL PATH:
+                // - keep DNS associations with node IDs as they go through discovery and handshake.
+                // - dashmap the data, and use it here.
+                let response = Some(StreamPubServerResponse::Connect(StreamPubConnectResponse {
+                    is_ready: false,
+                    leader: leader.to_string(),
+                }));
+                let _ = tx.send(Ok(StreamPubServer { response }));
+                return Ok(Response::new(rx));
+            }
+        }
+
+        let _ = self.network.send(ClientRequest::StreamPub(StreamPub { req, tx, creds, cg }));
+        Ok(Response::new(rx))
     }
 
     type StreamSubStream = mpsc::UnboundedReceiver<TonicResult<StreamSubServer>>;
@@ -125,6 +195,7 @@ impl Client for ClientService {
 
     async fn update_schema(&self, req: Request<UpdateSchemaRequest>) -> TonicResult<Response<UpdateSchemaResponse>> {
         let creds = self.must_get_token(req.metadata())?;
+        let _claims = self.index.must_get_token_claims(&creds.id).map_err(utils::status_from_err)?;
         let req = req.into_inner();
         let validated = schema::SchemaUpdate::decode_and_validate(&req).map_err(utils::status_from_err)?;
         let (tx, rx) = oneshot::channel();
@@ -178,9 +249,10 @@ pub struct RpcSub {
 }
 
 pub struct StreamPub {
-    pub req: StreamPubRequest,
-    pub tx: oneshot::Sender<TonicResult<StreamPubResponse>>,
+    pub req: Streaming<StreamPubClient>,
+    pub tx: mpsc::UnboundedSender<TonicResult<StreamPubServer>>,
     pub creds: TokenCredentials,
+    pub cg: Arc<ControlGroup>,
 }
 
 pub struct StreamSub {
@@ -228,53 +300,47 @@ pub async fn forward_client_request(req: ClientRequest, chan: Channel) {
 
 #[tracing::instrument(level = "trace", skip(_req, _client))]
 async fn forward_transaction(_req: Transaction, _client: ClientClient<Channel>) {
-    todo!("")
+    todo!("") // TODO: remove as forwarding will not be used here.
 }
 
 #[tracing::instrument(level = "trace", skip(_req, _client))]
 async fn forward_ephemeral_pub(_req: EphemeralPub, _client: ClientClient<Channel>) {
-    todo!("")
+    todo!("") // TODO: remove as forwarding will not be used here.
 }
 
 #[tracing::instrument(level = "trace", skip(_req, _client))]
 async fn forward_ephemeral_sub(_req: EphemeralSub, _client: ClientClient<Channel>) {
-    todo!("")
+    todo!("") // TODO: remove as forwarding will not be used here.
 }
 
 #[tracing::instrument(level = "trace", skip(_req, _client))]
 async fn forward_rpc_pub(_req: RpcPub, _client: ClientClient<Channel>) {
-    todo!("")
+    todo!("") // TODO: remove as forwarding will not be used here.
 }
 
 #[tracing::instrument(level = "trace", skip(_req, _client))]
 async fn forward_rpc_sub(_req: RpcSub, _client: ClientClient<Channel>) {
-    todo!("")
+    todo!("") // TODO: remove as forwarding will not be used here.
 }
 
-#[tracing::instrument(level = "trace", skip(req, client))]
-async fn forward_stream_pub(req: StreamPub, mut client: ClientClient<Channel>) {
-    tracing::info!("forwarding stream pub request");
-    let tx = req.tx;
-    let res = client
-        .stream_pub(build_request_with_creds(req.req, req.creds))
-        .await
-        .map(|res| res.into_inner());
-    let _ = tx.send(res);
+#[tracing::instrument(level = "trace", skip(_req, _client))]
+async fn forward_stream_pub(_req: StreamPub, _client: ClientClient<Channel>) {
+    todo!("") // TODO: remove as forwarding will not be used here.
 }
 
 #[tracing::instrument(level = "trace", skip(_req, _client))]
 async fn forward_stream_sub(_req: StreamSub, _client: ClientClient<Channel>) {
-    todo!("")
+    todo!("") // TODO: remove as forwarding will not be used here.
 }
 
 #[tracing::instrument(level = "trace", skip(_req, _client))]
 async fn forward_stream_unsub(_req: StreamUnsub, _client: ClientClient<Channel>) {
-    todo!("")
+    todo!("") // TODO: remove as forwarding will not be used here.
 }
 
 #[tracing::instrument(level = "trace", skip(_req, _client))]
 async fn forward_pipeline_stage_sub(_req: PipelineStageSub, _client: ClientClient<Channel>) {
-    todo!("")
+    todo!("") // TODO: remove as forwarding will not be used here.
 }
 
 #[tracing::instrument(level = "trace", skip(req, client))]

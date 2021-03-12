@@ -68,17 +68,10 @@ pub struct Namespace {
     pub description: String,
 }
 
-/// A durable log of events.
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(tag = "streamType")]
-pub enum Stream {
-    Standard(StandardStream),
-    OutTable(OutTableStream),
-}
-/// A standard stream with a configurable number of partitions.
+/// A durable log of events with a configurable number of partitions.
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct StandardStream {
+pub struct Stream {
     /// Object metadata.
     #[serde(flatten)]
     pub metadata: Metadata,
@@ -90,29 +83,6 @@ pub struct StandardStream {
     /// parallel. Consult the documentation on stream consumers for more details.
     pub partitions: u32,
     /// The replication factor of each partition of this stream.
-    pub replication_factor: u8,
-    /// An optional TTL duration specifying how long records are to be kept on the stream.
-    ///
-    /// If not specified, then records will stay on the stream forever.
-    pub ttl: Option<String>,
-}
-
-/// A single-partition stream optimized for use with a database "out table" CDC pattern.
-///
-/// Every message written to an OutTable stream must have a unique, orderd ID. This is commonly
-/// seen in RDBMS systems as the monotonically increasing ID sequence for table primary keys.
-///
-/// This stream type guarantees exactly once production of messages to this stream. If a
-/// duplicate message — a message bearing the same ID — is published to this stream, it will
-/// no-op. This provides a strict server-side guarantee that there will be no duplicates on
-/// OutTable streams.
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct OutTableStream {
-    /// Object metadata.
-    #[serde(flatten)]
-    pub metadata: Metadata,
-    /// The replication factor for this stream's single partition.
     pub replication_factor: u8,
     /// An optional TTL duration specifying how long records are to be kept on the stream.
     ///

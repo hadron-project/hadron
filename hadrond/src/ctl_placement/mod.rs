@@ -18,8 +18,8 @@
 #![allow(unused_mut)] // TODO: remove this.
 #![allow(dead_code)] // TODO: remove this.
 
+mod commands;
 pub mod events;
-mod tasks;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,9 +30,10 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::config::Config;
+use crate::ctl_placement::commands::{Command, CommandType};
 use crate::ctl_raft::events::{CRCEvent, InitialEvent, StreamReplicaAssignmentUpdated};
 use crate::ctl_raft::models::CRCRequest;
-use crate::models::placement::{Assignment, PipelineReplica, StreamReplica};
+use crate::models::placement::{Assignment, ControlGroup, PipelineReplica, StreamReplica};
 use crate::models::schema::Namespaced;
 use crate::NodeId;
 
@@ -52,7 +53,7 @@ use crate::NodeId;
 /// term and its node ID, and other nodes simply verify that it is indeed the cluster leader. This
 /// guards against any processing of stale commands as only the leader will process commands, and in
 /// order to become leader, a node must be up-to-date.
-pub struct CPC {
+pub struct Cpc {
     /// The ID of this node in the cluster.
     id: NodeId,
     /// The application's runtime config.
@@ -76,6 +77,8 @@ pub struct CPC {
 
     /// All nodes of the system along with their assignments.
     nodes: ClusterNodes,
+    /// A table of control groups.
+    control_groups: HashMap<u64, Arc<ControlGroup>>,
     /// A table of stream replicas, indexed by ID.
     stream_replicas: HashMap<u64, Arc<StreamReplica>>,
     /// A wait list of stream replicas which were not able to be scheduled.
@@ -87,14 +90,19 @@ pub struct CPC {
     // TODO: endpoints & commands
 }
 
-impl CPC {
+impl Cpc {
     pub fn new(
         id: NodeId, config: Arc<Config>, shutdown: watch::Receiver<bool>, metrics: watch::Receiver<RaftMetrics>,
         crc_events: mpsc::UnboundedReceiver<CRCEvent>, crc_tx: mpsc::UnboundedSender<CRCRequest>,
     ) -> (Self, mpsc::UnboundedReceiver<events::CPCEvent>) {
         let (tasks_tx, tasks_rx) = mpsc::unbounded_channel();
-        let (wait_list_streams, wait_list_pipelines, stream_replicas, pipeline_replicas) =
-            (Default::default(), Default::default(), Default::default(), Default::default());
+        let (wait_list_streams, wait_list_pipelines, stream_replicas, pipeline_replicas, control_groups) = (
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        );
         let (cpc_tx, cpc_rx) = mpsc::unbounded_channel();
         let nodes = ClusterNodes::new(id, metrics.borrow().membership_config.members.iter());
         let this = Self {
@@ -109,6 +117,7 @@ impl CPC {
             is_leader: false,
             tasks_tx,
             tasks_rx,
+            control_groups,
             stream_replicas,
             wait_list_streams,
             pipeline_replicas,
@@ -122,7 +131,7 @@ impl CPC {
     }
 
     async fn run(mut self) {
-        tracing::debug!("Cluster Placement Controller is online");
+        tracing::debug!("CPC is online");
         loop {
             tokio::select! {
                 Some(update) = self.metrics.next() => self.handle_crc_raft_update(update).await,
@@ -133,7 +142,7 @@ impl CPC {
         }
 
         // Graceful shutdown.
-        tracing::debug!("cpc has shutdown");
+        tracing::debug!("CPC has shutdown");
     }
 
     /// Handle CRC metrics updates to drive leadership of this control group.
@@ -169,7 +178,7 @@ impl CPC {
     /// Handle a reconciliation task generated from this controller or one of its spawned tasks.
     #[tracing::instrument(level = "trace", skip(self, task))]
     async fn handle_reconciliation_task(&mut self, task: Task) {
-        tracing::debug!("handling CRC reconciliation task");
+        tracing::debug!("handling CPC reconciliation task");
         // Ensure the inbound events queue is fully processed first.
         while let Ok(event) = self.crc_events.try_recv() {
             self.handle_crc_event(event).await;
@@ -178,6 +187,7 @@ impl CPC {
         match task {
             Task::Initial => self.reconcile_initial().await,
             Task::StreamReplicaCreated(replica) => self.reconcile_stream_replica_created(replica).await,
+            Task::CommandError(command) => self.reconcile_command_error(command).await,
         }
     }
 
@@ -205,12 +215,13 @@ impl CPC {
                     continue;
                 }
             };
-            tokio::spawn(tasks::assign_stream_replica_to_node(
-                Assignment::InitialPlacement { node },
-                replica.clone(),
+            Command::assign_stream_replica_to_node(
                 self.crc_tx.clone(),
                 self.tasks_tx.clone(),
-            ));
+                Assignment::InitialPlacement { node },
+                replica.clone(),
+            )
+            .spawn();
         }
 
         tracing::trace!(waitlist = ?self.wait_list_streams);
@@ -261,6 +272,13 @@ impl CPC {
         // Compare local pipeline replicas on disk vs streams which need to exist,
         // and then spawn and delete controllers as needed.
         // TODO: ^^^
+
+        // TODO: CRITICAL PATH
+        // - Refactor ClusterNodes to be Scheduler & update Scheduler to use control group IDs for
+        //   anit-affinity instead of iterating through lists of objects.
+        // - When CPC instance is deposed, it should clear all pending assignment info from scheduler.
+        // - This controller should only emit control events to its local node for events of the current
+        // Raft term, otherwise the system may replay all events from a larger period of time when initializing.
     }
 
     /// Reconcile initial creation of a stream replica.
@@ -274,12 +292,19 @@ impl CPC {
                 return;
             }
         };
-        tokio::spawn(tasks::assign_stream_replica_to_node(
-            Assignment::InitialPlacement { node },
-            replica,
+        Command::assign_stream_replica_to_node(
             self.crc_tx.clone(),
             self.tasks_tx.clone(),
-        ));
+            Assignment::InitialPlacement { node },
+            replica.clone(),
+        )
+        .spawn();
+    }
+
+    /// Reconcile a failed command which was issued earlier.
+    #[tracing::instrument(level = "trace", skip(self, command))]
+    async fn reconcile_command_error(&mut self, command: CommandType) {
+        Command::new(self.crc_tx.clone(), self.tasks_tx.clone(), command).spawn();
     }
 
     /// Handle the initial payload of data from the CRC after system restore.
@@ -289,23 +314,31 @@ impl CPC {
     fn handle_crc_initial(&mut self, initial: InitialEvent) {
         tracing::debug!("handling initial event from CRC");
 
-        // Clear cluster node assignment info.
+        // Clear data tables.
         self.nodes.clear();
+        self.control_groups.clear();
+        self.stream_replicas.clear();
+        self.pipeline_replicas.clear();
+        self.wait_list_streams.clear();
+        self.wait_list_pipelines.clear();
+
+        // Update control group info.
+        for cg in initial.control_groups {
+            self.control_groups.insert(cg.id, cg);
+        }
 
         // Update stream placements.
-        self.stream_replicas.clear();
-        for placement in initial.stream_replicas {
-            self.stream_replicas.insert(placement.id, placement.clone());
-            if let Some(event) = self.nodes.record_stream_replica(placement) {
+        for replica in initial.stream_replicas {
+            self.stream_replicas.insert(replica.id, replica.clone());
+            if let Some(event) = self.nodes.record_stream_replica(replica) {
                 let _ = self.cpc_tx.send(event);
             }
         }
 
         // Update pipeline assignments.
-        self.pipeline_replicas.clear();
-        for placement in initial.pipeline_replicas {
-            self.pipeline_replicas.insert(placement.id, placement.clone());
-            if let Some(event) = self.nodes.record_pipeline_replica(placement) {
+        for replica in initial.pipeline_replicas {
+            self.pipeline_replicas.insert(replica.id, replica.clone());
+            if let Some(event) = self.nodes.record_pipeline_replica(replica) {
                 let _ = self.cpc_tx.send(event);
             }
         }
@@ -396,7 +429,7 @@ impl ClusterNodes {
             let has_partition_repl = node
                 .stream_replicas
                 .values()
-                .any(|repl| repl.namespace == replica.namespace && repl.name == replica.name && repl.partition == replica.partition);
+                .any(|repl| repl.stream_id == replica.stream_id && repl.partition == replica.partition);
             if has_partition_repl {
                 continue;
             }
@@ -550,8 +583,12 @@ impl NodeAssignments {
     }
 }
 
-/// A reconciliation task used by the CPC.
+/// A reconciliation task to be executed by the CPC when it is leader.
 enum Task {
+    /// The initial reconciliation routine.
     Initial,
+    /// A stream replica has been created.
     StreamReplicaCreated(Arc<StreamReplica>),
+    /// A spawned command has failed and needs to be handled.
+    CommandError(commands::CommandType),
 }

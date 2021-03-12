@@ -29,7 +29,6 @@ const ERR_FORWARD_LEADER_UNKNOWN: &str = "error forwarding request, cluster lead
 impl CRC {
     #[tracing::instrument(level = "trace", skip(self, req))]
     pub(super) async fn handle_request_update_schema(&mut self, req: UpdateSchema) {
-        let _claims = ok_or_else_tx_err!(self.storage.must_get_token_claims(&req.creds.id).await, req);
         let (raft, forward_tx) = (self.raft.clone(), self.forward_tx.clone());
         tokio::spawn(async move {
             let client_request = ClientWriteRequest::new(RaftClientRequest::UpdateSchema(RaftUpdateSchemaRequest {
@@ -162,23 +161,7 @@ impl RaftNetwork<RaftClientRequest> for HCoreNetwork {
     async fn append_entries(&self, target: u64, rpc: AppendEntriesRequest<RaftClientRequest>) -> Result<AppendEntriesResponse> {
         let chan = self.get_peer_channel(&target).await?;
         let payload = utils::encode_flexbuf(&rpc).context(utils::ERR_ENCODE_RAFT_RPC)?;
-
-        // We have special error handling here so that we can track specific failure types for
-        // health check purposes. If the requests are timing out or the peer is unavailable, then
-        // the CRC may need to take action to reassign leadership nominations.
-        match crate::network::send_append_entries(RAFT_CLUSTER.into(), payload, chan).await {
-            Ok(res) => Ok(res),
-            Err(err) => match err.downcast_ref::<tonic::Status>() {
-                Some(status) => match status.code() {
-                    code @ tonic::Code::DeadlineExceeded | code @ tonic::Code::Unavailable => {
-                        tracing::info!(code = %code, "AppendEntries RPC failed");
-                        Err(err) // TODO: finish up this error handling.
-                    }
-                    _ => Err(err),
-                },
-                None => Err(err),
-            },
-        }
+        crate::network::send_append_entries(RAFT_CLUSTER.into(), payload, chan).await
     }
 
     #[tracing::instrument(level = "trace", skip(self, rpc))]

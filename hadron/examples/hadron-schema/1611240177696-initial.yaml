@@ -14,7 +14,7 @@ kind: Stream
 name: services
 namespace: example
 description: The services microservice stream.
-streamType: OutTable
+partitions: 3
 replicationFactor: 3
 
 ---
@@ -22,7 +22,7 @@ kind: Stream
 name: deployer
 namespace: example
 description: The deployer microservice stream.
-streamType: OutTable
+partitions: 3
 replicationFactor: 3
 
 ---
@@ -30,7 +30,7 @@ kind: Stream
 name: billing
 namespace: example
 description: The billing microservice stream.
-streamType: OutTable
+partitions: 3
 replicationFactor: 3
 
 ---
@@ -38,7 +38,7 @@ kind: Stream
 name: monitoring
 namespace: example
 description: The monitoring microservice stream.
-streamType: OutTable
+partitions: 3
 replicationFactor: 3
 
 ---

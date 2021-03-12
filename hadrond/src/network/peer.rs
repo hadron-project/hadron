@@ -30,8 +30,8 @@ impl PeerService {
 
 #[async_trait]
 impl Peer for PeerService {
-    #[tracing::instrument(level = "trace", skip(self))]
-    async fn handshake(&self, request: Request<HandshakeMsg>) -> TonicResult<Response<HandshakeMsg>> {
+    #[tracing::instrument(level = "trace", skip(self, _request))]
+    async fn handshake(&self, _request: Request<HandshakeMsg>) -> TonicResult<Response<HandshakeMsg>> {
         tracing::trace!("handling handshake request");
         Ok(Response::new(HandshakeMsg { node_id: self.id }))
     }

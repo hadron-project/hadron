@@ -72,7 +72,7 @@ use crate::ctl_raft::storage::HCoreStorage;
 use crate::database::Database;
 use crate::NodeId;
 
-pub use storage::HCoreIndex;
+pub use storage::CRCIndex;
 
 /// The concrete Raft type used by Hadron core.
 pub type CRCRaft = Raft<RaftClientRequest, RaftClientResponse, HCoreNetwork, HCoreStorage>;
@@ -108,7 +108,7 @@ impl CRC {
     pub async fn new(
         id: NodeId, config: Arc<Config>, db: Database, peer_channels: watch::Receiver<Arc<HashMap<NodeId, Channel>>>,
         requests: mpsc::UnboundedReceiver<CRCRequest>, shutdown: watch::Receiver<bool>,
-    ) -> Result<(Self, Arc<HCoreIndex>, mpsc::UnboundedReceiver<CRCEvent>, watch::Receiver<RaftMetrics>)> {
+    ) -> Result<(Self, Arc<CRCIndex>, mpsc::UnboundedReceiver<CRCEvent>, watch::Receiver<RaftMetrics>)> {
         // Initialize network & storage interfaces.
         let net = Arc::new(HCoreNetwork::new(peer_channels.clone()));
         let (storage, index, events_rx) = HCoreStorage::new(id, config.clone(), db).await?;

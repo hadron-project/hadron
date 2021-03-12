@@ -1,3 +1,85 @@
+Hyper Cluster Partition Gruops
+==============================
+Each Partition Group is statically configured with exactly one master and any number of replicas. This is based on static config.
+
+- Config changes require restarts. When a node first comes online, it will not fully start until it is able to establish a connection with the members of its partition gruop & determine that their config matches. This is treated as the handshake.
+    - gruop name
+    - node names
+    - role per node
+- If handshake fails, backoff and try again. Warn about the potential misconfiguration issue.
+- It is recommended that partition group names semantically indicate geo and or cloud infomration, as well as purpose. Though the only hard requirement is that partition group names be unique throughout a hyper cluster.
+    - An example of such a partition naming scheme could be: `aws.us-east-1/p0`, `aws.us-east-1/p1`, `gcp.asia-southeast1/p0`, `gcp.asia-southeast1/p1`.
+    - In this example, partition groups span two different clouds, and two different regions.
+
+**Consensus**
+Consensus within a partition gruop is dead simple, and is based on static config.
+
+**Hyper Cluster**
+Hyper clusters are composed of multiple partition groups which dynamically discover each other.
+
+- Each partition group may be part of only one hyper cluster. If the hypercluster discovery info & ports match, then the partition groups will form a hyper cluster.
+- A single partition group may be statically configured as the metadata group. This group will then be responsible for all hyper cluster wide metadata changes, such as stream and pipeline definitions.
+
+**Metadata**
+- A single partition group acts as the metadata leader for a hyper cluster based on static config.
+- Metadata is asynchronously replicated to all members of the hyper cluster, always with an associated metadata index.
+    - This allows for a hyper cluster to more easily span the globe, multiple regions and differnet clouds.
+    - Clients can query for metadata at any location, and they will always be as up-to-date as a direct query to metadata partition group directly, due to the constant async replication of config.
+- Hadron schema objects now declare their "partition" assignments explicitly.
+    - For example, when a stream is declared, it will declare its partitions as a list of partition group names.
+    - It could declare that the stream has 4 partitions, as follows: `aws.us-east-1/p0`, `aws.us-east-1/p1`, `gcp.asia-southeast1/p0`, `gcp.asia-southeast1/p1`.
+    - These would match partition group names of actual partition groups in the cluster.
+    - As clients publish data to these partitions, they can hash to a specific partition of the region where their data needs to reside, or hard code the partition they are targetting.
+    - This supports cases where data semantically belongs on the same stream, but is optimized to reduce latency by geolocating partition groups in the regions where the data is being processed, GDPR or similar requirements.
+    - The hyper cluster will still see all of these partitions as participating in the same stream, and consumers can be configured to consume from any subset of the partitions of a stream.
+
+**Transactions**
+- The client simply chooses any partition involved in the transaction to be the driver.
+- The driver uses the streaming distributed transaction model.
+- The transaction system can have a separate index/lsn used for stream records written as part of a transaction. These will be unique per partition group, as they will be prefixed with the partition group name followed by a monotonic index/lsn. This serves to both identify the driver of the transaction and to ensure global uniqueness.
+- The transaction driver model will make it so that all statements as part of a transaction will go to the driver node, the driver builds up statements and applies them to the various target stream partitions and such of the individual statements.
+    - Once a commit statement is received, as long as all statements in the transaction have already passed phase 1 (initial entry), then the driver node will commit the transaction, marking it as applied.
+    - It will then concurrently reach out to all other nodes of the transaction, committing their statements, which applies them to the actual target streams, assigning an actual partition offset to the entry. Updated partition offsets are sent back to the driver node so that it can update references if needed.
+
+For pipelines, the primary items which need to be transactional:
+- Consumption of trigger streams and triggering new pipeline instances. This is easy, doesn't even need the transaction system.
+- Pipeline stage outputs will need to be applied transactionally to their target output streams, which will only take place when the stage completes successfully.
+- As pipeline stages can only have a single output, that output will only go to a single stream partition. That partition can be dynamically selected by the stage handler, and makes no difference to Hadron, as that data will be recorded in the pipeline's entry, and a reference to the entry record and its location will always be present.
+
+**Pipelines**
+- Pipelines will only ever exist on a single partition, which is declared in their schema.
+- Trigger streams can be from any location in the hyper cluster.
+- This is made scalable by having the pipeline controller simply create its own internal consumer of each partition of the trigger stream.
+- As data is consumed, and a match is found on an event, it will be transactionally applied as a new pipeline instantiation. This is a transactional consumer flow which ensures that duplicate pipeline instances are not possible.
+- We will need to use a streaming distributed transaction model for writing pipeline stage outputs to other streams.
+
+**Exchanges & Endpoints**
+Ephemeral messaging exchanges & RPC endpoints.
+
+- This model will be quite simple. A partition group is declared in the schema for exchanges as well as for endpoints.
+- Exchange and endpoint consumers can attach to any node of the hyper cluster. The node to which the connection has been established will consult the hyper cluster's metadata and will then reach out to the controller node for the exchange or endpoint in order to establish itself as a consumer.
+- This information is held in memory only by the leader of the exchange or endpoint.
+- If the leader dies or a consumer connection dies, that information will be available almost immediately as durable connections are used, and clients will simply reconnect.
+- The leader is then responsible for making load balancing decisions, and brokering RPC bidirectional communication — which is an easy setup with Rust's channel system.
+
+
+
+
+
+
+----
+
+
+
+
+
+
+
+
+
+
+
+
 todo
 ====
 Kafka and others help with building EDA apps, Hadron helps more. Pipelines provide a native mechainism which greatly simplifies the building of complex applications.
@@ -32,6 +114,7 @@ Build remaining controllers:
 - controller leadership designation is based on a monotonically increasing term per control group, which is disjoint from Raft's leadership terms.
 - conflicts between leadership designation is easily and safely resolved based on designated leadership terms.
 
+- [ ] controllers should have a channel sent up to the network layer for direct communication between clients & controllers.
 - [ ] clients should have a configurable behavior where the client may reconnect to a specific node of the cluster in order to reduce forwarding between nodes.
 - [ ] given that storage initialization may take some time, pass a signal emitter down to the storage engine so that it can tell the rest of the app when initialization has actually finished.
     - [ ] the network layer should refuse to perform peer handshakes and refuse client connections until the system is ready.
@@ -113,29 +196,23 @@ TODO: review general server level configs here: https://kafka.apache.org/documen
 - https://kafka.apache.org/documentation/#request.timeout.ms pretty standard.
 - https://kafka.apache.org/documentation/#transactional.id need to pin down cross stream & stream + pipeline transactions.
 
-- need to look into using a key, along with other metadata, per message in order to perform hashing on key for load balancing to partitions as well as determining decompression server side.
-
-**out table**
-In order to support a fully idempotent stream producer, with actual "exctly once" guarantees, let's build upon the out table pattern.
-- teams will be transactionally generating events in the DB.
-- these events will be written as part of the same transactions updating the team's business critical data.
-- any number of application specific routines, or a Hadron OutTable Connector in the future, will be able to read the events from the out table, transactionally consuming them, and then writing them to the Hadron stream.
-- once the batch write has finished, the out table events will be deleted and the transaction committed. A failure to committ the transaction will just caused them to be redelivered.
-- here's the secret sauce of our storage system: we can have the stream configured to take entry IDs only from the producer, and given that the out table will have an ID column which is monotonically increasing, we can use that ID as the ID of the event, and then events produced bearing the same ID will simply be no-op'd.
-
-Implications
-- stream can only be single partition, though it can still have normal replication factor. The reduced write throughput should be fine, as it is very unlikely that a transactional RDBMS will be able to produce rows fast enough to outpace batched Hadron writes.
+- need to look into using a key, along with other metadata, per message in order to perform hashing on key for client side load balancing to partitions as well as determining decompression server side.
 
 ### consumers
 per https://kafka.apache.org/documentation/#theconsumer
 - there may be a good bit of value in following the model described here where consumers pull data; **HOWEVER,** they also employ long-polling ... which is damn near the same as server push.
-- to make things a bit more optimized, we could have the server send a stateless message to interested consumers to tell them when new data is available, this would help to reduce wait times
-- long-polling with a batch size & wait period is what Kafka currently uses
+- to make things a bit more optimized, we could have the server send a stateless message to interested consumers to tell them when new data is available, this would help to reduce wait times.
+- long-polling with a batch size & wait period is what Kafka currently uses.
 
-- kafka uses a single value "offset" for tracking a consumers progress through a partition
-- if the consumer fails while processing a batch, the whole batch fails and will be redelivered
+- kafka uses a single value "offset" for tracking a consumers progress through a partition.
+- if the consumer fails while processing a batch, the whole batch fails and will be redelivered.
 
 - static consumer group IDs will not work well in K8s environments, so let's not worry about the static membership feature. Keep it dynamic.
+
+#### Current Consumer Design
+- Each stream / pipeline will also be able to define an `offsetsReplicationFactor` which determines the number of replicas which will participate in the control group for the stream / pipeline consumer controller.
+- All offsets, consumer groups, and other such info is managed by these control groups (SCC, PCC).
+- These are designed to be horizontally scalable, so as to not conflict with producer workloads and other workloads running on the cluster.
 
 ### transactions
 - we will use a cluster transaction controller.
@@ -169,7 +246,7 @@ per https://kafka.apache.org/documentation/#theconsumer
 - stream consumer patterns will be different than Kafka.
 - we will use a stream consumer controller for managing offsets and coordinate load balancing consumption across partitions of a stream.
 - stream consumers are able to process messages one by one. The entire consumer group can receive a large number of different messages.
-- we track a consumer groups offsets per partition as using a head index — the ID of the most recently processed +1 — along with a set of outstanding messages which are behind the head index.
+- we track a consumer groups offsets per partition using a head index — the ID of the most recently processed +1 — along with a set of outstanding messages which are behind the head index.
     - stream partition controllers publish info on their stream partitions, which is used internally and for metrics/monitoring.
     - the stream consumer controller has the overall goal of keeping each consumer group busy, keeping them as close as possible to real time processing of events as they become available for the target stream.
     - for each consumer group, the SCC maintains (disk & mem) offsets of the consumer group's progress through a stream per partition. Progress is tracked as a head index for the group per partition, along with a set of outstanding message IDs per partition.

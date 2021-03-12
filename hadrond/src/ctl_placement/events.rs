@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::models::placement::{PipelineReplica, StreamReplica};
+use crate::models::placement::{ControlGroup, PipelineReplica, StreamReplica};
 
 /// Events produced from the CPC.
 pub enum CPCEvent {

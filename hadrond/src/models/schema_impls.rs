@@ -64,6 +64,7 @@ impl SchemaUpdate {
 
 impl SchemaStatement {
     /// Statically validate this object.
+    #[allow(clippy::clippy::unnecessary_wraps)]
     fn validate(&self) -> Result<()> {
         Ok(()) // TODO: finish this up
                // match self {
@@ -102,17 +103,11 @@ impl SchemaStatement {
 impl Stream {
     /// The number of partitions configured for this stream.
     pub fn partitions(&self) -> u32 {
-        match self {
-            Stream::Standard(inner) => inner.partitions,
-            Stream::OutTable(_) => 1,
-        }
+        self.partitions
     }
     /// The number of replicas per partition configured for this stream.
     pub fn replication_factor(&self) -> u8 {
-        match self {
-            Stream::Standard(inner) => inner.replication_factor,
-            Stream::OutTable(inner) => inner.replication_factor,
-        }
+        self.replication_factor
     }
 
     // fn validate(&self) -> Result<()> {

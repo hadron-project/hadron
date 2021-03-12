@@ -10,6 +10,7 @@ mod error;
 mod models;
 mod network;
 mod proto;
+mod raft;
 mod utils;
 
 // Public exports for binaries.

@@ -27,33 +27,29 @@ use crate::auth::{Claims, ClaimsV1, TokenCredentials, User, UserRole};
 use crate::config::Config;
 use crate::ctl_raft::events::{CRCEvent, InitialEvent, PipelineCreated, StreamCreated, StreamReplicaAssignmentUpdated};
 use crate::ctl_raft::models::{RaftAssignStreamReplicaToNodeResponse, RaftClientRequest, RaftClientResponse};
-use crate::ctl_raft::storage::index::{IndexWriteBatch, IndexWriteOp, NamespaceIndex};
+use crate::ctl_raft::storage::index::{IndexWriteBatch, IndexWriteOp};
 use crate::database::Database;
 use crate::error::{AppError, ShutdownError, ShutdownResult};
-use crate::models::placement;
-use crate::models::prelude::*;
-use crate::models::schema;
+use crate::models::{placement, prelude::*, schema, WithId};
 use crate::proto::client::{PipelineStageSubClient, StreamUnsubRequest};
-use crate::proto::client::{StreamPubRequest, StreamPubResponse, StreamSubClient};
 use crate::proto::client::{TransactionClient, UpdateSchemaRequest, UpdateSchemaResponse};
 use crate::proto::storage as proto_storage;
 use crate::utils;
 use crate::NodeId;
 
-pub use index::HCoreIndex;
+pub use index::CRCIndex;
 
 // Storage paths.
 const CRC_SNAPS_DIR: &str = "crc_snaps"; // <dataDir>/crc_snaps
 
 // DB prefixes.
-const PREFIX_NAMESPACE: &str = "/namespaces/";
-const PREFIX_STREAMS: &str = "/streams/";
-const PREFIX_STREAM_REPLICAS: &str = "/stream_replicas/";
-const PREFIX_STREAM_REPLICAS_NAMESPACED: &str = "/stream_replicas_namespaced/";
-const PREFIX_PIPELINES: &str = "/pipelines/";
-const PREFIX_PIPELINE_REPLICAS: &str = "/pipeline_replicas/";
-const PREFIX_PIPELINE_REPLICAS_NAMESPACED: &str = "/pipeline_replicas_namespaced/";
 const PREFIX_BRANCHES: &str = "/branches/";
+const PREFIX_CONTROL_GROUPS: &str = "/control_groups/";
+const PREFIX_NAMESPACE: &str = "/namespaces/";
+const PREFIX_PIPELINE_REPLICAS: &str = "/pipeline_replicas/";
+const PREFIX_PIPELINES: &str = "/pipelines/";
+const PREFIX_STREAM_REPLICAS: &str = "/stream_replicas/";
+const PREFIX_STREAMS: &str = "/streams/";
 
 // DB keys.
 const KEY_HARD_STATE: &str = "/meta/hard_state";
@@ -88,7 +84,7 @@ pub struct HCoreStorage {
     /// Each individual field of the index must be independently locked for reading/writing. It is
     /// important to note that we must reduce lock contention as much as possible. This can easily
     /// be achieved by simply dropping the lock guard as soon as possible whenever a lock is taken.
-    index: Arc<HCoreIndex>,
+    index: Arc<CRCIndex>,
     /// A channel used for sending CRC commands.
     events: mpsc::UnboundedSender<CRCEvent>,
 }
@@ -98,7 +94,7 @@ impl HCoreStorage {
     ///
     /// This constructor is fallible as it will attempt to recover state from disk when first
     /// initialized.
-    pub async fn new(id: NodeId, config: Arc<Config>, db: Database) -> Result<(Self, Arc<HCoreIndex>, mpsc::UnboundedReceiver<CRCEvent>)> {
+    pub async fn new(id: NodeId, config: Arc<Config>, db: Database) -> Result<(Self, Arc<CRCIndex>, mpsc::UnboundedReceiver<CRCEvent>)> {
         // Ensure the needed paths are in place for the DB and other needed paths.
         let snapshot_dir = PathBuf::from(&config.storage_data_path).join(CRC_SNAPS_DIR);
         tokio::fs::create_dir_all(&snapshot_dir)
@@ -681,13 +677,12 @@ impl HCoreStorage {
             return Ok(());
         }
         // Namespace does not yet exist, so we create an entry for it.
+        let id = self.db.generate_id()?;
+        let ns = WithId::new(id, ns.clone());
         let proto = utils::encode_flexbuf(&ns)?;
-        let nskey = format!("{}{}", PREFIX_NAMESPACE, ns.name.as_str());
+        let nskey = format!("{}{}", PREFIX_NAMESPACE, id);
         models.insert(nskey.as_bytes(), proto.as_slice());
-        index_batch.push(IndexWriteOp::InsertNamespace {
-            name: ns.name.clone(),
-            description: ns.description.clone(),
-        });
+        index_batch.push(IndexWriteOp::InsertNamespace(Arc::new(ns)));
         Ok(())
     }
 
@@ -700,37 +695,51 @@ impl HCoreStorage {
         if self.index.get_stream(stream.namespace(), stream.name()).is_some() {
             return Ok(());
         }
+
         // Stream does not yet exist, so we create an entry for it, setting its initial index to 0.
-        let model = utils::encode_flexbuf(&stream)?;
-        let stream_key = format!("{}{}/{}", PREFIX_STREAMS, stream.namespace(), stream.name());
+        let id = self.db.generate_id()?;
+        let stream = Arc::new(WithId::new(id, stream.clone()));
+        let model = utils::encode_flexbuf(&*stream)?;
+        let stream_key = format!("{}{}", PREFIX_STREAMS, id);
         models.insert(stream_key.as_bytes(), model);
-        index_batch.push(IndexWriteOp::InsertStream { stream: stream.clone() });
-        // Push a new event onto the event buf.
-        events.push(CRCEvent::StreamCreated(StreamCreated { stream: stream.clone() }));
+        index_batch.push(IndexWriteOp::InsertStream(stream.clone()));
 
         // Create stream replica records.
-        for partition in 0..stream.partitions() {
-            for replica in 0..stream.replication_factor() {
+        let mut replicas = vec![];
+        let mut control_groups = vec![];
+        for partition in 0..stream.model.partitions() {
+            // Generate the control group ID & its replica objects.
+            let cg_id = self.db.generate_id()?;
+            for replica in 0..stream.model.replication_factor() {
                 // Create stream replica in an unassigned state & add it to the write batch.
                 let id = self.db.generate_id()?;
-                let replica_key_ns = format!(
-                    "{}{}/{}/{}/{}",
-                    PREFIX_STREAM_REPLICAS_NAMESPACED,
-                    stream.namespace(),
-                    stream.name(),
-                    partition,
-                    replica
-                );
                 let replica_key = format!("{}{}", PREFIX_STREAM_REPLICAS, id);
-                let replica_model = placement::StreamReplica::new(id, stream.namespace(), stream.name(), partition, replica);
-                let model = utils::encode_flexbuf(&replica_model).context("error encoding stream replica model")?;
+                let replica_model = Arc::new(placement::StreamReplica::new(id, cg_id, stream.id, partition, replica));
+                let model = utils::encode_flexbuf(&*replica_model).context("error encoding stream replica model")?;
                 models.insert(replica_key.as_bytes(), model.as_slice());
-                models.insert(replica_key_ns.as_bytes(), &utils::encode_u64(id));
-
-                // Push a new event onto the event buf.
-                events.push(CRCEvent::StreamReplicaCreated(Arc::new(replica_model)));
+                index_batch.push(IndexWriteOp::InsertStreamReplica(replica_model.clone()));
+                replicas.push(replica_model);
             }
+
+            // Create a control group record for this new partition.
+            let cg = Arc::new(placement::ControlGroup::new_stream(
+                cg_id,
+                partition,
+                replicas.iter().map(|repl| repl.id).collect(),
+            ));
+            let cg_model = utils::encode_flexbuf(&*cg)?;
+            let cg_key = format!("{}{}", PREFIX_CONTROL_GROUPS, cg_id);
+            models.insert(cg_key.as_bytes(), cg_model);
+            index_batch.push(IndexWriteOp::InsertControlGroup(cg.clone()));
+            control_groups.push(cg);
         }
+
+        // Send out an event describing these changes.
+        events.push(CRCEvent::StreamCreated(StreamCreated {
+            stream: stream.clone(),
+            replicas,
+            control_groups,
+        }));
 
         Ok(())
     }
@@ -745,33 +754,43 @@ impl HCoreStorage {
             return Ok(());
         }
         // Stream does not yet exist, so we create an entry for it, setting its initial index to 0.
-        let model = utils::encode_flexbuf(&pipeline)?;
-        let pipeline_key = format!("{}{}/{}", PREFIX_PIPELINES, pipeline.namespace(), pipeline.name());
+        let id = self.db.generate_id()?;
+        let pipeline = Arc::new(WithId::new(id, pipeline.clone()));
+        let model = utils::encode_flexbuf(&*pipeline)?;
+        let pipeline_key = format!("{}{}", PREFIX_PIPELINES, id);
         models.insert(pipeline_key.as_bytes(), model);
-        index_batch.push(IndexWriteOp::InsertPipeline { pipeline: pipeline.clone() });
-        // Push a new event onto the event buf.
-        events.push(CRCEvent::PipelineCreated(PipelineCreated { pipeline: pipeline.clone() }));
+        index_batch.push(IndexWriteOp::InsertPipeline(pipeline.clone()));
 
         // Create pipeline replica records.
-        for replica in 0..pipeline.replication_factor {
+        let cg_id = self.db.generate_id()?;
+        let mut replicas = vec![];
+        for replica in 0..pipeline.model.replication_factor {
             // Create stream replica in an unassigned state & add it to the write batch.
             let id = self.db.generate_id()?;
-            let replica_key_ns = format!(
-                "{}{}/{}/{}",
-                PREFIX_PIPELINE_REPLICAS_NAMESPACED,
-                pipeline.namespace(),
-                pipeline.name(),
-                replica
-            );
             let replica_key = format!("{}{}", PREFIX_PIPELINE_REPLICAS, id);
-            let replica_model = placement::PipelineReplica::new(id, pipeline.namespace(), pipeline.name(), replica);
-            let model = utils::encode_flexbuf(&replica_model).context("error encoding pipeline replica model")?;
+            let replica_model = Arc::new(placement::PipelineReplica::new(id, cg_id, pipeline.id, replica));
+            let model = utils::encode_flexbuf(&*replica_model).context("error encoding pipeline replica model")?;
             models.insert(replica_key.as_bytes(), model.as_slice());
-            models.insert(replica_key_ns.as_bytes(), &utils::encode_u64(id));
-
-            // Push a new event onto the event buf.
-            events.push(CRCEvent::PipelineReplicaCreated(Arc::new(replica_model)));
+            index_batch.push(IndexWriteOp::InsertPipelineReplica(replica_model.clone()));
+            replicas.push(replica_model);
         }
+
+        // Create a control group record for this new pipeline.
+        let control_group = Arc::new(placement::ControlGroup::new_pipeline(
+            cg_id,
+            replicas.iter().map(|repl| repl.id).collect(),
+        ));
+        let cg_model = utils::encode_flexbuf(&*control_group)?;
+        let cg_key = format!("{}{}", PREFIX_CONTROL_GROUPS, cg_id);
+        models.insert(cg_key.as_bytes(), cg_model);
+        index_batch.push(IndexWriteOp::InsertControlGroup(control_group.clone()));
+
+        // Send out an event describing these changes.
+        events.push(CRCEvent::PipelineCreated(PipelineCreated {
+            pipeline: pipeline.clone(),
+            replicas,
+            control_group,
+        }));
 
         Ok(())
     }
@@ -853,9 +872,9 @@ impl HCoreStorage {
 
     /// Recover the system's state, building indices and the like.
     #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_system_state(state: &Tree) -> Result<(HCoreIndex, InitialEvent)> {
+    pub async fn recover_system_state(state: &Tree) -> Result<(CRCIndex, InitialEvent)> {
         // Perform parallel recovery of system state.
-        let (users, tokens, namespaces, streams, stream_replicas, pipelines, pipeline_replicas, branches) = tokio::try_join!(
+        let (users, tokens, namespaces, streams, stream_replicas, pipelines, pipeline_replicas, branches, control_groups) = tokio::try_join!(
             Self::recover_user_permissions(&state),
             Self::recover_token_permissions(&state),
             Self::recover_namespaces(&state),
@@ -864,30 +883,45 @@ impl HCoreStorage {
             Self::recover_pipelines(&state),
             Self::recover_pipeline_replicas(&state),
             Self::recover_schema_branches(&state),
+            Self::recover_control_groups(&state),
         )
         .context("error during parallel state recovery of CRC data")?;
 
         // Update initial CRC event with recovered data.
-        let stream_replicas = stream_replicas.into_iter().map(Arc::new).collect();
-        let pipeline_replicas = pipeline_replicas.into_iter().map(Arc::new).collect();
-        let mut initial_event = InitialEvent::new(streams.clone(), stream_replicas, pipelines.clone(), pipeline_replicas);
+        let mut initial_event = InitialEvent::new(
+            streams.clone(),
+            stream_replicas.clone(),
+            pipelines.clone(),
+            pipeline_replicas.clone(),
+            control_groups.clone(),
+        );
 
         // Update index with recovered data.
-        let index = HCoreIndex::new(users, tokens, namespaces, streams, pipelines, branches);
+        let index = CRCIndex::new(
+            users,
+            tokens,
+            namespaces,
+            streams,
+            pipelines,
+            branches,
+            control_groups,
+            stream_replicas,
+            pipeline_replicas,
+        );
 
         Ok((index, initial_event))
     }
 
     /// Recover namespaces.
     #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_namespaces(state: &Tree) -> Result<Vec<schema::Namespace>> {
+    pub async fn recover_namespaces(state: &Tree) -> Result<Vec<Arc<WithId<schema::Namespace>>>> {
         let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<schema::Namespace>> {
+        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<WithId<schema::Namespace>>>> {
             let mut data = vec![];
             for entry_res in tree.scan_prefix(PREFIX_NAMESPACE) {
                 let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: schema::Namespace = utils::decode_flexbuf(entry.as_ref()).context("error decoding namespace from storage")?;
-                data.push(model);
+                let model: WithId<schema::Namespace> = utils::decode_flexbuf(entry.as_ref()).context("error decoding namespace from storage")?;
+                data.push(Arc::new(model));
             }
             Ok(data)
         })
@@ -898,14 +932,14 @@ impl HCoreStorage {
 
     /// Recover streams.
     #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_streams(state: &Tree) -> Result<Vec<schema::Stream>> {
+    pub async fn recover_streams(state: &Tree) -> Result<Vec<Arc<WithId<schema::Stream>>>> {
         let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<schema::Stream>> {
+        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<WithId<schema::Stream>>>> {
             let mut data = vec![];
             for entry_res in tree.scan_prefix(PREFIX_STREAMS) {
                 let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: schema::Stream = utils::decode_flexbuf(entry.as_ref()).context("error decoding stream from storage")?;
-                data.push(model);
+                let model: WithId<schema::Stream> = utils::decode_flexbuf(entry.as_ref()).context("error decoding stream from storage")?;
+                data.push(Arc::new(model));
             }
             Ok(data)
         })
@@ -916,14 +950,14 @@ impl HCoreStorage {
 
     /// Recover stream replicas.
     #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_stream_replicas(state: &Tree) -> Result<Vec<placement::StreamReplica>> {
+    pub async fn recover_stream_replicas(state: &Tree) -> Result<Vec<Arc<placement::StreamReplica>>> {
         let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<placement::StreamReplica>> {
+        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<placement::StreamReplica>>> {
             let mut data = vec![];
             for entry_res in tree.scan_prefix(PREFIX_STREAM_REPLICAS) {
                 let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
                 let model: placement::StreamReplica = utils::decode_flexbuf(entry.as_ref()).context("error decoding stream replica from storage")?;
-                data.push(model);
+                data.push(Arc::new(model));
             }
             Ok(data)
         })
@@ -934,14 +968,14 @@ impl HCoreStorage {
 
     /// Recover pipelines.
     #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_pipelines(state: &Tree) -> Result<Vec<schema::Pipeline>> {
+    pub async fn recover_pipelines(state: &Tree) -> Result<Vec<Arc<WithId<schema::Pipeline>>>> {
         let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<schema::Pipeline>> {
+        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<WithId<schema::Pipeline>>>> {
             let mut data = vec![];
             for entry_res in tree.scan_prefix(PREFIX_PIPELINES) {
                 let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: schema::Pipeline = utils::decode_flexbuf(entry.as_ref()).context("error decoding pipeline from storage")?;
-                data.push(model);
+                let model: WithId<schema::Pipeline> = utils::decode_flexbuf(entry.as_ref()).context("error decoding pipeline from storage")?;
+                data.push(Arc::new(model));
             }
             Ok(data)
         })
@@ -952,20 +986,38 @@ impl HCoreStorage {
 
     /// Recover pipeline replicas.
     #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_pipeline_replicas(state: &Tree) -> Result<Vec<placement::PipelineReplica>> {
+    pub async fn recover_pipeline_replicas(state: &Tree) -> Result<Vec<Arc<placement::PipelineReplica>>> {
         let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<placement::PipelineReplica>> {
+        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<placement::PipelineReplica>>> {
             let mut data = vec![];
             for entry_res in tree.scan_prefix(PREFIX_PIPELINE_REPLICAS) {
                 let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
                 let model: placement::PipelineReplica =
                     utils::decode_flexbuf(entry.as_ref()).context("error decoding pipeline replica from storage")?;
-                data.push(model);
+                data.push(Arc::new(model));
             }
             Ok(data)
         })
         .await??;
         tracing::debug!(count = data.len(), "recovered pipeline replicas");
+        Ok(data)
+    }
+
+    /// Recover control groups.
+    #[tracing::instrument(level = "trace", skip(state), err)]
+    pub async fn recover_control_groups(state: &Tree) -> Result<Vec<Arc<placement::ControlGroup>>> {
+        let tree = state.clone();
+        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<placement::ControlGroup>>> {
+            let mut data = vec![];
+            for entry_res in tree.scan_prefix(PREFIX_CONTROL_GROUPS) {
+                let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+                let model: placement::ControlGroup = utils::decode_flexbuf(entry.as_ref()).context("error decoding control group from storage")?;
+                data.push(Arc::new(model));
+            }
+            Ok(data)
+        })
+        .await??;
+        tracing::debug!(count = data.len(), "recovered control groups");
         Ok(data)
     }
 
@@ -997,13 +1049,5 @@ impl HCoreStorage {
     #[tracing::instrument(level = "trace", skip(state), err)]
     pub async fn recover_token_permissions(state: &Tree) -> Result<Vec<(u64, Claims)>> {
         Ok(vec![(0, Claims::V1(ClaimsV1::All))]) // TODO: recover token state.
-    }
-
-    /// Get the given token's claims, else return an auth error.
-    pub async fn must_get_token_claims(&self, token_id: &u64) -> Result<Arc<Claims>> {
-        match self.index.tokens.get(token_id).map(|val| val.value().clone()) {
-            Some(claims) => Ok(claims),
-            None => Err(AppError::UnknownToken.into()),
-        }
     }
 }

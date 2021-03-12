@@ -3,7 +3,8 @@
 #![allow(unused_mut)] // TODO: remove this.
 #![allow(dead_code)] // TODO: remove this.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::hash::Hasher;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -15,14 +16,14 @@ use tonic::transport::Channel;
 
 use crate::config::Config;
 use crate::ctl_placement::events::CPCEvent;
-use crate::ctl_placement::CPC;
+use crate::ctl_placement::Cpc;
 use crate::ctl_raft::models::{CRCClientRequest, CRCRequest};
-use crate::ctl_raft::{HCoreIndex, CRC};
-use crate::ctl_stream::SPC;
+use crate::ctl_raft::{CRCIndex, CRC};
+use crate::ctl_stream::{Spc, SpcInput};
 use crate::database::Database;
 use crate::discovery::Discovery;
-use crate::models::placement;
-use crate::network::{ClientRequest, Network, NetworkOutput, PeerRequest};
+use crate::models::{placement, prelude::*};
+use crate::network::{ClientRequest, Network, NetworkOutput, PeerRequest, StreamPub};
 use crate::NodeId;
 
 pub struct App {
@@ -30,13 +31,15 @@ pub struct App {
     id: NodeId,
     /// The application's runtime config.
     config: Arc<Config>,
+    /// The application's database system.
+    db: Database,
     /// The system data index.
-    index: Arc<HCoreIndex>,
+    index: Arc<CRCIndex>,
 
     /// A channel of data flowing in from the network layer.
     network_rx: mpsc::UnboundedReceiver<NetworkOutput>,
     /// A signal mapping peer nodes to their communication channels.
-    _peers_rx: watch::Receiver<Arc<HashMap<u64, Channel>>>,
+    peers_rx: watch::Receiver<Arc<HashMap<u64, Channel>>>,
 
     /// A channel used for sending requests into the Hadron core.
     crc_tx: mpsc::UnboundedSender<CRCRequest>,
@@ -48,6 +51,12 @@ pub struct App {
     /// A channel used for triggering graceful shutdown.
     shutdown_tx: watch::Sender<bool>,
 
+    /// Channels and handles for all spawned stream partition controllers on this node.
+    ///
+    /// These are indexed by their CG ID, as only a single replica per control group may run on a
+    /// node at any time. Moreover, routing of connections is handled by partition/CG ID.
+    stream_control_groups: BTreeMap<u64, (mpsc::Sender<SpcInput>, JoinHandle<Result<()>>)>,
+
     discovery: JoinHandle<()>,
     network: JoinHandle<()>,
     crc: JoinHandle<()>,
@@ -58,19 +67,12 @@ impl App {
     pub async fn new(config: Arc<Config>) -> Result<Self> {
         // App shutdown channel.
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let (peers_tx, peers_rx) = watch::channel(Default::default());
 
         // Fetch this node's ID from disk.
         let db = Database::new(config.clone()).await.context("error opening database")?;
         let node_id = db.get_node_id().await.context("error getting node ID")?;
         tracing::info!(node_id);
-
-        // Spawn the discovery layer.
-        let (discovery, discovery_rx) = Discovery::new(config.clone(), shutdown_rx.clone());
-        let discovery = discovery.spawn();
-
-        // Spawn the network layer.
-        let (network, network_rx, peers_rx) = Network::new(node_id, config.clone(), discovery_rx, shutdown_rx.clone())?;
-        let network = network.spawn();
 
         // Spawn the CRC.
         let (crc_tx, crc_rx) = mpsc::unbounded_channel();
@@ -79,19 +81,29 @@ impl App {
         let crc = crc.spawn();
 
         // Spawn the CPC.
-        let (cpc, cpc_rx) = CPC::new(node_id, config.clone(), shutdown_rx.clone(), raft_metrics, crc_events, crc_tx.clone());
+        let (cpc, cpc_rx) = Cpc::new(node_id, config.clone(), shutdown_rx.clone(), raft_metrics, crc_events, crc_tx.clone());
         let cpc = cpc.spawn();
+
+        // Spawn the discovery layer.
+        let (discovery, discovery_rx) = Discovery::new(config.clone(), shutdown_rx.clone());
+        let discovery = discovery.spawn();
+
+        // Spawn the network layer.
+        let (network, network_rx) = Network::new(node_id, config.clone(), index.clone(), discovery_rx, peers_tx, shutdown_rx.clone())?;
+        let network = network.spawn();
 
         Ok(Self {
             id: node_id,
             config,
+            db,
             index,
             network_rx,
-            _peers_rx: peers_rx,
+            peers_rx,
             crc_tx,
             cpc_rx,
             shutdown_rx,
             shutdown_tx,
+            stream_control_groups: Default::default(),
             discovery,
             network,
             crc,
@@ -114,9 +126,10 @@ impl App {
                 Some(event) = self.cpc_rx.next() => self.handle_placement_event(event).await,
                 Some((_, sig)) = signals.next() => {
                     tracing::debug!(signal = ?sig, "signal received, beginning graceful shutdown");
-                    let _ = self.shutdown_tx.broadcast(true);
+                    self.shutdown();
                     break;
                 }
+                Some(needs_shutdown) = self.shutdown_rx.next() => if needs_shutdown { break } else { continue },
             }
         }
 
@@ -138,6 +151,12 @@ impl App {
         Ok(())
     }
 
+    /// Trigger a system shutdown.
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn shutdown(&mut self) {
+        let _ = self.shutdown_tx.broadcast(true);
+    }
+
     /// Handle a placement event coming from the CPC.
     ///
     /// Each event indicates some pertinent scheduling event related to this node. This handle
@@ -151,23 +170,59 @@ impl App {
     }
 
     /// Spawn a stream replica controller on this node.
-    #[tracing::instrument(level = "trace", skip(self, replica))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, replica),
+        fields(replica = replica.id, cg = replica.cg_id, stream = replica.stream_id),
+    )]
     async fn spawn_stream_replica(&mut self, replica: Arc<placement::StreamReplica>) {
-        // TODO: CRITICAL PATH >>> spawn a stream partition controller for the given replica
-        let _ = SPC::new(self.id, self.config.clone(), self.shutdown_rx.clone(), replica).spawn();
+        // Get a pointer to the corresponding stream object.
+        let stream = match self.index.streams.get(&replica.stream_id).map(|res| res.value().clone()) {
+            Some(stream) => stream,
+            None => {
+                tracing::error!("error spawning stream replica, stream model not found in index");
+                self.shutdown();
+                return;
+            }
+        };
+
+        // Get a pointer to the corresponding control group of the replica.
+        let cg = match self.index.control_groups.get(&replica.cg_id).map(|res| res.value().clone()) {
+            Some(cg) => cg,
+            None => {
+                tracing::error!("error spawning stream replica, control group model not found in index");
+                self.shutdown();
+                return;
+            }
+        };
+
+        // Spawn the stream partition controller for this replica.
+        let (id, config, shutdown, peers) = (cg.id, self.config.clone(), self.shutdown_rx.clone(), self.peers_rx.clone());
+        let (ns, name, partition, replica_id) = (stream.model.namespace(), stream.model.name(), replica.partition, replica.id);
+        let (app_tx, app_rx) = mpsc::channel(1000);
+        let handle_res = Spc::new(self.id, config, self.db.clone(), shutdown, peers, app_rx, replica, cg, stream.clone())
+            .await
+            .with_context(|| format!("error initializing SPC {}/{}/{}/{}", ns, name, partition, replica_id));
+        let handle = match handle_res {
+            Ok(handle) => handle.spawn(),
+            Err(err) => {
+                tracing::error!(error = ?err, "error spawning stream partition controller");
+                self.shutdown();
+                return;
+            }
+        };
+        self.stream_control_groups.insert(id, (app_tx, handle));
     }
 
     /// Spawn a pipeline replica controller on this node.
     #[tracing::instrument(level = "trace", skip(self, replica))]
     async fn spawn_pipeline_replica(&mut self, replica: Arc<placement::PipelineReplica>) {
-        // TODO: CRITICAL PATH >>> spawn a stream partition controller for the given replica
+        // TODO: spawn a stream partition controller for the given replica.
     }
 
     /// Handle a network request.
     #[tracing::instrument(level = "trace", skip(self, req))]
     async fn handle_network_request(&mut self, req: NetworkOutput) {
-        // TODO: maybe refactor this to push this logic into the networking layer to reduce
-        // the number of hops.
         match req {
             NetworkOutput::PeerRequest(peer_req) => match peer_req {
                 PeerRequest::RaftAppendEntries(req) => {
@@ -186,15 +241,21 @@ impl App {
                 ClientRequest::RpcPub(_req) => todo!("finish this up"),
                 ClientRequest::RpcSub(_req) => todo!("finish this up"),
                 ClientRequest::Transaction(_req) => todo!("finish this up"),
-                ClientRequest::StreamPub(_req) => todo!("finish this up"),
+                ClientRequest::StreamPub(req) => {
+                    let tx = match self.stream_control_groups.get_mut(&req.cg.id) {
+                        Some((tx, _)) => tx,
+                        None => {
+                            let _ = req.tx.send(Err(tonic::Status::unavailable("stream controller not yet available")));
+                            return;
+                        }
+                    };
+                    let _ = tx.send(SpcInput::StreamPub(req));
+                }
                 ClientRequest::StreamSub(_req) => todo!("finish this up"),
                 ClientRequest::StreamUnsub(_req) => todo!("finish this up"),
                 ClientRequest::PipelineStageSub(_req) => todo!("finish this up"),
 
                 // Requests bound for the Cluster Raft Controller.
-                // SOON: Hadron cluster membership.
-                // SOON: Leadership designations for other controllers within the Hadron cluster.
-                // SOON: AuthN & authZ resources such as users and tokens.
                 ClientRequest::UpdateSchema(req) => {
                     let _ = self.crc_tx.send(CRCRequest::Client(CRCClientRequest::UpdateSchema(req)));
                 }

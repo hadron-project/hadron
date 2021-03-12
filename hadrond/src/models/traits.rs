@@ -13,30 +13,21 @@ pub trait Namespaced {
     /// The description of the object.
     fn description(&self) -> &str;
 
-    /// The unique ID of the object, represented as `{namespace}/{name}`.
-    fn namespaced_id(&self) -> String {
+    /// The namespaced name of the object, represented as `{namespace}/{name}`.
+    fn namespaced_name(&self) -> String {
         format!("{}/{}", self.namespace(), self.name())
     }
 }
 
 impl Namespaced for schema::Stream {
     fn namespace(&self) -> &str {
-        match self {
-            Self::Standard(inner) => &inner.metadata.namespace,
-            Self::OutTable(inner) => &inner.metadata.namespace,
-        }
+        &self.metadata.namespace
     }
     fn name(&self) -> &str {
-        match self {
-            Self::Standard(inner) => &inner.metadata.name,
-            Self::OutTable(inner) => &inner.metadata.name,
-        }
+        &self.metadata.name
     }
     fn description(&self) -> &str {
-        match self {
-            Self::Standard(inner) => &inner.metadata.description,
-            Self::OutTable(inner) => &inner.metadata.description,
-        }
+        &self.metadata.description
     }
 }
 

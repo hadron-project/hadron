@@ -7,11 +7,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
-use sled::{Config as SledConfig, Db, IVec, Tree};
+use sled::{Config as SledConfig, Db, IVec};
 use tokio::sync::RwLock;
 
 use crate::config::Config;
 use crate::error::{ShutdownError, ShutdownResult};
+
+pub type Tree = sled::Tree;
 
 /// The default path to use for data storage.
 pub const DEFAULT_DATA_PATH: &str = "/usr/local/hadron/data";
@@ -24,6 +26,8 @@ const NODE_ID_FILE_NAME: &str = "node_id"; // <dataDir>/node_id
 const TREE_CRC_LOG: &str = "crc::log";
 /// The DB tree of the CRC Raft state machine.
 const TREE_CRC_SM: &str = "crc::state_machine";
+/// The DB tree prefix used for streams.
+const TREE_STREAM_PREFIX: &str = "spc::stream";
 
 /// The default path to use for data storage.
 pub fn default_data_path() -> String {
@@ -133,5 +137,18 @@ impl Database {
     /// The DB tree for the CRC Raft state machine.
     pub async fn crc_sm(&self) -> ShutdownResult<Tree> {
         self.get_cached_tree(TREE_CRC_SM).await
+    }
+
+    /// Get a handle to the DB tree for a stream partition replica.
+    pub async fn get_stream_tree(&self, namespace: &str, name: &str, partition: u32, replica_id: u64) -> ShutdownResult<Tree> {
+        let name = format!(
+            "{prefix}/{namespace}/{name}/{partition}/{replica_id}",
+            prefix = TREE_STREAM_PREFIX,
+            namespace = namespace,
+            name = name,
+            partition = partition,
+            replica_id = replica_id,
+        );
+        self.get_cached_tree(&name).await
     }
 }

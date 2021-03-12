@@ -1,5 +1,11 @@
 //! The networking layer.
 
+#![allow(unused_imports)] // TODO: remove this.
+#![allow(unused_variables)] // TODO: remove this.
+#![allow(unused_mut)] // TODO: remove this.
+#![allow(dead_code)] // TODO: remove this.
+#![allow(clippy::redundant_clone)] // TODO: remove this.
+
 mod client;
 mod peer;
 
@@ -15,6 +21,7 @@ use tokio::task::JoinHandle;
 use tonic::transport::{Channel, Server, Uri};
 
 use crate::config::Config;
+use crate::ctl_raft::CRCIndex;
 use crate::discovery::{ObservedPeersChangeset, PeerSrv};
 pub use crate::network::client::{
     forward_client_request, ClientClient, ClientRequest, EphemeralPub, EphemeralSub, PipelineStageSub, RpcPub, RpcSub, StreamPub, StreamSub,
@@ -29,13 +36,6 @@ use crate::proto;
 use crate::NodeId;
 
 const ERR_BUILD_URI: &str = "error building URI for peer connection";
-
-/// The output of the `Network::new` constructor.
-pub type NetworkNewOutput = (
-    Network,
-    mpsc::UnboundedReceiver<NetworkOutput>,
-    watch::Receiver<Arc<HashMap<NodeId, Channel>>>,
-);
 
 /// An actor responsible for managing network activity.
 ///
@@ -54,6 +54,8 @@ pub struct Network {
     /// The ID of this node in the Raft cluster.
     node_id: NodeId,
     config: Arc<Config>,
+    /// The CRC data index.
+    index: Arc<CRCIndex>,
 
     discovery_rx: mpsc::Receiver<ObservedPeersChangeset>,
 
@@ -85,17 +87,24 @@ pub struct Network {
 
 impl Network {
     pub fn new(
-        node_id: NodeId, config: Arc<Config>, discovery_rx: mpsc::Receiver<ObservedPeersChangeset>, shutdown: watch::Receiver<bool>,
-    ) -> Result<NetworkNewOutput> {
+        node_id: NodeId, config: Arc<Config>, index: Arc<CRCIndex>, discovery_rx: mpsc::Receiver<ObservedPeersChangeset>,
+        peers_tx: watch::Sender<Arc<HashMap<NodeId, Channel>>>, shutdown: watch::Receiver<bool>,
+    ) -> Result<(Network, mpsc::UnboundedReceiver<NetworkOutput>)> {
         let (peer_network_tx, peer_network_rx) = mpsc::unbounded_channel();
         let (client_network_tx, client_network_rx) = mpsc::unbounded_channel();
         let (net_internal_tx, net_internal_rx) = mpsc::unbounded_channel();
         let (output_tx, output_rx) = mpsc::unbounded_channel();
-        let (peers_tx, peers_rx) = watch::channel(Default::default());
 
         let (server_shutdown_tx, server_shutdown_rx) = broadcast::channel(1);
-        let peer_server = Self::build_peer_server(node_id, peer_network_tx, client_network_tx.clone(), config.clone(), server_shutdown_rx)?;
-        let client_server = Self::build_client_server(node_id, client_network_tx, config.clone(), server_shutdown_tx.subscribe())?;
+        let peer_server = Self::build_peer_server(
+            node_id,
+            peer_network_tx,
+            client_network_tx.clone(),
+            config.clone(),
+            index.clone(),
+            server_shutdown_rx,
+        )?;
+        let client_server = Self::build_client_server(node_id, client_network_tx, config.clone(), index.clone(), server_shutdown_tx.subscribe())?;
 
         // TODO: setup an unordered futures stream of peers which have disappeared from the discovery system
         // and which need to be healthchecked until we can safely remove them or until they reappear and we preserve.
@@ -103,6 +112,7 @@ impl Network {
         let this = Self {
             node_id,
             config,
+            index,
             discovery_rx,
             client_network_rx,
             peer_network_rx,
@@ -117,7 +127,7 @@ impl Network {
             socket_to_peer_map: Default::default(),
             node_id_to_socket_map: Default::default(),
         };
-        Ok((this, output_rx, peers_rx))
+        Ok((this, output_rx))
     }
 
     pub fn spawn(self) -> JoinHandle<()> {
@@ -243,14 +253,14 @@ impl Network {
 
     fn build_peer_server(
         id: NodeId, peer_tx: mpsc::UnboundedSender<peer::PeerRequest>, client_tx: mpsc::UnboundedSender<client::ClientRequest>, config: Arc<Config>,
-        mut shutdown: broadcast::Receiver<()>,
+        index: Arc<CRCIndex>, mut shutdown: broadcast::Receiver<()>,
     ) -> Result<JoinHandle<Result<()>>> {
         // TODO: integrate TLS configuration.
         let addr = format!("0.0.0.0:{}", config.server_port)
             .parse()
             .context("failed to parse socket addr for internal gRPC server, probably a bad port")?;
         let peer_svc = PeerService::new(id, peer_tx);
-        let client_svc = ClientService::new(id, config, client_tx);
+        let client_svc = ClientService::new(id, config, index, client_tx);
         Ok(tokio::spawn(async move {
             let server_fut = Server::builder()
                 .tcp_keepalive(Some(Duration::from_secs(30))) // Raft heartbeats will keep this guy alive.
@@ -259,18 +269,19 @@ impl Network {
                 .add_service(ClientServer::new(client_svc))
                 .serve_with_shutdown(addr, shutdown.next().map(|_| ()))
                 .map_err(anyhow::Error::from);
-            Ok(server_fut.await?)
+            server_fut.await
         }))
     }
 
     fn build_client_server(
-        id: NodeId, tx: mpsc::UnboundedSender<client::ClientRequest>, config: Arc<Config>, mut shutdown: broadcast::Receiver<()>,
+        id: NodeId, tx: mpsc::UnboundedSender<client::ClientRequest>, config: Arc<Config>, index: Arc<CRCIndex>,
+        mut shutdown: broadcast::Receiver<()>,
     ) -> Result<JoinHandle<Result<()>>> {
         // TODO: integrate TLS configuration.
         let addr = format!("0.0.0.0:{}", config.client_port)
             .parse()
             .context("failed to parse socket addr for client gRPC server, probably a bad port")?;
-        let svc = ClientService::new(id, config, tx);
+        let svc = ClientService::new(id, config, index, tx);
         Ok(tokio::spawn(async move {
             let server_fut = Server::builder()
                 .tcp_keepalive(Some(Duration::from_secs(10)))
@@ -278,7 +289,7 @@ impl Network {
                 .add_service(ClientServer::new(svc))
                 .serve_with_shutdown(addr, shutdown.next().map(|_| ()))
                 .map_err(anyhow::Error::from);
-            Ok(server_fut.await?)
+            server_fut.await
         }))
     }
 

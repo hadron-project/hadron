@@ -5,8 +5,9 @@
 
 use std::sync::Arc;
 
-use crate::models::placement::{Assignment, PipelineReplica, StreamReplica};
+use crate::models::placement::{Assignment, ControlGroup, PipelineReplica, StreamReplica};
 use crate::models::schema::{Pipeline, Stream};
+use crate::models::WithId;
 
 /// An event coming from the CRC.
 pub enum CRCEvent {
@@ -30,25 +31,29 @@ pub enum CRCEvent {
 /// state from storage.
 pub struct InitialEvent {
     /// All known streams in the cluster.
-    pub streams: Vec<Stream>,
+    pub streams: Vec<Arc<WithId<Stream>>>,
     /// All known stream replicas in the cluster.
     pub stream_replicas: Vec<Arc<StreamReplica>>,
     /// All known pipelines in the cluster.
-    pub pipelines: Vec<Pipeline>,
+    pub pipelines: Vec<Arc<WithId<Pipeline>>>,
     /// All known pipeline replicas in the cluster.
     pub pipeline_replicas: Vec<Arc<PipelineReplica>>,
+    /// All known control groups in the cluster.
+    pub control_groups: Vec<Arc<ControlGroup>>,
 }
 
 impl InitialEvent {
     /// Create a new instance.
     pub fn new(
-        streams: Vec<Stream>, stream_replicas: Vec<Arc<StreamReplica>>, pipelines: Vec<Pipeline>, pipeline_replicas: Vec<Arc<PipelineReplica>>,
+        streams: Vec<Arc<WithId<Stream>>>, stream_replicas: Vec<Arc<StreamReplica>>, pipelines: Vec<Arc<WithId<Pipeline>>>,
+        pipeline_replicas: Vec<Arc<PipelineReplica>>, control_groups: Vec<Arc<ControlGroup>>,
     ) -> Self {
         Self {
             streams,
             stream_replicas,
             pipelines,
             pipeline_replicas,
+            control_groups,
         }
     }
 }
@@ -56,13 +61,21 @@ impl InitialEvent {
 /// An event indicating that a new stream was created.
 pub struct StreamCreated {
     /// The stream's data model.
-    pub stream: Stream,
+    pub stream: Arc<WithId<Stream>>,
+    /// The replicas associated with this stream.
+    pub replicas: Vec<Arc<StreamReplica>>,
+    /// This stream's control group record.
+    pub control_groups: Vec<Arc<ControlGroup>>,
 }
 
 /// An event indicating that a new pipeline was created.
 pub struct PipelineCreated {
     /// The pipeline's data model.
-    pub pipeline: Pipeline,
+    pub pipeline: Arc<WithId<Pipeline>>,
+    /// The replicas associated with this pipeline.
+    pub replicas: Vec<Arc<PipelineReplica>>,
+    /// This pipeline's control group record.
+    pub control_group: Arc<ControlGroup>,
 }
 
 /// An event indicating that a stream replica's node assignment was updated.
