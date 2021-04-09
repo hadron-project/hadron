@@ -1,42 +1,43 @@
-Hyper Cluster Partition Gruops
-==============================
-Each Partition Group is statically configured with exactly one master and any number of replicas. This is based on static config.
+Cluster of Replica Sets
+=======================
+Each replica set is statically configured with exactly one master and any number of replicas. Roles are established statically in config.
 
-- Config changes require restarts. When a node first comes online, it will not fully start until it is able to establish a connection with the members of its partition gruop & determine that their config matches. This is treated as the handshake.
-    - gruop name
+- Config changes require restarts. When a node first comes online, it will not fully start until it is able to establish a connection with the members of its replica set & determine that their config matches. This is treated as the handshake. Data to match:
+    - replica set name
     - node names
     - role per node
 - If handshake fails, backoff and try again. Warn about the potential misconfiguration issue.
-- It is recommended that partition group names semantically indicate geo and or cloud infomration, as well as purpose. Though the only hard requirement is that partition group names be unique throughout a hyper cluster.
+- It is recommended that replica set names semantically indicate geo and or cloud infomration, as well as purpose. Though the only hard requirement is that replica set names be unique throughout a cluster.
     - An example of such a partition naming scheme could be: `aws.us-east-1/p0`, `aws.us-east-1/p1`, `gcp.asia-southeast1/p0`, `gcp.asia-southeast1/p1`.
-    - In this example, partition groups span two different clouds, and two different regions.
+    - In this example, replica sets span two different clouds, and two different regions.
 
 **Consensus**
-Consensus within a partition gruop is dead simple, and is based on static config.
+Consensus within a replica set is dead simple, and is based on static config. The leader is always known and doesn't change. An entry is committed based on majority replication.
 
-**Hyper Cluster**
-Hyper clusters are composed of multiple partition groups which dynamically discover each other.
+**Cluster**
+Clusters are composed of multiple replica sets which dynamically discover each other.
 
-- Each partition group may be part of only one hyper cluster. If the hypercluster discovery info & ports match, then the partition groups will form a hyper cluster.
-- A single partition group may be statically configured as the metadata group. This group will then be responsible for all hyper cluster wide metadata changes, such as stream and pipeline definitions.
+- Each replica set may be part of only one cluster. If the cluster discovery info & ports match, then the replica sets will form a cluster.
+- A single replica set may be statically configured as the metadata group. This group will then be responsible for all cluster wide metadata changes, such as stream and pipeline definitions.
+- HA is achieved by having multiple partitions assigned to the same stream. Clients are able to detect when a partition is down, and so they will failover to one which is alive.
 
 **Metadata**
-- A single partition group acts as the metadata leader for a hyper cluster based on static config.
-- Metadata is asynchronously replicated to all members of the hyper cluster, always with an associated metadata index.
-    - This allows for a hyper cluster to more easily span the globe, multiple regions and differnet clouds.
-    - Clients can query for metadata at any location, and they will always be as up-to-date as a direct query to metadata partition group directly, due to the constant async replication of config.
+- A single replica set acts as the metadata leader for a cluster based on static config.
+- Metadata is asynchronously replicated to all members of the cluster, always with an associated metadata index.
+    - This allows for a cluster to more easily span the globe, multiple regions and differnet clouds.
+    - Clients can query for metadata at any location, and they will always be as up-to-date as a direct query to metadata replica set directly, due to the constant async replication of config.
 - Hadron schema objects now declare their "partition" assignments explicitly.
-    - For example, when a stream is declared, it will declare its partitions as a list of partition group names.
+    - For example, when a stream is declared, it will declare its partitions as a list of replica set names.
     - It could declare that the stream has 4 partitions, as follows: `aws.us-east-1/p0`, `aws.us-east-1/p1`, `gcp.asia-southeast1/p0`, `gcp.asia-southeast1/p1`.
-    - These would match partition group names of actual partition groups in the cluster.
+    - These would match replica set names of actual replica sets in the cluster.
     - As clients publish data to these partitions, they can hash to a specific partition of the region where their data needs to reside, or hard code the partition they are targetting.
-    - This supports cases where data semantically belongs on the same stream, but is optimized to reduce latency by geolocating partition groups in the regions where the data is being processed, GDPR or similar requirements.
-    - The hyper cluster will still see all of these partitions as participating in the same stream, and consumers can be configured to consume from any subset of the partitions of a stream.
+    - This supports cases where data semantically belongs on the same stream, but is optimized to reduce latency by geolocating replica sets in the regions where the data is being processed, GDPR or similar requirements.
+    - The cluster will still see all of these partitions as participating in the same stream, and consumers can be configured to consume from any subset of the partitions of a stream.
 
 **Transactions**
 - The client simply chooses any partition involved in the transaction to be the driver.
 - The driver uses the streaming distributed transaction model.
-- The transaction system can have a separate index/lsn used for stream records written as part of a transaction. These will be unique per partition group, as they will be prefixed with the partition group name followed by a monotonic index/lsn. This serves to both identify the driver of the transaction and to ensure global uniqueness.
+- The transaction system can have a separate index/lsn used for stream records written as part of a transaction. These will be unique per replica set, as they will be prefixed with the replica set name followed by a monotonic index/lsn. This serves to both identify the driver of the transaction and to ensure global uniqueness.
 - The transaction driver model will make it so that all statements as part of a transaction will go to the driver node, the driver builds up statements and applies them to the various target stream partitions and such of the individual statements.
     - Once a commit statement is received, as long as all statements in the transaction have already passed phase 1 (initial entry), then the driver node will commit the transaction, marking it as applied.
     - It will then concurrently reach out to all other nodes of the transaction, committing their statements, which applies them to the actual target streams, assigning an actual partition offset to the entry. Updated partition offsets are sent back to the driver node so that it can update references if needed.
@@ -48,7 +49,7 @@ For pipelines, the primary items which need to be transactional:
 
 **Pipelines**
 - Pipelines will only ever exist on a single partition, which is declared in their schema.
-- Trigger streams can be from any location in the hyper cluster.
+- Trigger streams can be from any location in the cluster.
 - This is made scalable by having the pipeline controller simply create its own internal consumer of each partition of the trigger stream.
 - As data is consumed, and a match is found on an event, it will be transactionally applied as a new pipeline instantiation. This is a transactional consumer flow which ensures that duplicate pipeline instances are not possible.
 - We will need to use a streaming distributed transaction model for writing pipeline stage outputs to other streams.
@@ -56,8 +57,8 @@ For pipelines, the primary items which need to be transactional:
 **Exchanges & Endpoints**
 Ephemeral messaging exchanges & RPC endpoints.
 
-- This model will be quite simple. A partition group is declared in the schema for exchanges as well as for endpoints.
-- Exchange and endpoint consumers can attach to any node of the hyper cluster. The node to which the connection has been established will consult the hyper cluster's metadata and will then reach out to the controller node for the exchange or endpoint in order to establish itself as a consumer.
+- This model will be quite simple. A replica set is declared in the schema for exchanges as well as for endpoints.
+- Exchange and endpoint consumers can attach to any node of the cluster. The node to which the connection has been established will consult the cluster's metadata and will then reach out to the controller node for the exchange or endpoint in order to establish itself as a consumer.
 - This information is held in memory only by the leader of the exchange or endpoint.
 - If the leader dies or a consumer connection dies, that information will be available almost immediately as durable connections are used, and clients will simply reconnect.
 - The leader is then responsible for making load balancing decisions, and brokering RPC bidirectional communication — which is an easy setup with Rust's channel system.
@@ -65,6 +66,24 @@ Ephemeral messaging exchanges & RPC endpoints.
 
 
 
+
+**Client**
+- https://docs.rs/h2/0.3.2/h2/client/struct.SendRequest.html initializes a new H2 stream, returning a (ResponseFuture, SendStream) tuple.
+    - ResponseFuture resolves to a standard HTTP response with an inner type which represents the inbound stream of data from the server (a stream response channel from the server).
+    - SendStream is immediately available as a mechanism for sending additional outbound requests to the target (a stream of outbound requests to the server).
+
+**Server**
+- https://docs.rs/h2/0.3.2/h2/server/struct.Connection.html is what we end up with on the server side. Its `accept` method yields H2 streams from the connection wich return tupes of (Request<RecvStream>, SendResponse).
+    - The Request is a standard HTTP request with an inner type which can be used to stream in additional data frames or a final trailer (the inbound stream from the client).
+    - The SendResponse is the outbound response stream. Multiple response data frames can be sent, and when everything is done, we send a trailer to close the stream.
+- The server will listen for metadata updates as well as new H2 streams.
+- As new streams & pipelines are instantiated, the server will spawn new controllers which own the corresponding storage location.
+    - This allows for pipelining of inbound mutating requests.
+    - A communication channel will be retained by the server for sending H2 streams to the target controller.
+    - The raw bytes of the request will be avilable for decoding, in place mutation, direct storage &c. We will NOT use protobuf. Big performance and efficiency gains here.
+    - Typically no new channels will need to be allocated for requests, but we can amortize those costs with an mpsc channel pool abstraction, where each channel has cap(1) and channels are reused to eliminate the hot path cost of allocation.
+
+- WOOT WOOT! Let's use capnp! But not the rpc framework.
 
 
 ----

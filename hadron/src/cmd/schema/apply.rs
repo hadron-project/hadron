@@ -3,7 +3,6 @@
 #![allow(dead_code)] // TODO: remove
 
 use anyhow::{bail, Context, Result};
-use futures::stream::StreamExt;
 use structopt::StructOpt;
 
 use crate::cmd::schema::HadronState;
@@ -59,7 +58,7 @@ impl Apply {
         tracing::debug!(dir = ?dir, "checking for entries in dir");
         let mut entries = tokio::fs::read_dir(&dir).await.context("error listing contents of schema dir")?;
         let mut schema_files = vec![];
-        while let Some(Ok(entry)) = entries.next().await {
+        while let Some(entry) = entries.next_entry().await.context("error reading dir entry")? {
             // Bind some basic info variables on the entry.
             let (file_name, file_path) = (entry.file_name(), entry.path());
             let file_name = file_name.to_string_lossy();
@@ -109,6 +108,7 @@ impl Apply {
 
         // Build a new client and submit the request to the cluster.
         let client = base.get_client().await?.schema();
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         for file in schema_files {
             tracing::info!(file = %file.filename, timestamp = file.timestamp, "syncing file");
             let res = client

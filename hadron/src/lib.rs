@@ -3,7 +3,6 @@
 mod client;
 mod cmd;
 mod error;
-mod proto;
 
 use anyhow::Result;
 use hadron::Client;

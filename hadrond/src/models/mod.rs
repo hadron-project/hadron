@@ -1,7 +1,5 @@
 //! Data schema models.
 
-#![allow(dead_code)] // TODO: remove this.
-
 use serde::{Deserialize, Serialize};
 
 pub mod placement;

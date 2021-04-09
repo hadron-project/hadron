@@ -1,0 +1,14 @@
+[package]
+name = "proto"
+version = "0.1.0"
+authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
+description = "Hadron client and server protocol spec."
+edition = "2018"
+
+[dependencies]
+anyhow = "1"
+bincode = "1"
+bytes = "1"
+lazy_static = "1"
+serde = { version = "1", features = ["serde_derive"] }
+thiserror = "1.0.24"

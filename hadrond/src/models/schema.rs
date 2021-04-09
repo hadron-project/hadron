@@ -1,7 +1,5 @@
 //! Data models related to schema management.
 
-#![allow(dead_code)] // TODO: remove this.
-
 use serde::{Deserialize, Serialize};
 
 pub use crate::models::traits::Namespaced;

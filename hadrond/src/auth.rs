@@ -1,16 +1,12 @@
-#![allow(unused_imports)] // TODO: remove this.
-#![allow(unused_variables)] // TODO: remove this.
-#![allow(unused_mut)] // TODO: remove this.
-#![allow(dead_code)] // TODO: remove this.
-
 use anyhow::{anyhow, bail, ensure, Result};
 use serde::{Deserialize, Serialize};
-use tonic::metadata::AsciiMetadataValue;
+// use tonic::metadata::AsciiMetadataValue;
 
 use crate::config::Config;
 use crate::error::AppError;
 use crate::utils;
 
+/// The authorization header bearer prefix.
 const BEARER_PREFIX: &str = "bearer ";
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -21,52 +17,57 @@ const BEARER_PREFIX: &str = "bearer ";
 /// This is construct by cryptographically verifying a token, and validating its claims.
 #[derive(Clone)]
 pub struct TokenCredentials {
-    /// The ID of this token.
-    pub id: u64,
-    /// The raw string token.
-    pub token: String,
-    /// The original token header of these credentials.
-    pub header: AsciiMetadataValue,
+    /// The internal contents of the extracted JWT presented in the associated header.
+    pub claims: Claims,
+    /// The original token header value of these credentials.
+    pub header: http::HeaderValue,
 }
 
 impl TokenCredentials {
     /// Extract a token from the given header value bytes.
-    pub fn from_auth_header(header: AsciiMetadataValue, _config: &Config) -> Result<Self> {
+    pub fn from_auth_header(header: http::HeaderValue, _config: &Config) -> Result<Self> {
         let header_str = header
             .to_str()
-            .map_err(|_| anyhow!("invalid credentials provided, must be a valid string value"))?;
+            .map_err(|_| AppError::MalformedCredentials("must be a valid string value".into()))?;
 
         // Split the header on the bearer prefix & ensure the leading segment is empty.
         let mut splits = header_str.splitn(2, BEARER_PREFIX);
         ensure!(
             splits.next() == Some(""),
-            "invalid credentials provided, token credentials header must begin with 'bearer '",
+            AppError::MalformedCredentials("authorization header value must begin with 'bearer '".into()),
         );
 
         // Check the final segment and ensure we have a populated value.
         let token = match splits.next() {
             Some(token) if !token.is_empty() => token.to_string(),
-            _ => bail!("invalid credentials provided, no token detected"),
+            _ => bail!(AppError::MalformedCredentials("no token detected in header".into())),
         };
         tracing::trace!(%token, "auth token detected");
         // let claims: Claims = jsonwebtoken::decode(token.as_ref()) // TODO: finish this up and remove stubbed claims below.
-        Ok(TokenCredentials { id: 0, token, header })
+        let claims = Claims {
+            id: uuid::Uuid::from_u128(0),
+            claims: ClaimsVersion::V1(ClaimsV1::All),
+        };
+        Ok(TokenCredentials { claims, header })
     }
 }
 
-/// A permissions claim of a token.
+/// The data model of a JWT issued by Hadron.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "v")]
-pub enum Claims {
-    #[serde(rename = "1")]
-    V1(ClaimsV1),
+pub struct Claims {
+    /// The ID of this token.
+    pub id: uuid::Uuid,
+    /// The version of the claims being used.
+    #[serde(flatten)]
+    pub claims: ClaimsVersion,
 }
 
 impl Claims {
     /// Ensure these claims are sufficient for publishing to the given stream.
     pub fn check_stream_pub_auth(&self, ns: &str, stream: &str) -> Result<()> {
-        match &self {
-            Self::V1(v) => match v {
+        match &self.claims {
+            ClaimsVersion::V1(v) => match v {
                 ClaimsV1::All => Ok(()),
                 ClaimsV1::Namespaced(grants) => {
                     let is_authorized = grants.iter().any(|grant| match grant {
@@ -87,8 +88,8 @@ impl Claims {
 
     /// Ensure these claims are sufficient for schema mutations on the target namespace.
     pub fn check_schema_auth(&self, ns: &str) -> Result<()> {
-        match &self {
-            Self::V1(v) => match v {
+        match &self.claims {
+            ClaimsVersion::V1(v) => match v {
                 ClaimsV1::All => Ok(()),
                 ClaimsV1::Namespaced(grants) => {
                     let is_authorized = grants.iter().any(|grant| match grant {
@@ -105,6 +106,15 @@ impl Claims {
     }
 }
 
+/// The claims version being used.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "v")]
+pub enum ClaimsVersion {
+    #[serde(rename = "1")]
+    V1(ClaimsV1),
+}
+
+/// The V1 claims model.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClaimsV1 {

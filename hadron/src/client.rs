@@ -1,7 +1,7 @@
 //! Hadron client code.
 
 use anyhow::{bail, Context, Result};
-use hadron::Client;
+use hadron::{Client, ClientCreds};
 
 const ENV_HADRON_URL: &str = "HADRON_URL";
 const ENV_HADRON_TOKEN: &str = "HADRON_TOKEN";
@@ -34,13 +34,14 @@ pub async fn new_client(url: Option<&str>, token: Option<&str>, user: Option<&st
     }
 
     // Build a new client and attach the corresponding credentials.
-    let mut client = Client::new(&url)?;
-    if let Some(token) = token {
-        client = client.with_token(&token)?;
-    }
-    if let Some(user) = user {
-        client = client.with_password(&user, password.as_deref().unwrap_or(""))?;
-    }
+    let creds = match (token, user) {
+        (None, None) => {
+            bail!("no credentials provided; set credentials via HADRON_TOKEN, HADRON_USER, HADRON_PASSWORD or via their corresponding CLI options")
+        }
+        (Some(token), None) | (Some(token), Some(_)) => ClientCreds::new_with_token(&token)?,
+        (None, Some(user)) => ClientCreds::new_with_password(&user, password.as_deref().unwrap_or(""))?,
+    };
+    let client = Client::new(&url, creds).await?;
     Ok(client)
 }
 
