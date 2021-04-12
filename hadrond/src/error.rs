@@ -18,9 +18,9 @@ pub enum AppError {
     /// The given input was invalid.
     #[error("validation error: {0}")]
     InvalidInput(String),
-    /// The request method is not supported.
-    #[error("the request method is not supported")]
-    MethodNotSupported,
+    /// The request method is not allowed.
+    #[error("the request method is not allowed")]
+    MethodNotAllowed,
     /// The resource specified in the path is not found.
     #[error("the resource specified in the path is not found")]
     ResourceNotFound,
@@ -34,7 +34,7 @@ impl AppError {
             AppError::UnknownToken => http::StatusCode::UNAUTHORIZED,
             AppError::MalformedCredentials(_) => http::StatusCode::BAD_REQUEST,
             AppError::InvalidInput(_) => http::StatusCode::BAD_REQUEST,
-            AppError::MethodNotSupported => http::StatusCode::METHOD_NOT_ALLOWED,
+            AppError::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
             AppError::ResourceNotFound => http::StatusCode::NOT_FOUND,
         };
         (status, self.to_string())

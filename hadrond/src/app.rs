@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{SignalStream, WatchStream};
 use tokio_stream::StreamMap;
@@ -32,12 +32,13 @@ impl App {
     pub async fn new(config: Arc<Config>) -> Result<Self> {
         // App shutdown channel.
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let (events_tx, events_rx) = broadcast::channel(10_000);
 
         // Initialize this nodes storage.
         let db = Database::new(config.clone()).await.context("error opening database")?;
 
         // Spawn the network server.
-        let server = Server::new(config.clone(), db.clone(), shutdown_rx.clone())
+        let (server, _cache) = Server::new(config.clone(), db.clone(), shutdown_rx.clone(), events_tx.clone(), events_tx.subscribe())
             .await
             .context("error creating network server")?;
         let server = server.spawn();

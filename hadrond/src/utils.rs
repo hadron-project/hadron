@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use prost::Message;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::error::AppError;
@@ -8,6 +9,8 @@ pub const ERR_DECODE_RAFT_RPC_RESPONSE: &str = "error decoding Raft RPC response
 pub const ERR_ENCODE_RAFT_RPC: &str = "error encoding Raft RPC";
 
 pub const HEADER_X_HADRON_AUTH: &str = "x-hadron-authorization";
+pub const HEADER_OCTET_STREAM: &str = "application/octet-stream";
+
 pub const HIERARCHY_TOKEN: &str = ".";
 
 /// Encode a stream entry key using the given prefix & offset.
@@ -62,6 +65,18 @@ pub fn decode_i64(val: &[u8]) -> Result<i64> {
         [b0, b1, b2, b3, b4, b5, b6, b7] => Ok(i64::from_be_bytes([*b0, *b1, *b2, *b3, *b4, *b5, *b6, *b7])),
         _ => bail!("invalid byte array given to decode as i64, invalid len {} needed 8", val.len()),
     }
+}
+
+/// Encode the given model into a bytes vec.
+pub fn encode_model<M: Message>(model: &M) -> Result<Vec<u8>> {
+    let mut buf = Vec::with_capacity(model.encoded_len());
+    model.encode(&mut buf).context("error serializing data model")?;
+    Ok(buf)
+}
+
+/// Decode an object from the given buffer.
+pub fn decode_model<M: Message + Default>(data: &[u8]) -> Result<M> {
+    M::decode(data).context("error decoding object from storage")
 }
 
 /// Validate the hierarchy structure of the given object name.

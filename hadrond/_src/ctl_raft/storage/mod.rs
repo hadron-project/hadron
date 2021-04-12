@@ -42,18 +42,18 @@ pub use index::CRCIndex;
 // Storage paths.
 const CRC_SNAPS_DIR: &str = "crc_snaps"; // <dataDir>/crc_snaps
 
-// DB prefixes.
-const PREFIX_BRANCHES: &str = "/branches/";
-const PREFIX_CONTROL_GROUPS: &str = "/control_groups/";
-const PREFIX_NAMESPACE: &str = "/namespaces/";
-const PREFIX_PIPELINE_REPLICAS: &str = "/pipeline_replicas/";
-const PREFIX_PIPELINES: &str = "/pipelines/";
-const PREFIX_STREAM_REPLICAS: &str = "/stream_replicas/";
-const PREFIX_STREAMS: &str = "/streams/";
+// // DB prefixes.
+// const PREFIX_BRANCHES: &str = "/branches/";
+// const PREFIX_CONTROL_GROUPS: &str = "/control_groups/";
+// const PREFIX_NAMESPACE: &str = "/namespaces/";
+// const PREFIX_PIPELINE_REPLICAS: &str = "/pipeline_replicas/";
+// const PREFIX_PIPELINES: &str = "/pipelines/";
+// const PREFIX_STREAM_REPLICAS: &str = "/stream_replicas/";
+// const PREFIX_STREAMS: &str = "/streams/";
 
-// DB keys.
-const KEY_HARD_STATE: &str = "/meta/hard_state";
-const KEY_LAST_APPLIED_LOG: &str = "/meta/last_applied_log";
+// // DB keys.
+// const KEY_HARD_STATE: &str = "/meta/hard_state";
+// const KEY_LAST_APPLIED_LOG: &str = "/meta/last_applied_log";
 
 // Error messages.
 const ERR_ENCODE_LOG_ENTRY: &str = "error encoding raft log entry";
@@ -604,213 +604,213 @@ impl HCoreStorage {
     //////////////////////////////////////////////////////////////////////////////////////////////
     // Apply Entry to State Machine Handlers /////////////////////////////////////////////////////
 
-    /// Apply a schema update to the system.
-    #[tracing::instrument(level = "trace", skip(self, index, req, token_id))]
-    async fn apply_update_schema(&self, index: &u64, req: &schema::SchemaUpdate, token_id: &u64) -> Result<RaftClientResponse> {
-        tracing::debug!(index, "applying update schema request to system");
+    // /// Apply a schema update to the system.
+    // #[tracing::instrument(level = "trace", skip(self, index, req, token_id))]
+    // async fn apply_update_schema(&self, index: &u64, req: &schema::SchemaUpdate, token_id: &u64) -> Result<RaftClientResponse> {
+    //     tracing::debug!(index, "applying update schema request to system");
 
-        // If this is a managed schema change, then we check the branch and timestamp to see if
-        // the schema change has already been applied to the system.
-        let (statements, branch, timestamp) = match &req {
-            schema::SchemaUpdate::Managed(inner) => (&inner.statements, Some(&inner.branch), Some(inner.timestamp)),
-            schema::SchemaUpdate::OneOff(inner) => (&inner.statements, None, None),
-        };
-        if let (Some(branch), Some(timestamp)) = (branch, timestamp) {
-            if let Some(last_applied) = self.index.schema_branches.get(branch).map(|val| *val.value()) {
-                if last_applied >= timestamp {
-                    return Ok(RaftClientResponse::UpdateSchema(UpdateSchemaResponse { was_noop: true }));
-                }
-            }
-        }
+    //     // If this is a managed schema change, then we check the branch and timestamp to see if
+    //     // the schema change has already been applied to the system.
+    //     let (statements, branch, timestamp) = match &req {
+    //         schema::SchemaUpdate::Managed(inner) => (&inner.statements, Some(&inner.branch), Some(inner.timestamp)),
+    //         schema::SchemaUpdate::OneOff(inner) => (&inner.statements, None, None),
+    //     };
+    //     if let (Some(branch), Some(timestamp)) = (branch, timestamp) {
+    //         if let Some(last_applied) = self.index.schema_branches.get(branch).map(|val| *val.value()) {
+    //             if last_applied >= timestamp {
+    //                 return Ok(RaftClientResponse::UpdateSchema(UpdateSchemaResponse { was_noop: true }));
+    //             }
+    //         }
+    //     }
 
-        // Perform full dynamic validation of this content, checking indices, and then falling back to
-        // checking other statements in the given document.
-        // TODO: ^^^
+    //     // Perform full dynamic validation of this content, checking indices, and then falling back to
+    //     // checking other statements in the given document.
+    //     // TODO: ^^^
 
-        // First we prep all needed batches & buffers used for atomically updating the state
-        // machine, indexes & event stream.
-        let mut batch = Batch::default();
-        let mut index_batch = IndexWriteBatch::default();
-        let mut events = Vec::with_capacity(statements.len());
+    //     // First we prep all needed batches & buffers used for atomically updating the state
+    //     // machine, indexes & event stream.
+    //     let mut batch = Batch::default();
+    //     let mut index_batch = IndexWriteBatch::default();
+    //     let mut events = Vec::with_capacity(statements.len());
 
-        // Record the last applied log index as first part of the batch.
-        batch.insert(KEY_LAST_APPLIED_LOG.as_bytes(), &utils::encode_u64(*index));
+    //     // Record the last applied log index as first part of the batch.
+    //     batch.insert(KEY_LAST_APPLIED_LOG.as_bytes(), &utils::encode_u64(*index));
 
-        // Now we iterate over our schema statements and perform their corresponding actions
-        // operating only on our batches, which will be transactionally applied below.
-        for statement in statements {
-            match statement {
-                schema::SchemaStatement::Namespace(namespace) => self.create_namespace(namespace, &mut batch, &mut index_batch).await?,
-                schema::SchemaStatement::Stream(stream) => self.create_stream(stream, &mut batch, &mut index_batch, &mut events).await?,
-                schema::SchemaStatement::Pipeline(pipeline) => self.create_pipeline(pipeline, &mut batch, &mut index_batch, &mut events).await?,
-                schema::SchemaStatement::Endpoint(endpoint) => todo!("finish up endpoint creation"),
-            }
-        }
+    //     // Now we iterate over our schema statements and perform their corresponding actions
+    //     // operating only on our batches, which will be transactionally applied below.
+    //     for statement in statements {
+    //         match statement {
+    //             schema::SchemaStatement::Namespace(namespace) => self.create_namespace(namespace, &mut batch, &mut index_batch).await?,
+    //             schema::SchemaStatement::Stream(stream) => self.create_stream(stream, &mut batch, &mut index_batch, &mut events).await?,
+    //             schema::SchemaStatement::Pipeline(pipeline) => self.create_pipeline(pipeline, &mut batch, &mut index_batch, &mut events).await?,
+    //             schema::SchemaStatement::Endpoint(endpoint) => todo!("finish up endpoint creation"),
+    //         }
+    //     }
 
-        // Record the branch name & timestamp to disk & index if applicable.
-        if let (Some(branch), Some(timestamp)) = (branch, timestamp) {
-            self.update_schema_branch(branch, timestamp, &mut batch, &mut index_batch)?;
-        }
+    //     // Record the branch name & timestamp to disk & index if applicable.
+    //     if let (Some(branch), Some(timestamp)) = (branch, timestamp) {
+    //         self.update_schema_branch(branch, timestamp, &mut batch, &mut index_batch)?;
+    //     }
 
-        // Apply the batch of changes.
-        let sm = self.state.clone();
-        Database::spawn_blocking(move || -> ShutdownResult<()> {
-            sm.apply_batch(batch).context("error applying batch to CRC Raft state machine")?;
-            sm.flush().context("error flushing CRC Raft state machine updates")?;
-            Ok(())
-        })
-        .await??;
+    //     // Apply the batch of changes.
+    //     let sm = self.state.clone();
+    //     Database::spawn_blocking(move || -> ShutdownResult<()> {
+    //         sm.apply_batch(batch).context("error applying batch to CRC Raft state machine")?;
+    //         sm.flush().context("error flushing CRC Raft state machine updates")?;
+    //         Ok(())
+    //     })
+    //     .await??;
 
-        // Finally apply the index batch & publish events.
-        self.index.apply_batch(index_batch).await?;
-        events.into_iter().for_each(|event| {
-            let _ = self.events.send(event);
-        });
-        Ok(RaftClientResponse::UpdateSchema(UpdateSchemaResponse { was_noop: false }))
-    }
+    //     // Finally apply the index batch & publish events.
+    //     self.index.apply_batch(index_batch).await?;
+    //     events.into_iter().for_each(|event| {
+    //         let _ = self.events.send(event);
+    //     });
+    //     Ok(RaftClientResponse::UpdateSchema(UpdateSchemaResponse { was_noop: false }))
+    // }
 
-    /// Create a new namespace in the database.
-    #[tracing::instrument(level = "trace", skip(self, ns, models, index_batch))]
-    async fn create_namespace(&self, ns: &schema::Namespace, models: &mut Batch, index_batch: &mut IndexWriteBatch) -> Result<()> {
-        // Check if the namespace already exists. If so, done.
-        if self.index.get_namespace(&ns.name).is_some() {
-            return Ok(());
-        }
-        // Namespace does not yet exist, so we create an entry for it.
-        let id = self.db.generate_id()?;
-        let ns = WithId::new(id, ns.clone());
-        let proto = utils::encode_flexbuf(&ns)?;
-        let nskey = format!("{}{}", PREFIX_NAMESPACE, id);
-        models.insert(nskey.as_bytes(), proto.as_slice());
-        index_batch.push(IndexWriteOp::InsertNamespace(Arc::new(ns)));
-        Ok(())
-    }
+    // /// Create a new namespace in the database.
+    // #[tracing::instrument(level = "trace", skip(self, ns, models, index_batch))]
+    // async fn create_namespace(&self, ns: &schema::Namespace, models: &mut Batch, index_batch: &mut IndexWriteBatch) -> Result<()> {
+    //     // Check if the namespace already exists. If so, done.
+    //     if self.index.get_namespace(&ns.name).is_some() {
+    //         return Ok(());
+    //     }
+    //     // Namespace does not yet exist, so we create an entry for it.
+    //     let id = self.db.generate_id()?;
+    //     let ns = WithId::new(id, ns.clone());
+    //     let proto = utils::encode_flexbuf(&ns)?;
+    //     let nskey = format!("{}{}", PREFIX_NAMESPACE, id);
+    //     models.insert(nskey.as_bytes(), proto.as_slice());
+    //     index_batch.push(IndexWriteOp::InsertNamespace(Arc::new(ns)));
+    //     Ok(())
+    // }
 
-    /// Create a new stream in the database.
-    #[tracing::instrument(level = "trace", skip(self, stream, models, index_batch, events))]
-    async fn create_stream(
-        &self, stream: &schema::Stream, models: &mut Batch, index_batch: &mut IndexWriteBatch, events: &mut Vec<CRCEvent>,
-    ) -> Result<()> {
-        // Check if the stream already exists. If so, done.
-        if self.index.get_stream(stream.namespace(), stream.name()).is_some() {
-            return Ok(());
-        }
+    // /// Create a new stream in the database.
+    // #[tracing::instrument(level = "trace", skip(self, stream, models, index_batch, events))]
+    // async fn create_stream(
+    //     &self, stream: &schema::Stream, models: &mut Batch, index_batch: &mut IndexWriteBatch, events: &mut Vec<CRCEvent>,
+    // ) -> Result<()> {
+    //     // Check if the stream already exists. If so, done.
+    //     if self.index.get_stream(stream.namespace(), stream.name()).is_some() {
+    //         return Ok(());
+    //     }
 
-        // Stream does not yet exist, so we create an entry for it, setting its initial index to 0.
-        let id = self.db.generate_id()?;
-        let stream = Arc::new(WithId::new(id, stream.clone()));
-        let model = utils::encode_flexbuf(&*stream)?;
-        let stream_key = format!("{}{}", PREFIX_STREAMS, id);
-        models.insert(stream_key.as_bytes(), model);
-        index_batch.push(IndexWriteOp::InsertStream(stream.clone()));
+    //     // Stream does not yet exist, so we create an entry for it, setting its initial index to 0.
+    //     let id = self.db.generate_id()?;
+    //     let stream = Arc::new(WithId::new(id, stream.clone()));
+    //     let model = utils::encode_flexbuf(&*stream)?;
+    //     let stream_key = format!("{}{}", PREFIX_STREAMS, id);
+    //     models.insert(stream_key.as_bytes(), model);
+    //     index_batch.push(IndexWriteOp::InsertStream(stream.clone()));
 
-        // Create stream replica records.
-        let mut replicas = vec![];
-        let mut control_groups = vec![];
-        for partition in 0..stream.model.partitions() {
-            // Generate the control group ID & its replica objects.
-            let cg_id = self.db.generate_id()?;
-            for replica in 0..stream.model.replication_factor() {
-                // Create stream replica in an unassigned state & add it to the write batch.
-                let id = self.db.generate_id()?;
-                let replica_key = format!("{}{}", PREFIX_STREAM_REPLICAS, id);
-                let replica_model = Arc::new(placement::StreamReplica::new(id, cg_id, stream.id, partition, replica));
-                let model = utils::encode_flexbuf(&*replica_model).context("error encoding stream replica model")?;
-                models.insert(replica_key.as_bytes(), model.as_slice());
-                index_batch.push(IndexWriteOp::InsertStreamReplica(replica_model.clone()));
-                replicas.push(replica_model);
-            }
+    //     // Create stream replica records.
+    //     let mut replicas = vec![];
+    //     let mut control_groups = vec![];
+    //     for partition in 0..stream.model.partitions() {
+    //         // Generate the control group ID & its replica objects.
+    //         let cg_id = self.db.generate_id()?;
+    //         for replica in 0..stream.model.replication_factor() {
+    //             // Create stream replica in an unassigned state & add it to the write batch.
+    //             let id = self.db.generate_id()?;
+    //             let replica_key = format!("{}{}", PREFIX_STREAM_REPLICAS, id);
+    //             let replica_model = Arc::new(placement::StreamReplica::new(id, cg_id, stream.id, partition, replica));
+    //             let model = utils::encode_flexbuf(&*replica_model).context("error encoding stream replica model")?;
+    //             models.insert(replica_key.as_bytes(), model.as_slice());
+    //             index_batch.push(IndexWriteOp::InsertStreamReplica(replica_model.clone()));
+    //             replicas.push(replica_model);
+    //         }
 
-            // Create a control group record for this new partition.
-            let cg = Arc::new(placement::ControlGroup::new_stream(
-                cg_id,
-                partition,
-                replicas.iter().map(|repl| repl.id).collect(),
-            ));
-            let cg_model = utils::encode_flexbuf(&*cg)?;
-            let cg_key = format!("{}{}", PREFIX_CONTROL_GROUPS, cg_id);
-            models.insert(cg_key.as_bytes(), cg_model);
-            index_batch.push(IndexWriteOp::InsertControlGroup(cg.clone()));
-            control_groups.push(cg);
-        }
+    //         // Create a control group record for this new partition.
+    //         let cg = Arc::new(placement::ControlGroup::new_stream(
+    //             cg_id,
+    //             partition,
+    //             replicas.iter().map(|repl| repl.id).collect(),
+    //         ));
+    //         let cg_model = utils::encode_flexbuf(&*cg)?;
+    //         let cg_key = format!("{}{}", PREFIX_CONTROL_GROUPS, cg_id);
+    //         models.insert(cg_key.as_bytes(), cg_model);
+    //         index_batch.push(IndexWriteOp::InsertControlGroup(cg.clone()));
+    //         control_groups.push(cg);
+    //     }
 
-        // Send out an event describing these changes.
-        events.push(CRCEvent::StreamCreated(StreamCreated {
-            stream: stream.clone(),
-            replicas,
-            control_groups,
-        }));
+    //     // Send out an event describing these changes.
+    //     events.push(CRCEvent::StreamCreated(StreamCreated {
+    //         stream: stream.clone(),
+    //         replicas,
+    //         control_groups,
+    //     }));
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    /// Create a new pipeline in the database.
-    #[tracing::instrument(level = "trace", skip(self, pipeline, models, index_batch, events))]
-    async fn create_pipeline(
-        &self, pipeline: &schema::Pipeline, models: &mut Batch, index_batch: &mut IndexWriteBatch, events: &mut Vec<CRCEvent>,
-    ) -> Result<()> {
-        // Check if the pipeline already exists. If so, done.
-        if self.index.get_pipeline(&pipeline.metadata.namespace, &pipeline.metadata.name).is_some() {
-            return Ok(());
-        }
-        // Stream does not yet exist, so we create an entry for it, setting its initial index to 0.
-        let id = self.db.generate_id()?;
-        let pipeline = Arc::new(WithId::new(id, pipeline.clone()));
-        let model = utils::encode_flexbuf(&*pipeline)?;
-        let pipeline_key = format!("{}{}", PREFIX_PIPELINES, id);
-        models.insert(pipeline_key.as_bytes(), model);
-        index_batch.push(IndexWriteOp::InsertPipeline(pipeline.clone()));
+    // /// Create a new pipeline in the database.
+    // #[tracing::instrument(level = "trace", skip(self, pipeline, models, index_batch, events))]
+    // async fn create_pipeline(
+    //     &self, pipeline: &schema::Pipeline, models: &mut Batch, index_batch: &mut IndexWriteBatch, events: &mut Vec<CRCEvent>,
+    // ) -> Result<()> {
+    //     // Check if the pipeline already exists. If so, done.
+    //     if self.index.get_pipeline(&pipeline.metadata.namespace, &pipeline.metadata.name).is_some() {
+    //         return Ok(());
+    //     }
+    //     // Stream does not yet exist, so we create an entry for it, setting its initial index to 0.
+    //     let id = self.db.generate_id()?;
+    //     let pipeline = Arc::new(WithId::new(id, pipeline.clone()));
+    //     let model = utils::encode_flexbuf(&*pipeline)?;
+    //     let pipeline_key = format!("{}{}", PREFIX_PIPELINES, id);
+    //     models.insert(pipeline_key.as_bytes(), model);
+    //     index_batch.push(IndexWriteOp::InsertPipeline(pipeline.clone()));
 
-        // Create pipeline replica records.
-        let cg_id = self.db.generate_id()?;
-        let mut replicas = vec![];
-        for replica in 0..pipeline.model.replication_factor {
-            // Create stream replica in an unassigned state & add it to the write batch.
-            let id = self.db.generate_id()?;
-            let replica_key = format!("{}{}", PREFIX_PIPELINE_REPLICAS, id);
-            let replica_model = Arc::new(placement::PipelineReplica::new(id, cg_id, pipeline.id, replica));
-            let model = utils::encode_flexbuf(&*replica_model).context("error encoding pipeline replica model")?;
-            models.insert(replica_key.as_bytes(), model.as_slice());
-            index_batch.push(IndexWriteOp::InsertPipelineReplica(replica_model.clone()));
-            replicas.push(replica_model);
-        }
+    //     // Create pipeline replica records.
+    //     let cg_id = self.db.generate_id()?;
+    //     let mut replicas = vec![];
+    //     for replica in 0..pipeline.model.replication_factor {
+    //         // Create stream replica in an unassigned state & add it to the write batch.
+    //         let id = self.db.generate_id()?;
+    //         let replica_key = format!("{}{}", PREFIX_PIPELINE_REPLICAS, id);
+    //         let replica_model = Arc::new(placement::PipelineReplica::new(id, cg_id, pipeline.id, replica));
+    //         let model = utils::encode_flexbuf(&*replica_model).context("error encoding pipeline replica model")?;
+    //         models.insert(replica_key.as_bytes(), model.as_slice());
+    //         index_batch.push(IndexWriteOp::InsertPipelineReplica(replica_model.clone()));
+    //         replicas.push(replica_model);
+    //     }
 
-        // Create a control group record for this new pipeline.
-        let control_group = Arc::new(placement::ControlGroup::new_pipeline(
-            cg_id,
-            replicas.iter().map(|repl| repl.id).collect(),
-        ));
-        let cg_model = utils::encode_flexbuf(&*control_group)?;
-        let cg_key = format!("{}{}", PREFIX_CONTROL_GROUPS, cg_id);
-        models.insert(cg_key.as_bytes(), cg_model);
-        index_batch.push(IndexWriteOp::InsertControlGroup(control_group.clone()));
+    //     // Create a control group record for this new pipeline.
+    //     let control_group = Arc::new(placement::ControlGroup::new_pipeline(
+    //         cg_id,
+    //         replicas.iter().map(|repl| repl.id).collect(),
+    //     ));
+    //     let cg_model = utils::encode_flexbuf(&*control_group)?;
+    //     let cg_key = format!("{}{}", PREFIX_CONTROL_GROUPS, cg_id);
+    //     models.insert(cg_key.as_bytes(), cg_model);
+    //     index_batch.push(IndexWriteOp::InsertControlGroup(control_group.clone()));
 
-        // Send out an event describing these changes.
-        events.push(CRCEvent::PipelineCreated(PipelineCreated {
-            pipeline: pipeline.clone(),
-            replicas,
-            control_group,
-        }));
+    //     // Send out an event describing these changes.
+    //     events.push(CRCEvent::PipelineCreated(PipelineCreated {
+    //         pipeline: pipeline.clone(),
+    //         replicas,
+    //         control_group,
+    //     }));
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    /// Update a schema branch.
-    #[tracing::instrument(level = "trace", skip(self, branch, timestamp, branches, index_batch))]
-    fn update_schema_branch(&self, branch: &str, timestamp: i64, branches: &mut Batch, index_batch: &mut IndexWriteBatch) -> Result<()> {
-        let model = utils::encode_flexbuf(&schema::SchemaBranch {
-            name: branch.into(),
-            timestamp,
-        })
-        .context("error encoding schema branch model")?;
-        let key = format!("{}{}", PREFIX_BRANCHES, branch);
-        branches.insert(key.as_bytes(), model);
-        index_batch.push(IndexWriteOp::UpdateSchemaBranch {
-            branch: branch.to_string(),
-            timestamp,
-        });
-        Ok(())
-    }
+    // /// Update a schema branch.
+    // #[tracing::instrument(level = "trace", skip(self, branch, timestamp, branches, index_batch))]
+    // fn update_schema_branch(&self, branch: &str, timestamp: i64, branches: &mut Batch, index_batch: &mut IndexWriteBatch) -> Result<()> {
+    //     let model = utils::encode_flexbuf(&schema::SchemaBranch {
+    //         name: branch.into(),
+    //         timestamp,
+    //     })
+    //     .context("error encoding schema branch model")?;
+    //     let key = format!("{}{}", PREFIX_BRANCHES, branch);
+    //     branches.insert(key.as_bytes(), model);
+    //     index_batch.push(IndexWriteOp::UpdateSchemaBranch {
+    //         branch: branch.to_string(),
+    //         timestamp,
+    //     });
+    //     Ok(())
+    // }
 
     //////////////////////////////////////////////////////////////////////////////////////////////
     // Placement /////////////////////////////////////////////////////////////////////////////////
@@ -867,187 +867,187 @@ impl HCoreStorage {
         Ok(RaftClientResponse::AssignStreamReplicaToNode(RaftAssignStreamReplicaToNodeResponse {}))
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////
-    // System State Recovery /////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////////////////////////////
+    // // System State Recovery /////////////////////////////////////////////////////////////////////
 
-    /// Recover the system's state, building indices and the like.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_system_state(state: &Tree) -> Result<(CRCIndex, InitialEvent)> {
-        // Perform parallel recovery of system state.
-        let (users, tokens, namespaces, streams, stream_replicas, pipelines, pipeline_replicas, branches, control_groups) = tokio::try_join!(
-            Self::recover_user_permissions(&state),
-            Self::recover_token_permissions(&state),
-            Self::recover_namespaces(&state),
-            Self::recover_streams(&state),
-            Self::recover_stream_replicas(&state),
-            Self::recover_pipelines(&state),
-            Self::recover_pipeline_replicas(&state),
-            Self::recover_schema_branches(&state),
-            Self::recover_control_groups(&state),
-        )
-        .context("error during parallel state recovery of CRC data")?;
+    // /// Recover the system's state, building indices and the like.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_system_state(state: &Tree) -> Result<(CRCIndex, InitialEvent)> {
+    //     // Perform parallel recovery of system state.
+    //     let (users, tokens, namespaces, streams, stream_replicas, pipelines, pipeline_replicas, branches, control_groups) = tokio::try_join!(
+    //         Self::recover_user_permissions(&state),
+    //         Self::recover_token_permissions(&state),
+    //         Self::recover_namespaces(&state),
+    //         Self::recover_streams(&state),
+    //         Self::recover_stream_replicas(&state),
+    //         Self::recover_pipelines(&state),
+    //         Self::recover_pipeline_replicas(&state),
+    //         Self::recover_schema_branches(&state),
+    //         Self::recover_control_groups(&state),
+    //     )
+    //     .context("error during parallel state recovery of CRC data")?;
 
-        // Update initial CRC event with recovered data.
-        let mut initial_event = InitialEvent::new(
-            streams.clone(),
-            stream_replicas.clone(),
-            pipelines.clone(),
-            pipeline_replicas.clone(),
-            control_groups.clone(),
-        );
+    //     // Update initial CRC event with recovered data.
+    //     let mut initial_event = InitialEvent::new(
+    //         streams.clone(),
+    //         stream_replicas.clone(),
+    //         pipelines.clone(),
+    //         pipeline_replicas.clone(),
+    //         control_groups.clone(),
+    //     );
 
-        // Update index with recovered data.
-        let index = CRCIndex::new(
-            users,
-            tokens,
-            namespaces,
-            streams,
-            pipelines,
-            branches,
-            control_groups,
-            stream_replicas,
-            pipeline_replicas,
-        );
+    //     // Update index with recovered data.
+    //     let index = CRCIndex::new(
+    //         users,
+    //         tokens,
+    //         namespaces,
+    //         streams,
+    //         pipelines,
+    //         branches,
+    //         control_groups,
+    //         stream_replicas,
+    //         pipeline_replicas,
+    //     );
 
-        Ok((index, initial_event))
-    }
+    //     Ok((index, initial_event))
+    // }
 
-    /// Recover namespaces.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_namespaces(state: &Tree) -> Result<Vec<Arc<WithId<schema::Namespace>>>> {
-        let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<WithId<schema::Namespace>>>> {
-            let mut data = vec![];
-            for entry_res in tree.scan_prefix(PREFIX_NAMESPACE) {
-                let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: WithId<schema::Namespace> = utils::decode_flexbuf(entry.as_ref()).context("error decoding namespace from storage")?;
-                data.push(Arc::new(model));
-            }
-            Ok(data)
-        })
-        .await??;
-        tracing::debug!(count = data.len(), "recovered namespaces");
-        Ok(data)
-    }
+    // /// Recover namespaces.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_namespaces(state: &Tree) -> Result<Vec<Arc<WithId<schema::Namespace>>>> {
+    //     let tree = state.clone();
+    //     let data = Database::spawn_blocking(move || -> Result<Vec<Arc<WithId<schema::Namespace>>>> {
+    //         let mut data = vec![];
+    //         for entry_res in tree.scan_prefix(PREFIX_NAMESPACE) {
+    //             let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+    //             let model: WithId<schema::Namespace> = utils::decode_flexbuf(entry.as_ref()).context("error decoding namespace from storage")?;
+    //             data.push(Arc::new(model));
+    //         }
+    //         Ok(data)
+    //     })
+    //     .await??;
+    //     tracing::debug!(count = data.len(), "recovered namespaces");
+    //     Ok(data)
+    // }
 
-    /// Recover streams.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_streams(state: &Tree) -> Result<Vec<Arc<WithId<schema::Stream>>>> {
-        let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<WithId<schema::Stream>>>> {
-            let mut data = vec![];
-            for entry_res in tree.scan_prefix(PREFIX_STREAMS) {
-                let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: WithId<schema::Stream> = utils::decode_flexbuf(entry.as_ref()).context("error decoding stream from storage")?;
-                data.push(Arc::new(model));
-            }
-            Ok(data)
-        })
-        .await??;
-        tracing::debug!(count = data.len(), "recovered streams");
-        Ok(data)
-    }
+    // /// Recover streams.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_streams(state: &Tree) -> Result<Vec<Arc<WithId<schema::Stream>>>> {
+    //     let tree = state.clone();
+    //     let data = Database::spawn_blocking(move || -> Result<Vec<Arc<WithId<schema::Stream>>>> {
+    //         let mut data = vec![];
+    //         for entry_res in tree.scan_prefix(PREFIX_STREAMS) {
+    //             let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+    //             let model: WithId<schema::Stream> = utils::decode_flexbuf(entry.as_ref()).context("error decoding stream from storage")?;
+    //             data.push(Arc::new(model));
+    //         }
+    //         Ok(data)
+    //     })
+    //     .await??;
+    //     tracing::debug!(count = data.len(), "recovered streams");
+    //     Ok(data)
+    // }
 
-    /// Recover stream replicas.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_stream_replicas(state: &Tree) -> Result<Vec<Arc<placement::StreamReplica>>> {
-        let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<placement::StreamReplica>>> {
-            let mut data = vec![];
-            for entry_res in tree.scan_prefix(PREFIX_STREAM_REPLICAS) {
-                let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: placement::StreamReplica = utils::decode_flexbuf(entry.as_ref()).context("error decoding stream replica from storage")?;
-                data.push(Arc::new(model));
-            }
-            Ok(data)
-        })
-        .await??;
-        tracing::debug!(count = data.len(), "recovered stream replicas");
-        Ok(data)
-    }
+    // /// Recover stream replicas.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_stream_replicas(state: &Tree) -> Result<Vec<Arc<placement::StreamReplica>>> {
+    //     let tree = state.clone();
+    //     let data = Database::spawn_blocking(move || -> Result<Vec<Arc<placement::StreamReplica>>> {
+    //         let mut data = vec![];
+    //         for entry_res in tree.scan_prefix(PREFIX_STREAM_REPLICAS) {
+    //             let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+    //             let model: placement::StreamReplica = utils::decode_flexbuf(entry.as_ref()).context("error decoding stream replica from storage")?;
+    //             data.push(Arc::new(model));
+    //         }
+    //         Ok(data)
+    //     })
+    //     .await??;
+    //     tracing::debug!(count = data.len(), "recovered stream replicas");
+    //     Ok(data)
+    // }
 
-    /// Recover pipelines.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_pipelines(state: &Tree) -> Result<Vec<Arc<WithId<schema::Pipeline>>>> {
-        let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<WithId<schema::Pipeline>>>> {
-            let mut data = vec![];
-            for entry_res in tree.scan_prefix(PREFIX_PIPELINES) {
-                let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: WithId<schema::Pipeline> = utils::decode_flexbuf(entry.as_ref()).context("error decoding pipeline from storage")?;
-                data.push(Arc::new(model));
-            }
-            Ok(data)
-        })
-        .await??;
-        tracing::debug!(count = data.len(), "recovered pipelines");
-        Ok(data)
-    }
+    // /// Recover pipelines.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_pipelines(state: &Tree) -> Result<Vec<Arc<WithId<schema::Pipeline>>>> {
+    //     let tree = state.clone();
+    //     let data = Database::spawn_blocking(move || -> Result<Vec<Arc<WithId<schema::Pipeline>>>> {
+    //         let mut data = vec![];
+    //         for entry_res in tree.scan_prefix(PREFIX_PIPELINES) {
+    //             let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+    //             let model: WithId<schema::Pipeline> = utils::decode_flexbuf(entry.as_ref()).context("error decoding pipeline from storage")?;
+    //             data.push(Arc::new(model));
+    //         }
+    //         Ok(data)
+    //     })
+    //     .await??;
+    //     tracing::debug!(count = data.len(), "recovered pipelines");
+    //     Ok(data)
+    // }
 
-    /// Recover pipeline replicas.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_pipeline_replicas(state: &Tree) -> Result<Vec<Arc<placement::PipelineReplica>>> {
-        let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<placement::PipelineReplica>>> {
-            let mut data = vec![];
-            for entry_res in tree.scan_prefix(PREFIX_PIPELINE_REPLICAS) {
-                let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: placement::PipelineReplica =
-                    utils::decode_flexbuf(entry.as_ref()).context("error decoding pipeline replica from storage")?;
-                data.push(Arc::new(model));
-            }
-            Ok(data)
-        })
-        .await??;
-        tracing::debug!(count = data.len(), "recovered pipeline replicas");
-        Ok(data)
-    }
+    // /// Recover pipeline replicas.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_pipeline_replicas(state: &Tree) -> Result<Vec<Arc<placement::PipelineReplica>>> {
+    //     let tree = state.clone();
+    //     let data = Database::spawn_blocking(move || -> Result<Vec<Arc<placement::PipelineReplica>>> {
+    //         let mut data = vec![];
+    //         for entry_res in tree.scan_prefix(PREFIX_PIPELINE_REPLICAS) {
+    //             let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+    //             let model: placement::PipelineReplica =
+    //                 utils::decode_flexbuf(entry.as_ref()).context("error decoding pipeline replica from storage")?;
+    //             data.push(Arc::new(model));
+    //         }
+    //         Ok(data)
+    //     })
+    //     .await??;
+    //     tracing::debug!(count = data.len(), "recovered pipeline replicas");
+    //     Ok(data)
+    // }
 
-    /// Recover control groups.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_control_groups(state: &Tree) -> Result<Vec<Arc<placement::ControlGroup>>> {
-        let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<Arc<placement::ControlGroup>>> {
-            let mut data = vec![];
-            for entry_res in tree.scan_prefix(PREFIX_CONTROL_GROUPS) {
-                let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: placement::ControlGroup = utils::decode_flexbuf(entry.as_ref()).context("error decoding control group from storage")?;
-                data.push(Arc::new(model));
-            }
-            Ok(data)
-        })
-        .await??;
-        tracing::debug!(count = data.len(), "recovered control groups");
-        Ok(data)
-    }
+    // /// Recover control groups.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_control_groups(state: &Tree) -> Result<Vec<Arc<placement::ControlGroup>>> {
+    //     let tree = state.clone();
+    //     let data = Database::spawn_blocking(move || -> Result<Vec<Arc<placement::ControlGroup>>> {
+    //         let mut data = vec![];
+    //         for entry_res in tree.scan_prefix(PREFIX_CONTROL_GROUPS) {
+    //             let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+    //             let model: placement::ControlGroup = utils::decode_flexbuf(entry.as_ref()).context("error decoding control group from storage")?;
+    //             data.push(Arc::new(model));
+    //         }
+    //         Ok(data)
+    //     })
+    //     .await??;
+    //     tracing::debug!(count = data.len(), "recovered control groups");
+    //     Ok(data)
+    // }
 
-    /// Recover pipeline replicas.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_schema_branches(state: &Tree) -> Result<Vec<schema::SchemaBranch>> {
-        let tree = state.clone();
-        let data = Database::spawn_blocking(move || -> Result<Vec<schema::SchemaBranch>> {
-            let mut data = vec![];
-            for entry_res in tree.scan_prefix(PREFIX_BRANCHES) {
-                let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
-                let model: schema::SchemaBranch = utils::decode_flexbuf(entry.as_ref()).context("error decoding schema branch from storage")?;
-                data.push(model);
-            }
-            Ok(data)
-        })
-        .await??;
-        tracing::debug!(count = data.len(), "recovered schema branches");
-        Ok(data)
-    }
+    // /// Recover pipeline replicas.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_schema_branches(state: &Tree) -> Result<Vec<schema::SchemaBranch>> {
+    //     let tree = state.clone();
+    //     let data = Database::spawn_blocking(move || -> Result<Vec<schema::SchemaBranch>> {
+    //         let mut data = vec![];
+    //         for entry_res in tree.scan_prefix(PREFIX_BRANCHES) {
+    //             let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+    //             let model: schema::SchemaBranch = utils::decode_flexbuf(entry.as_ref()).context("error decoding schema branch from storage")?;
+    //             data.push(model);
+    //         }
+    //         Ok(data)
+    //     })
+    //     .await??;
+    //     tracing::debug!(count = data.len(), "recovered schema branches");
+    //     Ok(data)
+    // }
 
-    /// Recover the system's user permissions state.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_user_permissions(state: &Tree) -> Result<Vec<User>> {
-        Ok(Default::default()) // TODO: recover user state.
-    }
+    // /// Recover the system's user permissions state.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_user_permissions(state: &Tree) -> Result<Vec<User>> {
+    //     Ok(Default::default()) // TODO: recover user state.
+    // }
 
-    /// Recover the system's token permissions state.
-    #[tracing::instrument(level = "trace", skip(state), err)]
-    pub async fn recover_token_permissions(state: &Tree) -> Result<Vec<(u64, Claims)>> {
-        Ok(vec![(0, Claims::V1(ClaimsV1::All))]) // TODO: recover token state.
-    }
+    // /// Recover the system's token permissions state.
+    // #[tracing::instrument(level = "trace", skip(state), err)]
+    // pub async fn recover_token_permissions(state: &Tree) -> Result<Vec<(u64, Claims)>> {
+    //     Ok(vec![(0, Claims::V1(ClaimsV1::All))]) // TODO: recover token state.
+    // }
 }

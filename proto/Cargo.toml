@@ -6,9 +6,8 @@ description = "Hadron client and server protocol spec."
 edition = "2018"
 
 [dependencies]
+prost = "0.7.0"
+
+[build-dependencies]
 anyhow = "1"
-bincode = "1"
-bytes = "1"
-lazy_static = "1"
-serde = { version = "1", features = ["serde_derive"] }
-thiserror = "1.0.24"
+prost-build = "0.7"

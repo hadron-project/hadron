@@ -14,39 +14,35 @@ kind: Stream
 name: services
 namespace: example
 description: The services microservice stream.
-partitions: 3
-replicationFactor: 3
+partitions: ["local/repl0", "local/repl1", "local/repl2"]
 
 ---
 kind: Stream
 name: deployer
 namespace: example
 description: The deployer microservice stream.
-partitions: 3
-replicationFactor: 3
+partitions: ["local/repl0", "local/repl1", "local/repl2"]
 
 ---
 kind: Stream
 name: billing
 namespace: example
 description: The billing microservice stream.
-partitions: 3
-replicationFactor: 3
+partitions: ["local/repl0", "local/repl1", "local/repl2"]
 
 ---
 kind: Stream
 name: monitoring
 namespace: example
 description: The monitoring microservice stream.
-partitions: 3
-replicationFactor: 3
+partitions: ["local/repl0", "local/repl1", "local/repl2"]
 
 ---
 kind: Pipeline
 name: instance-creation
 namespace: example
 description: A pipeline defining the instance creation workflow.
-replicationFactor: 3
+replicaSet: local/repl0
 inputStream: services
 triggers:
   - service-created

@@ -3,7 +3,8 @@
 use anyhow::{Context, Result};
 use http::request::Request;
 use http::Method;
-use proto::v1::{self, SchemaUpdateManaged, SchemaUpdateOneOff, SchemaUpdateRequest, SchemaUpdateResponse};
+use prost::Message;
+use proto::v1::{self, SchemaUpdateManaged, SchemaUpdateOneOff, SchemaUpdateRequest, SchemaUpdateRequestType, SchemaUpdateResponse};
 
 use crate::Client;
 
@@ -27,14 +28,16 @@ impl SchemaClient {
     #[tracing::instrument(level = "debug", skip(self, schema, branch, timestamp))]
     pub async fn update_schema(&self, schema: &str, branch: &str, timestamp: i64) -> Result<SchemaUpdateResponse> {
         // Build up request.
-        let body_req = SchemaUpdateRequest::Managed(SchemaUpdateManaged {
-            schema: schema.into(),
-            branch: branch.into(),
-            timestamp,
-        });
+        let body_req = SchemaUpdateRequest {
+            r#type: Some(SchemaUpdateRequestType::Managed(SchemaUpdateManaged {
+                schema: schema.into(),
+                branch: branch.into(),
+                timestamp,
+            })),
+        };
         let mut body = self.inner.0.buf.clone().split();
-        v1::write_to_bytes(&body_req, &mut body)?;
-        let mut builder = Request::builder().method(Method::POST).uri(v1::URL_SCHEMA);
+        body_req.encode(&mut body).context("error encoding request")?;
+        let mut builder = Request::builder().method(Method::POST).uri(v1::ENDPOINT_METADATA_SCHEMA_UPDATE);
         builder = self.inner.set_request_credentials(builder);
         let req = builder.body(()).context("error building request")?;
 
@@ -62,10 +65,12 @@ impl SchemaClient {
     #[tracing::instrument(level = "debug", skip(self, schema))]
     pub async fn update_schema_oneoff(&self, schema: &str) -> Result<SchemaUpdateResponse> {
         // Build up request.
-        let body_req = SchemaUpdateRequest::OneOff(SchemaUpdateOneOff { schema: schema.into() });
+        let body_req = SchemaUpdateRequest {
+            r#type: Some(SchemaUpdateRequestType::Oneoff(SchemaUpdateOneOff { schema: schema.into() })),
+        };
         let mut body = self.inner.0.buf.clone().split();
-        v1::write_to_bytes(&body_req, &mut body)?;
-        let mut builder = Request::builder().method(Method::POST).uri(v1::URL_SCHEMA);
+        body_req.encode(&mut body).context("error encoding request")?;
+        let mut builder = Request::builder().method(Method::POST).uri(v1::ENDPOINT_METADATA_SCHEMA_UPDATE);
         builder = self.inner.set_request_credentials(builder);
         let req = builder.body(()).context("error building request")?;
 

@@ -11,8 +11,8 @@ use bytes::{Bytes, BytesMut};
 use h2::client::{handshake, SendRequest};
 use http::request::Builder;
 use http::{HeaderValue, StatusCode, Uri};
+use prost::Message;
 use proto::v1;
-use serde::de::DeserializeOwned;
 use tokio::net::TcpStream;
 use tokio::sync::{watch, RwLock};
 
@@ -147,13 +147,13 @@ impl Client {
     /// Deserialize the given response body as a concrete type, or an error depending
     /// on the status code.
     #[tracing::instrument(level = "debug", skip(self, buf))]
-    pub(crate) fn deserialize_response<T: DeserializeOwned>(&self, status: StatusCode, buf: Bytes) -> Result<T> {
+    pub(crate) fn deserialize_response<M: Message + Default>(&self, status: StatusCode, buf: Bytes) -> Result<M> {
         // If not a successful response, then interpret the message as an error.
         if !status.is_success() {
-            let body_err: v1::Error = v1::read_from_bytes(buf).context("failed to deserialize error message from body")?;
-            return Err(body_err.into());
+            let body_err = v1::Error::decode(buf.as_ref()).context("failed to deserialize error message from body")?;
+            return Err(anyhow!(body_err.message));
         }
-        v1::read_from_bytes(buf)
+        M::decode(buf.as_ref()).context("error decoding response body")
     }
 
     /// Spawn a new task to build a connection to the target node.

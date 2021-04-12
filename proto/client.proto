@@ -1,0 +1,72 @@
+syntax = "proto3";
+package client;
+
+///////////////////////////////////////////////////////////////////////////////
+// Components /////////////////////////////////////////////////////////////////
+
+// An error object which is returned from the Hadron server under various conditions.
+//
+// Clients can match on specific error variants to drive behavior.
+message Error {
+    // A summary of the error which has taken place.
+    string message = 1;
+}
+
+// Details on a Hadron replica set.
+message ReplicaSet {
+    // The name of the replica set.
+    //
+    // This is immutable and is always used to identify partition assignment.
+    string name = 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Metadata ///////////////////////////////////////////////////////////////////
+
+// All known Hadron metadata.
+message MetadataResponse {
+    // The name of the cluster which was queried.
+    string cluster_name = 1;
+    // Details on the replica set which was queried.
+    string replica_set = 2;
+    // All known replica sets in the cluster.
+    repeated ReplicaSet all_replica_sets = 3;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Schema /////////////////////////////////////////////////////////////////////
+
+// A request to update the schema of the Hadron cluster.
+message SchemaUpdateRequest {
+    oneof type {
+        // A managed schema update request.
+        SchemaUpdateManaged managed = 1;
+        // A one-off schema update request.
+        SchemaUpdateOneOff oneoff = 2;
+    }
+}
+
+// A response from an earlier `SchemaUpdateRequest`.
+message SchemaUpdateResponse {
+    // A bool indicating if the request was a no-op, which would only apply to
+    // managed schema updates.
+    bool was_noop = 1;
+}
+
+// A managed schema update request.
+message SchemaUpdateManaged {
+    // A set of Hadron schema documents to apply to the system.
+    string schema = 1;
+    // The branch name of this set of schema updates.
+    string branch = 2;
+    // The timestamp of this set of schema updates.
+    //
+    // This should be an epoch timestamp with millisecond precision.
+    int64 timestamp = 3;
+}
+
+// A one-off schema update request.
+message SchemaUpdateOneOff {
+    // A set of Hadron schema documents to apply to the system.
+    string schema = 1;
+}

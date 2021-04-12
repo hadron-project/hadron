@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
+use serde::de::DeserializeOwned;
 use sled::{Config as SledConfig, Db, IVec};
 use tokio::sync::RwLock;
 
@@ -23,6 +24,8 @@ const DATABASE_DIR: &str = "db"; // <dataDir>/db
 const NODE_ID_FILE_NAME: &str = "node_id"; // <dataDir>/node_id
 /// The DB tree prefix used for streams.
 const TREE_STREAM_PREFIX: &str = "streams";
+/// The DB tree name of the metadata tree.
+const TREE_METADATA: &str = "metadata";
 
 /// The default path to use for data storage.
 pub fn default_data_path() -> String {
@@ -78,6 +81,15 @@ impl Database {
     /// Generate a new ID.
     pub fn generate_id(&self) -> Result<u64> {
         self.inner.db.generate_id().context("error generating ID")
+    }
+
+    /// Get a handle to the DB tree for a stream partition replica.
+    pub async fn get_metadata_tree(&self) -> ShutdownResult<Tree> {
+        let (db, ivname) = (self.inner.db.clone(), IVec::from(TREE_METADATA));
+        let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
+            .await
+            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", TREE_METADATA, err))))?;
+        Ok(tree)
     }
 
     /// Get a handle to the DB tree for a stream partition replica.

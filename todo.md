@@ -1,3 +1,28 @@
+
+TODO
+====
+Single Node
+- [ ] Handle cluster metadata updates.
+    - [x] Update metadata models to expect new cluster architecture.
+    - [ ] Should hit the metadata dashmap and be shared with other components of the cluster once the data is applied to disk.
+    - [ ] Updates should be accompanied by events describing the action taken, so that other components can react to the changes.
+    - [ ] In the future, this will be handle by the cluster metadata replica set only.
+    - [ ] Update docs.
+- [ ] Handle writes to a Stream.
+    - [ ] Should use an H2 channel from the client to setup a "stream producer".
+    - [ ] Producer connection should be sent directly over to the controller which is responsible for pipelining writes. Controller will stream in individual publication batches from producers, and then apply them.
+    - [ ] In the future, the Producers will be able to specify durability of payloads, and the async replication system will report back as batches are replicated.
+    - [ ] If there are no replicas of a replica set, then we will fsync each batch written to disk. If there are replicas, then "durable" writes means that a majority of the replica set has the data on disk, and no flush required on write path.
+    - [ ] Writes should be batched across clients for better efficiency, and will be applied to disk using a durable batch.
+
+- [ ] review proto spec.
+    - Bincode can't evolve reasonably, so we need a better option.
+    - Maybe cut back over to protobuf but don't use gRPC (probs proto2 for better control over modifiers).
+    - We do need to be able to more easily evolve the schema of of messages and data.
+    - We can fairly easily do this for data being written to disk (using binary prefix).
+    - Once rkyv has a working protoss version, then we should DEF use that.
+
+
 Cluster of Replica Sets
 =======================
 Each replica set is statically configured with exactly one master and any number of replicas. Roles are established statically in config.
@@ -83,8 +108,7 @@ Ephemeral messaging exchanges & RPC endpoints.
     - The raw bytes of the request will be avilable for decoding, in place mutation, direct storage &c. We will NOT use protobuf. Big performance and efficiency gains here.
     - Typically no new channels will need to be allocated for requests, but we can amortize those costs with an mpsc channel pool abstraction, where each channel has cap(1) and channels are reused to eliminate the hot path cost of allocation.
 
-- WOOT WOOT! Let's use capnp! But not the rpc framework.
-
+- WOOT WOOT! Using bincode to define our own proto for communication.
 
 ----
 
@@ -97,9 +121,7 @@ Ephemeral messaging exchanges & RPC endpoints.
 
 
 
-
-
-todo
+<!-- todo
 ====
 Kafka and others help with building EDA apps, Hadron helps more. Pipelines provide a native mechainism which greatly simplifies the building of complex applications.
 

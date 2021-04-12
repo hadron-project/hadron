@@ -108,7 +108,6 @@ impl Apply {
 
         // Build a new client and submit the request to the cluster.
         let client = base.get_client().await?.schema();
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         for file in schema_files {
             tracing::info!(file = %file.filename, timestamp = file.timestamp, "syncing file");
             let res = client
