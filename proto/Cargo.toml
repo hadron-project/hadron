@@ -1,0 +1,13 @@
+[package]
+name = "proto"
+version = "0.1.0"
+authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
+description = "Hadron client and server protocol spec."
+edition = "2018"
+
+[dependencies]
+prost = "0.7.0"
+
+[build-dependencies]
+anyhow = "1"
+prost-build = "0.7"

@@ -1,0 +1,106 @@
+# Add your schema changes here. Each schema statement should be delimited by
+# a line with the text `---` which indicates the start of a new YAML object.
+#
+# All of the schema statements in this file will be transactionally applied
+# to the system as a whole.
+
+---
+kind: Namespace
+name: example
+description: An example namespace for testing and demos.
+
+---
+kind: Stream
+name: services
+namespace: example
+description: The services microservice stream.
+partitions: ["local/repl0", "local/repl1", "local/repl2"]
+
+---
+kind: Stream
+name: deployer
+namespace: example
+description: The deployer microservice stream.
+partitions: ["local/repl0", "local/repl1", "local/repl2"]
+
+---
+kind: Stream
+name: billing
+namespace: example
+description: The billing microservice stream.
+partitions: ["local/repl0", "local/repl1", "local/repl2"]
+
+---
+kind: Stream
+name: monitoring
+namespace: example
+description: The monitoring microservice stream.
+partitions: ["local/repl0", "local/repl1", "local/repl2"]
+
+---
+kind: Pipeline
+name: instance-creation
+namespace: example
+description: A pipeline defining the instance creation workflow.
+replicaSet: local/repl0
+inputStream: services
+triggers:
+  - service-created
+stages:
+  # Once the `services` microservice has validated and approved the request to provision
+  # a new service, it will publish an event to the `services` stream defined above, the
+  # event will have the type `service-created` and will trigger this pipeline.
+  #
+  # This pipeline stage will receive a copy of the original event, and will then proceed to deploy
+  # a new instance as defined in the event, publishing an event to the `deployer` stream when finished.
+  - name: deploy-service
+    outputs:
+      - name: deploy-complete
+        stream: deployer
+        namespace: example
+
+  # Once the deployer has finished its work, we will need to update our billing system. For this
+  # stage, we receive a copy of the original event which triggered this pipeline, as well as the
+  # output `deploy-service.deploy-complete` from the `deploy-service` stage.
+  #
+  # This stage is executed in parallel with the `update-monitoring` stage below.
+  - name: update-billing
+    dependencies:
+      - root_event
+      - deploy-service.deploy-complete
+    outputs:
+      - name: billing-updated
+        stream: billing
+        namespace: example
+  # Once the deployer has finished its work, we will need to update our monitoring system. For this
+  # stage, we receive a copy of the original event which triggered this pipeline, as well as the
+  # output `deploy-service.deploy-complete` from the `deploy-service` stage.
+  #
+  # This stage is executed in parallel with the `update-billing` stage above.
+  - name: update-monitoring
+    dependencies:
+      - root_event
+      - deploy-service.deploy-complete
+    outputs:
+      - name: monitoring-updated
+        stream: monitoring
+        namespace: example
+
+  # Once all of the other microservices have finished their work — I.E., once all of the above
+  # stages are complete — we perform one final cleanup stage which would logically be handled
+  # by our services microservice. Conceptually this stage could update the state of the service
+  # to indicate that it has been successfully provisioned.
+  #
+  # The sky is the limit for pipeliens like this. We could add a new stage for sending a
+  # notification to the user so that they know their service is ready. As business requirements
+  # evolve, new stages can be added.
+  - name: cleanup
+    dependencies:
+      - root_event
+      - deploy-service.deploy-complete
+      - update-billing.billing-updated
+      - update-monitoring.monitoring-updated
+    outputs:
+      - name: new-service-deployed
+        stream: services
+        namespace: example
