@@ -1,5 +1,6 @@
 //! The core Hadron client.
 
+mod publisher;
 mod schema;
 
 use std::collections::HashMap;
@@ -144,10 +145,16 @@ impl Client {
         h2.ready().await.context("error testing H2 connection to hadron server")
     }
 
+    /// Deserialize the given response body as a concrete type
+    #[tracing::instrument(level = "debug", skip(self, buf))]
+    pub(crate) fn deserialize_response<M: Message + Default>(&self, buf: Bytes) -> Result<M> {
+        M::decode(buf.as_ref()).context("error decoding response body")
+    }
+
     /// Deserialize the given response body as a concrete type, or an error depending
     /// on the status code.
     #[tracing::instrument(level = "debug", skip(self, buf))]
-    pub(crate) fn deserialize_response<M: Message + Default>(&self, status: StatusCode, buf: Bytes) -> Result<M> {
+    pub(crate) fn deserialize_response_or_error<M: Message + Default>(&self, status: StatusCode, buf: Bytes) -> Result<M> {
         // If not a successful response, then interpret the message as an error.
         if !status.is_success() {
             let body_err = v1::Error::decode(buf.as_ref()).context("failed to deserialize error message from body")?;

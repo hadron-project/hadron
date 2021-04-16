@@ -1,14 +1,10 @@
+use std::hash::Hasher;
+
 use anyhow::{bail, Context, Result};
 use prost::Message;
-use serde::{de::DeserializeOwned, Serialize};
 
 use crate::error::AppError;
 
-pub const ERR_DECODE_RAFT_RPC: &str = "error decoding Raft RPC";
-pub const ERR_DECODE_RAFT_RPC_RESPONSE: &str = "error decoding Raft RPC response";
-pub const ERR_ENCODE_RAFT_RPC: &str = "error encoding Raft RPC";
-
-pub const HEADER_X_HADRON_AUTH: &str = "x-hadron-authorization";
 pub const HEADER_OCTET_STREAM: &str = "application/octet-stream";
 
 pub const HIERARCHY_TOKEN: &str = ".";
@@ -77,6 +73,17 @@ pub fn encode_model<M: Message>(model: &M) -> Result<Vec<u8>> {
 /// Decode an object from the given buffer.
 pub fn decode_model<M: Message + Default>(data: &[u8]) -> Result<M> {
     M::decode(data).context("error decoding object from storage")
+}
+
+/// Generate a hash code ID for the given namespace & name combination.
+///
+/// This generates a hash over `{ns}/{name}`.
+pub fn ns_name_hash_id(ns: &str, name: &str) -> u64 {
+    let mut hasher = seahash::SeaHasher::new();
+    hasher.write(ns.as_bytes());
+    hasher.write_u8(b'/');
+    hasher.write(name.as_bytes());
+    hasher.finish()
 }
 
 /// Validate the hierarchy structure of the given object name.

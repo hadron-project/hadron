@@ -1,1 +1,2 @@
-pub mod storage;
+pub(super) mod auth;
+pub(super) mod schema;

@@ -1,18 +1,14 @@
 //! Data index management.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::anyhow;
 use dashmap::DashMap;
-use tokio::sync::RwLock;
 
-use crate::auth::{Claims, User, UserRole};
-use crate::error::{AppError, ShutdownError};
+use crate::auth::Claims;
+use crate::error::AppError;
+use crate::models::auth::{User, UserRole};
 use crate::models::prelude::*;
 use crate::models::schema;
-
-const ERR_INDEX_MISSING_NS: &str = "namespace not found in index, this is a bug, please open an issue";
 
 /// An always up-to-date cluster metadata cache.
 ///
@@ -48,13 +44,13 @@ pub struct MetadataCache {
     /// Index of users.
     users: DashMap<String, Arc<UserRole>>,
     /// Index of tokens.
-    tokens: DashMap<u64, Arc<Claims>>,
+    tokens: DashMap<u128, Arc<Claims>>,
 }
 
 impl MetadataCache {
     /// Create a new instance.
     pub fn new(
-        users: Vec<User>, tokens: Vec<(u64, Claims)>, namespaces: Vec<Arc<schema::Namespace>>, streams: Vec<Arc<schema::Stream>>,
+        users: Vec<User>, tokens: Vec<(u128, Claims)>, namespaces: Vec<Arc<schema::Namespace>>, streams: Vec<Arc<schema::Stream>>,
         pipelines: Vec<Arc<schema::Pipeline>>, schema_branches: Vec<schema::SchemaBranch>,
     ) -> Self {
         let index = Self::default();
@@ -62,7 +58,8 @@ impl MetadataCache {
             let _ = index.schema_branches.insert(val.name, val.timestamp);
         }
         for val in users {
-            let _ = index.users.insert(val.name, Arc::new(val.role));
+            let role = UserRole::from_i32(val.role).unwrap_or(UserRole::Viewer);
+            let _ = index.users.insert(val.name, Arc::new(role));
         }
         for (key, val) in tokens {
             let _ = index.tokens.insert(key, Arc::new(val));
@@ -85,7 +82,7 @@ impl MetadataCache {
         index
     }
 
-    pub(super) async fn apply_batch(&self, ops: CacheWriteBatch) -> Result<(), ShutdownError> {
+    pub(super) fn apply_batch(&self, ops: CacheWriteBatch) {
         for op in ops.ops {
             match op {
                 CacheWriteOp::InsertNamespace(ns) => {
@@ -107,7 +104,6 @@ impl MetadataCache {
                 }
             }
         }
-        Ok(())
     }
 
     /// Get a schema branch by its branch name.
@@ -147,7 +143,7 @@ impl MetadataCache {
     }
 
     /// Get the given token's claims, else return an auth error.
-    pub fn must_get_token_claims(&self, token_id: &u64) -> anyhow::Result<Arc<Claims>> {
+    pub fn must_get_token_claims(&self, token_id: &u128) -> anyhow::Result<Arc<Claims>> {
         match self.tokens.get(token_id).map(|val| val.value().clone()) {
             Some(claims) => Ok(claims),
             None => Err(AppError::UnknownToken.into()),

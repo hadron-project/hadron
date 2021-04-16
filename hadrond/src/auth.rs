@@ -1,9 +1,10 @@
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};
 // use tonic::metadata::AsciiMetadataValue;
 
 use crate::config::Config;
 use crate::error::AppError;
+use crate::models::auth::{User, UserRole};
 use crate::utils;
 
 /// The authorization header bearer prefix.
@@ -252,33 +253,6 @@ impl NameMatcher {
             has_match
         }
     }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// A system user.
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub struct User {
-    /// The user's name.
-    pub name: String,
-    /// The user's role.
-    pub role: UserRole,
-}
-
-/// A system user's role.
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub enum UserRole {
-    /// Full control over the cluster and all resources.
-    ///
-    /// There is only ever one root user — called `root` — and its permissions are irrevocable.
-    /// It is recommended that the `root` user only be used to create an initial set of admin
-    /// users which should be used from that point onward.
-    Root,
-    /// Full control over the cluster and all resources.
-    Admin,
-    /// A user with view-only permissions on cluster resources.
-    Viewer,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

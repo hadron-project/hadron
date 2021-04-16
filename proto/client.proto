@@ -4,6 +4,9 @@ package client;
 ///////////////////////////////////////////////////////////////////////////////
 // Components /////////////////////////////////////////////////////////////////
 
+// An empty message.
+message Empty {}
+
 // An error object which is returned from the Hadron server under various conditions.
 //
 // Clients can match on specific error variants to drive behavior.
@@ -69,4 +72,41 @@ message SchemaUpdateManaged {
 message SchemaUpdateOneOff {
     // A set of Hadron schema documents to apply to the system.
     string schema = 1;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Streams ///////////////////////////////////////////////////////////////////
+
+// A request to setup a stream publisher channel.
+message StreamPubSetupRequest {
+    // The name of the publisher.
+    string name = 1;
+}
+
+// A response to a stream publisher setup request.
+message StreamPubSetupResponse {
+    oneof result {
+        Empty ok = 1;
+        Error err = 2;
+    }
+}
+
+// A request to publish data to a stream.
+message StreamPubRequest {
+    // The batch of entries to publish.
+    repeated bytes batch = 1;
+}
+
+// A response from publishing data to a stream.
+message StreamPubResponse {
+    oneof result {
+        StreamPubResponseOk ok = 1;
+        Error err = 2;
+    }
+}
+
+// An ok response from publishing data to a stream.
+message StreamPubResponseOk {
+    // The offset of the last entry to be written to the stream.
+    uint64 last_offset = 1;
 }

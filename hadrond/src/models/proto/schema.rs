@@ -25,7 +25,7 @@ pub struct Namespace {
     /// is ignored and defaults to `0`, as IDs are only used internally and are not exposed to the
     /// end users.
     #[prost(uint64, required, tag="1")]
-    #[serde(default, skip_deserializing)]
+    #[serde(default, skip)]
     pub id: u64,
     /// The unique identifier of this namespace.
     #[prost(string, required, tag="2")]
@@ -57,7 +57,7 @@ pub struct Stream {
     /// is ignored and defaults to `0`, as IDs are only used internally and are not exposed to the
     /// end users.
     #[prost(uint64, required, tag="1")]
-    #[serde(default, skip_deserializing)]
+    #[serde(default, skip)]
     pub id: u64,
     /// Object metadata.
     #[prost(message, required, tag="2")]
@@ -86,7 +86,7 @@ pub struct Pipeline {
     /// is ignored and defaults to `0`, as IDs are only used internally and are not exposed to the
     /// end users.
     #[prost(uint64, required, tag="1")]
-    #[serde(default, skip_deserializing)]
+    #[serde(default, skip)]
     pub id: u64,
     /// Object metadata.
     #[prost(message, required, tag="2")]
@@ -156,7 +156,7 @@ pub struct Endpoint {
     /// is ignored and defaults to `0`, as IDs are only used internally and are not exposed to the
     /// end users.
     #[prost(uint64, required, tag="1")]
-    #[serde(default, skip_deserializing)]
+    #[serde(default, skip)]
     pub id: u64,
     /// Object metadata.
     #[prost(message, required, tag="2")]

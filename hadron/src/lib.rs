@@ -56,6 +56,7 @@ impl Hadron {
             .init();
 
         match &self.action {
+            HadronSubcommands::Publish(inner) => inner.run(&self).await,
             HadronSubcommands::Schema(inner) => inner.run(&self).await,
         }
     }
@@ -74,6 +75,8 @@ impl Hadron {
 
 #[derive(StructOpt)]
 pub enum HadronSubcommands {
+    /// Hadron publisher controls.
+    Publish(cmd::publish::Publish),
     /// Hadron schema management.
     Schema(cmd::schema::Schema),
 }

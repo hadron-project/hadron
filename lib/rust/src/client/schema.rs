@@ -56,7 +56,7 @@ impl SchemaClient {
             .await
             .context("no response body returned")?
             .context("error getting response body")?;
-        self.inner.deserialize_response(status, data)
+        self.inner.deserialize_response_or_error(status, data)
     }
 
     /// Run a one-off schema update on the cluster.
@@ -89,6 +89,6 @@ impl SchemaClient {
             .await
             .context("no response body returned")?
             .context("error getting response body")?;
-        self.inner.deserialize_response(status, data)
+        self.inner.deserialize_response_or_error(status, data)
     }
 }

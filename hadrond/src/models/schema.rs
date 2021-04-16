@@ -12,7 +12,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
-pub use crate::models::proto::storage::*;
+pub use crate::models::proto::schema::*;
 use crate::models::traits::Namespaced;
 use crate::server::MetadataCache;
 use crate::utils;
@@ -69,7 +69,7 @@ impl SchemaStatement {
             Self::Namespace(val) => val.validate(),
             Self::Stream(val) => val.validate(),
             Self::Pipeline(val) => val.validate(),
-            Self::Endpoint(val) => Ok(()), // TODO: finish this up.
+            Self::Endpoint(_val) => Ok(()), // TODO: finish this up.
         }
     }
 }

@@ -1,5 +1,6 @@
+// Storage protos for schema management data.
 syntax = "proto2";
-package storage;
+package schema;
 
 // Common metadata found as part of most schema statements.
 message Metadata {

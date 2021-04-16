@@ -15,6 +15,7 @@ h2 = "0.3"
 http = "0.2"
 prost = "0.7"
 proto = { version = "0.1", path = "../../proto" }
+seahash = "4.1.0"
 tokio = { version = "1", default-features = false, features = [
     # See https://docs.rs/tokio/1.4.0/tokio/#feature-flags
     "rt", "io-util", "net", "time", "macros", "sync", "signal", "fs",

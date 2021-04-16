@@ -1,10 +1,9 @@
 //! Hadron error abstractions.
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Applicaiton error variants.
-#[derive(Clone, Debug, Error, Serialize, Deserialize)]
+#[derive(Debug, Error)]
 pub enum AppError {
     /// The caller is unauthorized to perform the requested action.
     #[error("unauthorized to perform the requested action")]
@@ -24,6 +23,9 @@ pub enum AppError {
     /// The resource specified in the path is not found.
     #[error("the resource specified in the path is not found")]
     ResourceNotFound,
+    /// The server has hit an internal error, but will remain online.
+    #[error("internal server error")]
+    Ise(#[from] anyhow::Error),
 }
 
 impl AppError {
@@ -36,6 +38,7 @@ impl AppError {
             AppError::InvalidInput(_) => http::StatusCode::BAD_REQUEST,
             AppError::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
             AppError::ResourceNotFound => http::StatusCode::NOT_FOUND,
+            AppError::Ise(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, self.to_string())
     }
