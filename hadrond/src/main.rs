@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -33,6 +34,10 @@ async fn main() -> Result<()> {
     if let Err(err) = App::new(cfg).await?.spawn().await {
         tracing::error!(error = ?err);
     }
+
+    // Ensure any pending output is flushed.
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
 
     Ok(())
 }

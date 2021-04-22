@@ -22,6 +22,8 @@ pub struct App {
     shutdown_tx: broadcast::Sender<()>,
     /// A channel used for triggering graceful shutdown.
     shutdown_rx: BroadcastStream<()>,
+    /// A handle to the network server.
+    server: JoinHandle<Result<()>>,
 }
 
 impl App {
@@ -38,13 +40,14 @@ impl App {
         let (server, _cache) = Server::new(config.clone(), db.clone(), shutdown_tx.clone(), events_tx.clone(), events_rx)
             .await
             .context("error creating network server")?;
-        let _server = server.spawn();
+        let server = server.spawn();
 
         Ok(Self {
             config,
             db,
             shutdown_rx: BroadcastStream::new(shutdown_rx),
             shutdown_tx,
+            server,
         })
     }
 
@@ -76,6 +79,9 @@ impl App {
 
         // Begin shutdown routine.
         tracing::debug!("Hadron is shutting down");
+        if let Err(err) = self.server.await {
+            tracing::error!(error = ?err, "error shutting down network server");
+        }
         tracing::debug!("Hadron shutdown");
         Ok(())
     }

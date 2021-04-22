@@ -9,6 +9,7 @@ use sled::{Batch, Tree};
 use crate::auth::{Claims, ClaimsV1, ClaimsVersion};
 use crate::database::Database;
 use crate::error::ShutdownResult;
+use crate::error::{ERR_DB_FLUSH, ERR_ITER_FAILURE};
 use crate::models::{auth, events, prelude::*, schema};
 use crate::server::metadata::cache::{CacheWriteBatch, CacheWriteOp, MetadataCache};
 use crate::utils;
@@ -21,10 +22,6 @@ const PREFIX_NAMESPACE: &str = "/namespaces/";
 const PREFIX_PIPELINES: &str = "/pipelines/";
 const PREFIX_STREAMS: &str = "/streams/";
 const PREFIX_USERS: &str = "/users/";
-
-// Error messages.
-const ERR_ITER_FAILURE: &str = "error returned during key/value iteration from database";
-const ERR_DB_FLUSH: &str = "error flushing database state";
 
 /// Apply a set of schema update statements to the system.
 #[tracing::instrument(level = "trace", skip(db, cache, statements, branch, timestamp))]

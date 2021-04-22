@@ -28,5 +28,11 @@ fn main() -> Result<()> {
         .type_attribute(".", "#[derive(::serde::Serialize, ::serde::Deserialize)]")
         .compile_protos(&["proto/auth.proto"], &["proto"])
         .context("error compiling auth proto")?;
+
+    prost_build::Config::new()
+        .out_dir("src/models/proto")
+        .compile_protos(&["proto/stream.proto"], &["proto"])
+        .context("error compiling stream proto")?;
+
     Ok(())
 }

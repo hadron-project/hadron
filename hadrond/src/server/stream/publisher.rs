@@ -12,13 +12,10 @@ use proto::v1::{
 };
 
 use crate::database::Database;
-use crate::error::{AppError, ShutdownError};
-use crate::server::stream::{H2DataChannel, StreamCtl};
-use crate::server::{must_get_token, require_method, H2Channel};
+use crate::error::{AppError, ShutdownError, ERR_DB_FLUSH};
+use crate::server::stream::{subscriber::StreamSubCtlMsg, StreamCtl};
+use crate::server::{must_get_token, require_method, H2Channel, H2DataChannel};
 use crate::utils;
-
-/// The database key used for storing the next available offset.
-const KEY_NEXT_OFFSET: &str = "/meta/next_offset";
 
 impl StreamCtl {
     /// Validate a stream publisher channel before full setup.
@@ -119,11 +116,12 @@ impl StreamCtl {
             batch.insert(&utils::encode_u64(self.next_offset), entry);
             self.next_offset += 1;
         }
-        batch.insert(KEY_NEXT_OFFSET, &utils::encode_u64(self.next_offset));
-        let db = self.tree.clone();
+        let tree = self.tree.clone();
         Database::spawn_blocking(move || {
-            db.apply_batch(batch).context("error applying write batch")?;
-            db.flush().context("error during fsync after applying write batch")
+            tree.apply_batch(batch)
+                .context("error applying write batch")
+                .map_err(ShutdownError::from)?;
+            tree.flush().context(ERR_DB_FLUSH).map_err(ShutdownError::from)
         })
         .await??;
 
@@ -131,6 +129,7 @@ impl StreamCtl {
 
         // Respond to publisher.
         tracing::debug!(self.next_offset, "finished writing data to stream");
+        let _ = self.subs_tx.send(StreamSubCtlMsg::NextOffsetUpdated(self.next_offset)).await;
         Ok(self.next_offset - 1)
     }
 }

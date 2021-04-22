@@ -1,0 +1,14 @@
+// Storage protos for stream data.
+syntax = "proto2";
+package stream;
+
+// A stream subscription record.
+//
+// NOTE WELL: subscription offsets are stored separately from their model. This helps to optimize
+// updates to offsets as subscribers work through a stream.
+message Subscription {
+    // The name of the subscription.
+    required string group_name = 1;
+    // The maximum batch size for this subscription.
+    required uint32 max_batch_size = 2;
+}

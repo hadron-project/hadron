@@ -3,19 +3,15 @@ TODO
 ====
 Single Node
 - [ ] Update docs for new metadata / schema system as well as new architecture.
-- [x] Attempt to read node ID file on startup. Overwrite if pristine. Compare old value with new value and bomb if mismatch.
-- [ ] Handle writes to a Stream.
-    - [x] Spawn stream controllers as metadata events flow in.
-    - [x] Should use an H2 channel from the client to setup a "stream producer".
-    - [x] Producer connection should be sent directly over to the controller which is responsible for pipelining writes. Controller will stream in individual publication batches from producers, and then apply them.
-    - [ ] finish up write logic for producer & consumer.
-    - [ ] In the future, the Producers will be able to specify durability of payloads, and the async replication system will report back as batches are replicated.
-    - [ ] If there are no replicas of a replica set, then we will fsync each batch written to disk. If there are replicas, then "durable" writes means that a majority of the replica set has the data on disk, and no flush required on write path.
-    - [ ] Writes should be batched across clients for better efficiency, and will be applied to disk using a durable batch.
 
 - [ ] **PIPELINES:** When a pipeline is created, as it is simply another consumer of the input stream, we need to be able to allow users to specify the pipeline's starting point. We should support all of the same options as a normal consumer.
 - [ ]  **PIPELINES:** It would be excellent to allow for a stage of a pipeline to declare a delay on processing. This would be a perfect way to encode that some timeout period exists in a workflow. Once the delay has elapsed, the stage consumer will be triggered. The consumer is responsible for upholding any timing relating checks — E.G., ensuring state has not changed which invalidates the event &c.
     - We could use basic join tables (key prefix on the tree) to enforce integrity.
+
+**Future stream pub:**
+- [ ] In the future, the Producers will be able to specify durability of payloads, and the async replication system will report back as batches are replicated.
+- [ ] If there are no replicas of a replica set, then we will fsync each batch written to disk. If there are replicas, then "durable" writes means that a majority of the replica set has the data on disk, and no flush required on write path.
+- [ ] Writes should be batched across clients for better efficiency, and will be applied to disk using a durable batch.
 
 Cluster of Replica Sets
 =======================
@@ -53,6 +49,11 @@ Clusters are composed of multiple replica sets which dynamically discover each o
     - This supports cases where data semantically belongs on the same stream, but is optimized to reduce latency by geolocating replica sets in the regions where the data is being processed, GDPR or similar requirements.
     - The cluster will still see all of these partitions as participating in the same stream, and consumers can be configured to consume from any subset of the partitions of a stream.
 
+**Stream Subscribers**
+- Clients will create stream subscriber channels on all partitions of a target stream.
+- Clients are always part of "group", and each partition will load balance deliveries across all active members of a group.
+- A client may receive multiple concurrent deliveries from different partitions. Concurrent consumption rate is configurable.
+
 **Transactions**
 - The client simply chooses any partition involved in the transaction to be the driver.
 - The driver uses the streaming distributed transaction model.
@@ -86,23 +87,6 @@ Ephemeral messaging exchanges & RPC endpoints.
 
 
 
-**Client**
-- https://docs.rs/h2/0.3.2/h2/client/struct.SendRequest.html initializes a new H2 stream, returning a (ResponseFuture, SendStream) tuple.
-    - ResponseFuture resolves to a standard HTTP response with an inner type which represents the inbound stream of data from the server (a stream response channel from the server).
-    - SendStream is immediately available as a mechanism for sending additional outbound requests to the target (a stream of outbound requests to the server).
-
-**Server**
-- https://docs.rs/h2/0.3.2/h2/server/struct.Connection.html is what we end up with on the server side. Its `accept` method yields H2 streams from the connection wich return tupes of (Request<RecvStream>, SendResponse).
-    - The Request is a standard HTTP request with an inner type which can be used to stream in additional data frames or a final trailer (the inbound stream from the client).
-    - The SendResponse is the outbound response stream. Multiple response data frames can be sent, and when everything is done, we send a trailer to close the stream.
-- The server will listen for metadata updates as well as new H2 streams.
-- As new streams & pipelines are instantiated, the server will spawn new controllers which own the corresponding storage location.
-    - This allows for pipelining of inbound mutating requests.
-    - A communication channel will be retained by the server for sending H2 streams to the target controller.
-    - The raw bytes of the request will be avilable for decoding, in place mutation, direct storage &c. We will NOT use protobuf. Big performance and efficiency gains here.
-    - Typically no new channels will need to be allocated for requests, but we can amortize those costs with an mpsc channel pool abstraction, where each channel has cap(1) and channels are reused to eliminate the hot path cost of allocation.
-
-- WOOT WOOT! Using bincode to define our own proto for communication.
 
 ----
 

@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use futures::stream::StreamExt;
 use http::Method;
 use prost::Message;
@@ -30,6 +30,8 @@ use crate::utils;
 
 /// An H2 channel (stream) created from an active HTTP2 connection.
 type H2Channel = (http::Request<h2::RecvStream>, h2::server::SendResponse<bytes::Bytes>);
+/// An H2 channel where both ends are streaming bidirectional data.
+type H2DataChannel = (h2::RecvStream, h2::SendStream<Bytes>);
 
 /// Network server used to handle client requests.
 pub struct Server {
@@ -78,6 +80,7 @@ impl Server {
         let listener = TcpListener::bind(&addr)
             .await
             .with_context(|| format!("error creating network listener on addr {}", addr))?;
+        tracing::info!("server is listening on {}", addr);
 
         // Spawn the metadata controller.
         let (metadata_tx, metadata_rx) = mpsc::channel(100);
@@ -124,6 +127,10 @@ impl Server {
         }
 
         // Begin shutdown routine.
+        if let Err(err) = self.metadata_ctl.await {
+            tracing::error!(error = ?err, "error shutting down metadata controller");
+        }
+        // TODO: ensure all stream join handles are awaited as well.
         tracing::debug!("network server shutdown");
         Ok(())
     }
@@ -147,7 +154,10 @@ impl Server {
                         Some(Ok(h2chan)) => {
                             let _ = tx.send(h2chan);
                         },
-                        Some(Err(err)) => tracing::error!(error = ?err, "error handling new H2 stream"),
+                        Some(Err(err)) => {
+                            tracing::error!(error = ?err, "error handling new H2 stream");
+                            break;
+                        }
                         None => break,
                     },
                     Some(_) = shutdown.next() => break,
@@ -194,7 +204,7 @@ impl Server {
             _ => Err(AppError::ResourceNotFound.into()),
         };
         if let Err(err) = res {
-            send_error(&mut req, self.buf.split(), err);
+            send_error(&mut req, self.buf.split(), err, std::convert::identity);
         }
     }
 
@@ -287,7 +297,7 @@ impl Server {
                 return;
             }
         };
-        let _ctl_handle = ctl.spawn();
+        let _ctl_handle = ctl.spawn(); // TODO: push this join handle to a JoinAll which just ensures that they complete.
         let _ = self.streams.insert(stream.hash_id(), tx);
     }
 
@@ -299,8 +309,12 @@ impl Server {
 }
 
 /// Handle the given error, generating an appropriate response based on its type.
-#[tracing::instrument(level = "trace", skip(err, req))]
-fn send_error(req: &mut H2Channel, buf: BytesMut, err: anyhow::Error) {
+#[tracing::instrument(level = "trace", skip(req, buf, err, wrapper))]
+fn send_error<F, M>(req: &mut H2Channel, buf: BytesMut, err: anyhow::Error, wrapper: F)
+where
+    F: Fn(proto::v1::Error) -> M,
+    M: Message,
+{
     // Build response object.
     let (status, message) = err
         .downcast_ref::<AppError>()
@@ -320,7 +334,7 @@ fn send_error(req: &mut H2Channel, buf: BytesMut, err: anyhow::Error) {
 
     // Send response.
     let error = proto::v1::Error { message };
-    send_response(req, buf, resp, Some(&error));
+    send_response(req, buf, resp, Some(wrapper(error)));
 }
 
 /// Send a final response over the given H2 channel.
@@ -328,9 +342,9 @@ fn send_error(req: &mut H2Channel, buf: BytesMut, err: anyhow::Error) {
 /// If a body is given, it will be serialized into the given bytes buf. If not body is given, then
 /// a header-only response will be returned with no body.
 #[tracing::instrument(level = "trace", skip(req, buf, headers_res, body))]
-fn send_response<M: Message>(req: &mut H2Channel, mut buf: BytesMut, headers_res: http::Response<()>, body: Option<&M>) {
+fn send_response<M: Message>(req: &mut H2Channel, mut buf: BytesMut, headers_res: http::Response<()>, body: Option<M>) {
     // If we have a body to serialize, then do so.
-    if let Some(body) = body {
+    if let Some(body) = &body {
         if let Err(err) = body.encode(&mut buf) {
             tracing::error!(error = ?err, "error serializing response body");
             return;

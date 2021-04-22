@@ -1,5 +1,8 @@
 //! The Hadron CLI.
 
+#![allow(dead_code)] // TODO: remove
+#![allow(unused_imports)] // TOOD: remove
+
 mod client;
 mod cmd;
 mod error;
@@ -57,6 +60,7 @@ impl Hadron {
 
         match &self.action {
             HadronSubcommands::Publish(inner) => inner.run(&self).await,
+            HadronSubcommands::Subscribe(inner) => inner.run(&self).await,
             HadronSubcommands::Schema(inner) => inner.run(&self).await,
         }
     }
@@ -75,8 +79,13 @@ impl Hadron {
 
 #[derive(StructOpt)]
 pub enum HadronSubcommands {
-    /// Hadron publisher controls.
-    Publish(cmd::publish::Publish),
-    /// Hadron schema management.
+    /// Hadron pub.
+    #[structopt(name = "pub")]
+    Publish(cmd::r#pub::Publish),
+    /// Hadron sub.
+    #[structopt(name = "sub")]
+    Subscribe(cmd::sub::Subscribe),
+    /// Hadron schema.
+    #[structopt(name = "schema")]
     Schema(cmd::schema::Schema),
 }

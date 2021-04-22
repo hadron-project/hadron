@@ -2,6 +2,7 @@
 
 mod publisher;
 mod schema;
+mod subscriber;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,7 +18,10 @@ use proto::v1;
 use tokio::net::TcpStream;
 use tokio::sync::{watch, RwLock};
 
+pub use subscriber::{SubscriberConfig, Subscription, SubscriptionStartingPoint};
+
 pub(crate) type ConnectionMap = Arc<RwLock<HashMap<Arc<String>, Connection>>>;
+pub(crate) type H2DataChannel = (h2::RecvStream, h2::SendStream<Bytes>);
 pub(crate) type H2Channel = SendRequest<Bytes>;
 
 /// A client for communicating with a Hadron cluster.

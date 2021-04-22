@@ -22,5 +22,10 @@ pub const ENDPOINT_METADATA_QUERY: &str = "/v1/metadata/query";
 pub const ENDPOINT_METADATA_SCHEMA_UPDATE: &str = "/v1/metadata/schema_update";
 
 pub type SchemaUpdateRequestType = schema_update_request::Type;
+
 pub type StreamPubResponseResult = stream_pub_response::Result;
 pub type StreamPubSetupResponseResult = stream_pub_setup_response::Result;
+
+pub type StreamSubSetupRequestStartingPoint = stream_sub_setup_request::StartingPoint;
+pub type StreamSubSetupResponseResult = stream_sub_setup_response::Result;
+pub type StreamSubDeliveryResponseResult = stream_sub_delivery_response::Result;

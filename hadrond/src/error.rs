@@ -2,6 +2,10 @@
 
 use thiserror::Error;
 
+// Error messages.
+pub const ERR_ITER_FAILURE: &str = "error returned during key/value iteration from database";
+pub const ERR_DB_FLUSH: &str = "error flushing database state";
+
 /// Applicaiton error variants.
 #[derive(Debug, Error)]
 pub enum AppError {
