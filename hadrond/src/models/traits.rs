@@ -1,6 +1,7 @@
 //! Model related traits.
 
 use crate::models::schema;
+use crate::utils;
 
 /// A type which is associated with a namespace, and has a name.
 pub trait Namespaced {
@@ -16,6 +17,11 @@ pub trait Namespaced {
     /// The namespaced name of the object, represented as `{namespace}/{name}`.
     fn namespaced_name(&self) -> String {
         format!("{}/{}", self.namespace(), self.name())
+    }
+
+    /// The unique hash ID of this object, which is a hash over `{namespace}/{name}`.
+    fn hash_id(&self) -> u64 {
+        utils::ns_name_hash_id(self.namespace(), self.name())
     }
 }
 

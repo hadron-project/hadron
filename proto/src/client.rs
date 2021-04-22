@@ -1,6 +1,10 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Components /////////////////////////////////////////////////////////////////
 
+/// An empty message.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Empty {
+}
 /// An error object which is returned from the Hadron server under various conditions.
 ///
 /// Clients can match on specific error variants to drive behavior.
@@ -85,4 +89,60 @@ pub struct SchemaUpdateOneOff {
     /// A set of Hadron schema documents to apply to the system.
     #[prost(string, tag="1")]
     pub schema: ::prost::alloc::string::String,
+}
+//////////////////////////////////////////////////////////////////////////////
+// Streams ///////////////////////////////////////////////////////////////////
+
+/// A request to setup a stream publisher channel.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamPubSetupRequest {
+    /// The name of the publisher.
+    #[prost(string, tag="1")]
+    pub name: ::prost::alloc::string::String,
+}
+/// A response to a stream publisher setup request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamPubSetupResponse {
+    #[prost(oneof="stream_pub_setup_response::Result", tags="1, 2")]
+    pub result: ::core::option::Option<stream_pub_setup_response::Result>,
+}
+/// Nested message and enum types in `StreamPubSetupResponse`.
+pub mod stream_pub_setup_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag="1")]
+        Ok(super::Empty),
+        #[prost(message, tag="2")]
+        Err(super::Error),
+    }
+}
+/// A request to publish data to a stream.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamPubRequest {
+    /// The batch of entries to publish.
+    #[prost(bytes="vec", repeated, tag="1")]
+    pub batch: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+}
+/// A response from publishing data to a stream.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamPubResponse {
+    #[prost(oneof="stream_pub_response::Result", tags="1, 2")]
+    pub result: ::core::option::Option<stream_pub_response::Result>,
+}
+/// Nested message and enum types in `StreamPubResponse`.
+pub mod stream_pub_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag="1")]
+        Ok(super::StreamPubResponseOk),
+        #[prost(message, tag="2")]
+        Err(super::Error),
+    }
+}
+/// An ok response from publishing data to a stream.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamPubResponseOk {
+    /// The offset of the last entry to be written to the stream.
+    #[prost(uint64, tag="1")]
+    pub last_offset: u64,
 }

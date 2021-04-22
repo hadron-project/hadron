@@ -6,10 +6,8 @@
 // - finish up cluster level config.
 // - finish up replica discovery mechanism.
 
-use std::time::Duration;
-
 use serde::Deserialize;
-use serde_aux::prelude::*;
+// use serde_aux::prelude::*; // Will use later.
 
 /// Runtime configuration data.
 #[derive(Clone, Debug, Deserialize)]
@@ -68,7 +66,7 @@ impl Config {
     /// well.
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let mut config: Config = match envy::from_env() {
+        let config: Config = match envy::from_env() {
             Err(err) => {
                 tracing::error!(error = %err,  "error building config from env");
                 std::thread::sleep(std::time::Duration::from_secs(5)); // Just give a little time to see the error before bailing.

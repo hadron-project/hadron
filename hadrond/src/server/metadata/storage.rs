@@ -3,31 +3,28 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use futures::prelude::*;
-use futures::stream::StreamExt;
+use prost::Message;
 use sled::{Batch, Tree};
 
-use crate::auth::{Claims, ClaimsV1, ClaimsVersion, User};
-use crate::config::Config;
+use crate::auth::{Claims, ClaimsV1, ClaimsVersion};
 use crate::database::Database;
-use crate::error::{AppError, ShutdownError, ShutdownResult};
-use crate::models::{events, prelude::*, schema};
+use crate::error::ShutdownResult;
+use crate::models::{auth, events, prelude::*, schema};
 use crate::server::metadata::cache::{CacheWriteBatch, CacheWriteOp, MetadataCache};
-use crate::server::{must_get_token, require_method, send_error, H2Channel};
 use crate::utils;
-use crate::NodeId;
+
+const ROOT_USER_NAME: &str = "root";
 
 // DB prefixes.
 const PREFIX_BRANCHES: &str = "/branches/";
-const PREFIX_CONTROL_GROUPS: &str = "/control_groups/";
 const PREFIX_NAMESPACE: &str = "/namespaces/";
-const PREFIX_PIPELINE_REPLICAS: &str = "/pipeline_replicas/";
 const PREFIX_PIPELINES: &str = "/pipelines/";
-const PREFIX_STREAM_REPLICAS: &str = "/stream_replicas/";
 const PREFIX_STREAMS: &str = "/streams/";
+const PREFIX_USERS: &str = "/users/";
 
 // Error messages.
 const ERR_ITER_FAILURE: &str = "error returned during key/value iteration from database";
+const ERR_DB_FLUSH: &str = "error flushing database state";
 
 /// Apply a set of schema update statements to the system.
 #[tracing::instrument(level = "trace", skip(db, cache, statements, branch, timestamp))]
@@ -50,7 +47,7 @@ pub async fn apply_schema_updates(
             schema::SchemaStatement::Namespace(ns) => create_namespace(&db, &cache, &mut cache_batch, &mut db_batch, ns)?,
             schema::SchemaStatement::Stream(stream) => create_stream(&db, &cache, &mut cache_batch, &mut db_batch, &mut events, stream)?,
             schema::SchemaStatement::Pipeline(pipeline) => create_pipeline(&db, &cache, &mut cache_batch, &mut db_batch, &mut events, pipeline)?,
-            schema::SchemaStatement::Endpoint(endpoint) => anyhow::bail!("TODO: finish up endpoint creation"),
+            schema::SchemaStatement::Endpoint(_endpoint) => anyhow::bail!("TODO: finish up endpoint creation"),
         }
     }
 
@@ -71,7 +68,7 @@ pub async fn apply_schema_updates(
 
     // Finally apply the index batch & publish events.
     tracing::debug!("applying index updates");
-    cache.apply_batch(cache_batch).await?;
+    cache.apply_batch(cache_batch);
     Ok(events)
 }
 
@@ -182,7 +179,7 @@ pub async fn recover_system_state(db: &Tree) -> Result<(MetadataCache, events::I
     .context("error during parallel metadata state recovery")?;
 
     // Update initial CRC event with recovered data.
-    let mut initial_event = events::InitialState::new(streams.clone(), pipelines.clone());
+    let initial_event = events::InitialState::new(streams.clone(), pipelines.clone());
 
     // Update index with recovered data.
     let index = MetadataCache::new(users, tokens, namespaces, streams, pipelines, branches);
@@ -264,14 +261,33 @@ pub async fn recover_schema_branches(db: &Tree) -> Result<Vec<schema::SchemaBran
 
 /// Recover the system's user permissions state.
 #[tracing::instrument(level = "trace", skip(db))]
-pub async fn recover_user_permissions(db: &Tree) -> Result<Vec<User>> {
-    // TODO: recover user state.
-    Ok(Default::default())
+pub async fn recover_user_permissions(db: &Tree) -> Result<Vec<auth::User>> {
+    let db_inner = db.clone();
+    let mut data = Database::spawn_blocking(move || -> Result<Vec<auth::User>> {
+        let mut data = vec![];
+        for entry_res in db_inner.scan_prefix(PREFIX_USERS) {
+            let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+            let model: auth::User = utils::decode_model(&entry).context("error decoding user model from storage")?;
+            data.push(model);
+        }
+        Ok(data)
+    })
+    .await??;
+
+    // If there are no users on disk, this means that the node is pristine and we need to
+    // initialize the root user. At any point in the future, the system will not allow for 0 users.
+    if data.is_empty() {
+        let user = initialize_root_user(&db).await.context("error initializing root user")?;
+        data.push(user);
+    }
+
+    tracing::debug!(count = data.len(), "recovered users");
+    Ok(data)
 }
 
 /// Recover the system's token permissions state.
-#[tracing::instrument(level = "trace", skip(db))]
-pub async fn recover_token_permissions(db: &Tree) -> Result<Vec<(u64, Claims)>> {
+#[tracing::instrument(level = "trace", skip(_db))]
+pub async fn recover_token_permissions(_db: &Tree) -> Result<Vec<(u128, Claims)>> {
     // TODO: recover token state.
     Ok(vec![(
         0,
@@ -280,4 +296,32 @@ pub async fn recover_token_permissions(db: &Tree) -> Result<Vec<(u64, Claims)>> 
             claims: ClaimsVersion::V1(ClaimsV1::All),
         },
     )])
+}
+
+/// Initialize the root user.
+#[tracing::instrument(level = "trace", skip(db))]
+async fn initialize_root_user(db: &Tree) -> Result<auth::User> {
+    let db = db.clone();
+    let user = Database::spawn_blocking(move || -> Result<auth::User> {
+        // Generate the initial root user state.
+        let pwhash = bcrypt::hash(ROOT_USER_NAME, bcrypt::DEFAULT_COST).context("error hasing root user password")?;
+        let user = auth::User {
+            name: ROOT_USER_NAME.into(),
+            role: auth::UserRole::Root as i32,
+            pwhash,
+        };
+
+        // Serialize the user model.
+        let mut buf = Vec::with_capacity(user.encoded_len());
+        user.encode(&mut buf).context("error encoding root user model for storage")?;
+
+        // Store the model.
+        let key = format!("{}{}", PREFIX_USERS, user.name);
+        db.insert(key.as_bytes(), buf.as_slice()).context("error inserting user model")?;
+        db.flush().context(ERR_DB_FLUSH)?;
+        Ok(user)
+    })
+    .await??;
+    tracing::debug!("initialized root user");
+    Ok(user)
 }

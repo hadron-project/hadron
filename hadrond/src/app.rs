@@ -1,19 +1,16 @@
-use std::collections::{BTreeMap, HashMap};
-use std::hash::Hasher;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tokio_stream::wrappers::{SignalStream, WatchStream};
+use tokio_stream::wrappers::{BroadcastStream, SignalStream};
 use tokio_stream::StreamMap;
 
 use crate::config::Config;
 use crate::database::Database;
 use crate::server::Server;
-use crate::NodeId;
 
 pub struct App {
     /// The application's runtime config.
@@ -22,31 +19,31 @@ pub struct App {
     db: Database,
 
     /// A channel used for triggering graceful shutdown.
-    shutdown_rx: WatchStream<bool>,
+    shutdown_tx: broadcast::Sender<()>,
     /// A channel used for triggering graceful shutdown.
-    shutdown_tx: watch::Sender<bool>,
+    shutdown_rx: BroadcastStream<()>,
 }
 
 impl App {
     /// Create a new instance.
     pub async fn new(config: Arc<Config>) -> Result<Self> {
         // App shutdown channel.
-        let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let (events_tx, events_rx) = broadcast::channel(10_000);
+        let (shutdown_tx, shutdown_rx) = broadcast::channel(100);
+        let (events_tx, events_rx) = broadcast::channel(10_000); // 10k before lagging.
 
         // Initialize this nodes storage.
         let db = Database::new(config.clone()).await.context("error opening database")?;
 
         // Spawn the network server.
-        let (server, _cache) = Server::new(config.clone(), db.clone(), shutdown_rx.clone(), events_tx.clone(), events_tx.subscribe())
+        let (server, _cache) = Server::new(config.clone(), db.clone(), shutdown_tx.clone(), events_tx.clone(), events_rx)
             .await
             .context("error creating network server")?;
-        let server = server.spawn();
+        let _server = server.spawn();
 
         Ok(Self {
             config,
             db,
-            shutdown_rx: WatchStream::new(shutdown_rx),
+            shutdown_rx: BroadcastStream::new(shutdown_rx),
             shutdown_tx,
         })
     }
@@ -73,7 +70,7 @@ impl App {
                     self.shutdown();
                     break;
                 }
-                Some(needs_shutdown) = self.shutdown_rx.next() => if needs_shutdown { break } else { continue },
+                Some(_) = self.shutdown_rx.next() => break,
             }
         }
 
@@ -86,6 +83,6 @@ impl App {
     /// Trigger a system shutdown.
     #[tracing::instrument(level = "trace", skip(self))]
     fn shutdown(&mut self) {
-        let _ = self.shutdown_tx.send(true);
+        let _ = self.shutdown_tx.send(());
     }
 }

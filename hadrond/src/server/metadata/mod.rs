@@ -4,30 +4,23 @@ mod cache;
 mod storage;
 
 use std::sync::Arc;
-use std::{io::Read, net::SocketAddr};
 
 use anyhow::{bail, Context, Result};
-use bytes::{BufMut, BytesMut};
-use futures::prelude::*;
+use bytes::BytesMut;
 use futures::stream::StreamExt;
 use http::Method;
 use prost::Message;
 use sled::Tree;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
-use tokio_stream::wrappers::{ReceiverStream, SignalStream, UnboundedReceiverStream, WatchStream};
-use tokio_stream::StreamMap;
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
-use crate::auth;
 use crate::config::Config;
 use crate::database::Database;
 use crate::error::AppError;
 use crate::models::{events, schema};
 use crate::server::{must_get_token, require_method, send_error, send_response, H2Channel};
 use crate::utils;
-use crate::NodeId;
 
 pub use cache::MetadataCache;
 
@@ -42,9 +35,9 @@ pub struct MetadataCtl {
     /// The system metadata cache.
     cache: Arc<MetadataCache>,
     /// A channel used for triggering graceful shutdown.
-    shutdown_rx: watch::Receiver<bool>,
+    shutdown_tx: broadcast::Sender<()>,
     /// A channel used for triggering graceful shutdown.
-    shutdown: WatchStream<bool>,
+    shutdown_rx: BroadcastStream<()>,
 
     /// The channel used to handle inbound metadata requests.
     requests: ReceiverStream<H2Channel>,
@@ -59,15 +52,16 @@ pub struct MetadataCtl {
 impl MetadataCtl {
     /// Create a new instance.
     pub async fn new(
-        config: Arc<Config>, db: Database, shutdown_rx: watch::Receiver<bool>, requests: mpsc::Receiver<H2Channel>,
+        config: Arc<Config>, db: Database, shutdown_tx: broadcast::Sender<()>, requests: mpsc::Receiver<H2Channel>,
         events_tx: broadcast::Sender<Arc<events::Event>>,
     ) -> Result<(Self, Arc<MetadataCache>)> {
-        let shutdown = WatchStream::new(shutdown_rx.clone());
+        let shutdown_rx = BroadcastStream::new(shutdown_tx.subscribe());
 
         // Recover system state & expose metadata cache.
         let tree = db.get_metadata_tree().await.context("error opening metadata database tree")?;
         let (cache, init_event) = storage::recover_system_state(&tree).await.context("error recovering system state")?;
         let cache = Arc::new(cache);
+        let _ = events_tx.send(Arc::new(events::Event::Initial(init_event)));
 
         Ok((
             Self {
@@ -75,8 +69,8 @@ impl MetadataCtl {
                 db,
                 tree,
                 cache: cache.clone(),
+                shutdown_tx,
                 shutdown_rx,
-                shutdown,
                 requests: ReceiverStream::new(requests),
                 events_tx,
                 buf: BytesMut::with_capacity(5000),
@@ -95,7 +89,7 @@ impl MetadataCtl {
         loop {
             tokio::select! {
                 Some(req) = self.requests.next() => self.handle_request(req).await,
-                Some(needs_shutdown) = self.shutdown.next() => if needs_shutdown { break } else { continue },
+                Some(needs_shutdown) = self.shutdown_rx.next() => break,
             }
         }
 
@@ -106,14 +100,14 @@ impl MetadataCtl {
     /// Handle a request which has been sent to this controller.
     #[tracing::instrument(level = "trace", skip(self, req))]
     async fn handle_request(&mut self, mut req: H2Channel) {
-        let mut path = req.0.uri().path();
+        let path = req.0.uri().path();
         let res = match path {
-            proto::v1::ENDPOINT_METADATA_QUERY => handle_metadata_query(&mut req).await,
+            proto::v1::ENDPOINT_METADATA_QUERY => handle_metadata_query(&self.config, &mut req).await,
             proto::v1::ENDPOINT_METADATA_SCHEMA_UPDATE => {
                 handle_metadata_update_schema(
                     self.db.clone(),
                     self.tree.clone(),
-                    self.config.clone(),
+                    &self.config,
                     self.cache.clone(),
                     &self.events_tx,
                     &mut req,
@@ -131,9 +125,12 @@ impl MetadataCtl {
 
 /// Handle a request to get the cluster's metadata.
 #[tracing::instrument(level = "trace", skip(req))]
-async fn handle_metadata_query(req: &mut H2Channel) -> Result<()> {
-    let (ref mut req, ref mut res_chan) = req;
-    require_method(&req, Method::GET)?;
+async fn handle_metadata_query(config: &Config, req: &mut H2Channel) -> Result<()> {
+    let (ref mut req_chan, ref mut res_chan) = req;
+    require_method(&req_chan, Method::GET)?;
+
+    // TODO: require auth.
+    let _creds = must_get_token(&req_chan, config)?;
 
     // Stub: respond with some random yaml.
     let body = bytes::Bytes::from(r#"{"nothing":"so far"}"#);
@@ -149,14 +146,17 @@ async fn handle_metadata_query(req: &mut H2Channel) -> Result<()> {
 /// Handle a request to update the clsuter's schema.
 #[tracing::instrument(level = "trace", skip(db, config, cache, events_tx, req, buf))]
 async fn handle_metadata_update_schema(
-    db: Database, tree: Tree, config: Arc<Config>, cache: Arc<MetadataCache>, events_tx: &broadcast::Sender<Arc<events::Event>>, req: &mut H2Channel,
-    mut buf: BytesMut,
+    db: Database, tree: Tree, config: &Config, cache: Arc<MetadataCache>, events_tx: &broadcast::Sender<Arc<events::Event>>, req: &mut H2Channel,
+    buf: BytesMut,
 ) -> Result<()> {
-    let (ref mut req_chan, ref mut res_chan) = req;
+    let (ref mut req_chan, _res_chan) = req;
     require_method(&req_chan, Method::POST)?;
+    let creds = must_get_token(&req_chan, config)?;
+    let _claims = cache.must_get_token_claims(&creds.claims.id.as_u128())?;
+    // TODO: verify any permission to modify schema, then pass along for static verification.
+    // claims.check_schema_auth()
 
     // Extract and validate contents of request.
-    let creds = must_get_token(&req_chan, &*config)?;
     let body_stream = req_chan.body_mut();
     let body = body_stream
         .data()

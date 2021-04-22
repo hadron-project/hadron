@@ -2,26 +2,20 @@
 TODO
 ====
 Single Node
-- [ ] Handle cluster metadata updates.
-    - [x] Update metadata models to expect new cluster architecture.
-    - [ ] Should hit the metadata dashmap and be shared with other components of the cluster once the data is applied to disk.
-    - [ ] Updates should be accompanied by events describing the action taken, so that other components can react to the changes.
-    - [ ] In the future, this will be handle by the cluster metadata replica set only.
-    - [ ] Update docs.
+- [ ] Update docs for new metadata / schema system as well as new architecture.
+- [x] Attempt to read node ID file on startup. Overwrite if pristine. Compare old value with new value and bomb if mismatch.
 - [ ] Handle writes to a Stream.
-    - [ ] Should use an H2 channel from the client to setup a "stream producer".
-    - [ ] Producer connection should be sent directly over to the controller which is responsible for pipelining writes. Controller will stream in individual publication batches from producers, and then apply them.
+    - [x] Spawn stream controllers as metadata events flow in.
+    - [x] Should use an H2 channel from the client to setup a "stream producer".
+    - [x] Producer connection should be sent directly over to the controller which is responsible for pipelining writes. Controller will stream in individual publication batches from producers, and then apply them.
+    - [ ] finish up write logic for producer & consumer.
     - [ ] In the future, the Producers will be able to specify durability of payloads, and the async replication system will report back as batches are replicated.
     - [ ] If there are no replicas of a replica set, then we will fsync each batch written to disk. If there are replicas, then "durable" writes means that a majority of the replica set has the data on disk, and no flush required on write path.
     - [ ] Writes should be batched across clients for better efficiency, and will be applied to disk using a durable batch.
 
-- [ ] review proto spec.
-    - Bincode can't evolve reasonably, so we need a better option.
-    - Maybe cut back over to protobuf but don't use gRPC (probs proto2 for better control over modifiers).
-    - We do need to be able to more easily evolve the schema of of messages and data.
-    - We can fairly easily do this for data being written to disk (using binary prefix).
-    - Once rkyv has a working protoss version, then we should DEF use that.
-
+- [ ] **PIPELINES:** When a pipeline is created, as it is simply another consumer of the input stream, we need to be able to allow users to specify the pipeline's starting point. We should support all of the same options as a normal consumer.
+- [ ]  **PIPELINES:** It would be excellent to allow for a stage of a pipeline to declare a delay on processing. This would be a perfect way to encode that some timeout period exists in a workflow. Once the delay has elapsed, the stage consumer will be triggered. The consumer is responsible for upholding any timing relating checks — E.G., ensuring state has not changed which invalidates the event &c.
+    - We could use basic join tables (key prefix on the tree) to enforce integrity.
 
 Cluster of Replica Sets
 =======================

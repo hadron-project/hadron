@@ -1,9 +1,7 @@
 //! Data schema models.
 
-use serde::{Deserialize, Serialize};
-
+pub mod auth;
 pub mod events;
-pub mod placement;
 mod proto;
 pub mod schema;
 mod traits;
