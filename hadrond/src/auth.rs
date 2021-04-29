@@ -87,6 +87,28 @@ impl Claims {
         }
     }
 
+    /// Ensure these claims are sufficient for subscribing to the given stream.
+    pub fn check_stream_sub_auth(&self, ns: &str, stream: &str) -> Result<()> {
+        match &self.claims {
+            ClaimsVersion::V1(v) => match v {
+                ClaimsV1::All => Ok(()),
+                ClaimsV1::Namespaced(grants) => {
+                    let is_authorized = grants.iter().any(|grant| match grant {
+                        NamespaceGrant::Full { namespace } => namespace == ns,
+                        NamespaceGrant::Limited { namespace, .. } if namespace != ns => false,
+                        NamespaceGrant::Limited { streams, .. } => match streams {
+                            Some(streams) => streams.iter().any(|s| s.matcher.has_match(stream) && s.access.can_subscribe()),
+                            None => false,
+                        },
+                    });
+                    ensure!(is_authorized, AppError::Unauthorized);
+                    Ok(())
+                }
+                ClaimsV1::Metrics => Err(AppError::Unauthorized.into()),
+            },
+        }
+    }
+
     /// Ensure these claims are sufficient for schema mutations on the target namespace.
     pub fn check_schema_auth(&self, ns: &str) -> Result<()> {
         match &self.claims {
@@ -172,6 +194,14 @@ impl Access {
         match self {
             Self::All | Self::Pub => true,
             Self::Sub => false,
+        }
+    }
+
+    /// Check if this access level represents a sufficient grant to be able to subscribe.
+    pub fn can_subscribe(&self) -> bool {
+        match self {
+            Self::All | Self::Sub => true,
+            Self::Pub => false,
         }
     }
 }

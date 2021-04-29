@@ -118,7 +118,7 @@ impl MetadataCtl {
             _ => Err(AppError::ResourceNotFound.into()),
         };
         if let Err(err) = res {
-            send_error(&mut req, self.buf.split(), err);
+            send_error(&mut req, self.buf.split(), err, std::convert::identity);
         }
     }
 }
@@ -182,7 +182,7 @@ async fn handle_metadata_update_schema(
                     .body(())
                     .context("error building response")?;
                 let res_object = proto::v1::SchemaUpdateResponse { was_noop: true };
-                send_response(req, buf, res, Some(&res_object));
+                send_response(req, buf, res, Some(res_object));
                 return Ok(());
             }
         }
@@ -201,6 +201,6 @@ async fn handle_metadata_update_schema(
         .body(())
         .context("error building response")?;
     let res_object = proto::v1::SchemaUpdateResponse { was_noop: false };
-    send_response(req, buf, res, Some(&res_object));
+    send_response(req, buf, res, Some(res_object));
     Ok(())
 }

@@ -19,6 +19,7 @@ jsonwebtoken = "7.2.0"
 lazy_static = "1"
 prost = "0.7"
 proto = { version = "0.1", path = "../proto" }
+rand = "0.8.3"
 regex = "1"
 seahash = "4.1.0"
 serde = { version="1", features = ["derive"] }

@@ -114,10 +114,25 @@ impl Database {
         Ok(tree)
     }
 
-    /// Get a handle to the DB tree for a stream partition replica.
+    /// Get a handle to the DB tree for a stream partition.
     pub async fn get_stream_tree(&self, namespace: &str, name: &str) -> ShutdownResult<Tree> {
         let name = format!(
             "{prefix}/{namespace}/{name}",
+            prefix = TREE_STREAM_PREFIX,
+            namespace = namespace,
+            name = name
+        );
+        let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
+        let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
+            .await
+            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", &name, err))))?;
+        Ok(tree)
+    }
+
+    /// Get a handle to the DB tree for a stream partition's metadata.
+    pub async fn get_stream_tree_metadata(&self, namespace: &str, name: &str) -> ShutdownResult<Tree> {
+        let name = format!(
+            "{prefix}/{namespace}/{name}/metadata",
             prefix = TREE_STREAM_PREFIX,
             namespace = namespace,
             name = name
