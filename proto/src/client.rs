@@ -238,3 +238,75 @@ pub mod stream_sub_delivery_response {
         Nack(super::Error),
     }
 }
+//////////////////////////////////////////////////////////////////////////////
+// Pipeline Sub //////////////////////////////////////////////////////////////
+
+/// A request to setup a pipeline stage subscriber channel.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineSubSetupRequest {
+    /// The name of the pipeline stage to consume.
+    #[prost(string, tag="1")]
+    pub stage_name: ::prost::alloc::string::String,
+}
+/// A response to a pipeline stage subscriber setup request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineSubSetupResponse {
+    #[prost(oneof="pipeline_sub_setup_response::Result", tags="1, 2")]
+    pub result: ::core::option::Option<pipeline_sub_setup_response::Result>,
+}
+/// Nested message and enum types in `PipelineSubSetupResponse`.
+pub mod pipeline_sub_setup_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag="1")]
+        Ok(super::Empty),
+        #[prost(message, tag="2")]
+        Err(super::Error),
+    }
+}
+/// A payload of pipeline stage inputs for a particular pipeline stage.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineSubDelivery {
+    /// The name of the pipeline stage to which this delivery corresponds.
+    #[prost(string, tag="1")]
+    pub stage: ::prost::alloc::string::String,
+    /// The source stream offset corresponding to this pipeline instance.
+    #[prost(uint64, tag="2")]
+    pub offset: u64,
+    /// A mapping of pipeline stage inputs based on the definition of this pipeline stage.
+    ///
+    /// Every key will be the name of the corresponding pipeline stage output which has been declared
+    /// as an input dependency for this stage, or the `root_event` if declared as a dependency for
+    /// this stage.
+    #[prost(map="string, bytes", tag="3")]
+    pub inputs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::vec::Vec<u8>>,
+}
+/// A subscriber response to a subscription delivery, either `ack`ing or `nack`ing the delivery.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineSubDeliveryResponse {
+    #[prost(oneof="pipeline_sub_delivery_response::Result", tags="1, 2")]
+    pub result: ::core::option::Option<pipeline_sub_delivery_response::Result>,
+}
+/// Nested message and enum types in `PipelineSubDeliveryResponse`.
+pub mod pipeline_sub_delivery_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        /// An acknowledgement of successful processing of this stage and its inputs, along with the
+        /// require stage output of this stage.
+        #[prost(message, tag="1")]
+        Ack(super::PipelineStageOutput),
+        /// An error has taken place during subscriber processing, and the delivered batch was not
+        /// successfully processed.
+        ///
+        /// The given error message will be recorded by the server for observability.
+        #[prost(message, tag="2")]
+        Nack(super::Error),
+    }
+}
+/// The output of a successful pipeline stage consumption.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineStageOutput {
+    /// The base output of the corresponding pipeline stage.
+    #[prost(bytes="vec", tag="1")]
+    pub output: ::prost::alloc::vec::Vec<u8>,
+}

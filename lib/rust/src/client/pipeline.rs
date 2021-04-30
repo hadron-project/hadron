@@ -1,4 +1,4 @@
-//! Subscriber client.
+//! Pipeline subscriber client.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hasher;
@@ -14,78 +14,34 @@ use http::request::Request;
 use http::Method;
 use prost::Message;
 use proto::v1::{
-    self, StreamSubDelivery, StreamSubDeliveryResponse, StreamSubDeliveryResponseResult, StreamSubSetupRequest, StreamSubSetupRequestStartingPoint,
-    StreamSubSetupResponse, StreamSubSetupResponseResult,
+    self, PipelineStageOutput, PipelineSubDelivery, PipelineSubDeliveryResponse, PipelineSubDeliveryResponseResult, PipelineSubSetupRequest,
+    PipelineSubSetupResponse, PipelineSubSetupResponseResult,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::common::H2DataChannel;
+use crate::common::{H2Channel, H2DataChannel};
 use crate::futures::SubscriberFut;
-use crate::handler::StreamHandler;
+use crate::handler::PipelineHandler;
 use crate::Client;
 
 impl Client {
-    /// Create a new subscription on the target stream.
-    pub fn subscribe(&self, handler: Arc<dyn StreamHandler>, ns: &str, stream: &str, group: &str, config: Option<SubscriberConfig>) -> Subscription {
-        let config = config.unwrap_or_default();
+    /// Create a new pipeline subscription on the target pipeline stage.
+    pub fn pipeline(&self, handler: Arc<dyn PipelineHandler>, ns: &str, pipeline: &str, stage: &str) -> PipelineSubscription {
         let (tx, rx) = oneshot::channel();
-        let handle = SubscriptionTask::new(self.clone(), ns.into(), stream.into(), group.into(), config, rx, handler).spawn();
-        Subscription { shutdown: tx, handle }
-    }
-}
-
-/// Subscriber configuration.
-#[derive(Clone, Debug)]
-pub struct SubscriberConfig {
-    /// A bool indicating if this subscription should be considered durable; if `false`, then its
-    /// offsets will be held in memory only.
-    pub durable: bool,
-    /// The maximum batch size for this subscriber.
-    pub max_batch_size: u32,
-    /// The starting point of a new subscription.
-    pub starting_point: SubscriptionStartingPoint,
-}
-
-impl Default for SubscriberConfig {
-    fn default() -> Self {
-        Self {
-            durable: true,
-            max_batch_size: 50,
-            starting_point: SubscriptionStartingPoint::default(),
-        }
-    }
-}
-
-/// The starting point of a new subscription.
-///
-/// Starting points are ignored for durable subscriptions as durable subscriptions always resume
-/// from their last recorded offset.
-#[derive(Clone, Debug)]
-pub enum SubscriptionStartingPoint {
-    /// The very beginning of the stream.
-    Beginning,
-    /// The most recent record on the stream.
-    Latest,
-    /// A specific offset, defaulting to the latest record
-    /// on the stream if the offset is out of bounds.
-    Offset(u64),
-}
-
-impl Default for SubscriptionStartingPoint {
-    fn default() -> Self {
-        Self::Latest
+        let handle = SubscriptionTask::new(self.clone(), ns.into(), pipeline.into(), stage.into(), rx, handler).spawn();
+        PipelineSubscription { shutdown: tx, handle }
     }
 }
 
 /// A handle to a subscription.
-pub struct Subscription {
+pub struct PipelineSubscription {
     shutdown: oneshot::Sender<()>,
     handle: JoinHandle<()>,
 }
 
-impl Subscription {
+impl PipelineSubscription {
     /// Cancel this subscription.
     pub async fn cancel(self) {
         let _ = self.shutdown.send(());
@@ -95,15 +51,14 @@ impl Subscription {
     }
 }
 
-/// A subscription task which manages all IO, handler invocation, and the subscription protocol overall.
+/// A pipeline subscription task which manages all IO, handler invocation, and the subscription protocol overall.
 struct SubscriptionTask {
     client: Client,
     ns: String,
-    stream: String,
-    group: String,
-    config: SubscriberConfig,
+    pipeline: String,
+    stage: String,
     shutdown: oneshot::Receiver<()>,
-    handler: Arc<dyn StreamHandler>,
+    handler: Arc<dyn PipelineHandler>,
 
     /// Active pipeline subscriptions to specific nodes.
     active_channels: HashSet<Arc<String>>,
@@ -116,17 +71,13 @@ struct SubscriptionTask {
 
 impl SubscriptionTask {
     /// Create a new instance.
-    fn new(
-        client: Client, ns: String, stream: String, group: String, config: SubscriberConfig, shutdown: oneshot::Receiver<()>,
-        handler: Arc<dyn StreamHandler>,
-    ) -> Self {
+    fn new(client: Client, ns: String, pipeline: String, stage: String, shutdown: oneshot::Receiver<()>, handler: Arc<dyn PipelineHandler>) -> Self {
         let (tasks_tx, tasks_rx) = mpsc::channel(10);
         Self {
             client,
             ns,
-            stream,
-            group,
-            config,
+            pipeline,
+            stage,
             shutdown,
             handler,
             active_channels: Default::default(),
@@ -142,7 +93,7 @@ impl SubscriptionTask {
     }
 
     async fn run(mut self) {
-        tracing::debug!("starting subscription for {}/{}", self.ns, self.stream);
+        tracing::debug!("starting pipeline subscription for {}/{}", self.ns, self.pipeline);
 
         // Perform an initial attempt at establishing cluster connections.
         self.build_connections().await;
@@ -182,7 +133,7 @@ impl SubscriptionTask {
 
         // Map the payload onto the subscription's handler, then ack or nack.
         let res = match self.try_handle_subscription_delivery(&*node, data).await {
-            Ok(_) => self.ack(&mut chan),
+            Ok(output) => self.ack(&mut chan, output),
             Err(err) => self.nack(&mut chan, err),
         };
         if let Err(err) = res {
@@ -195,8 +146,8 @@ impl SubscriptionTask {
 
     /// Handle a subscription delivery from a specific node.
     #[tracing::instrument(level = "debug", skip(self))]
-    async fn try_handle_subscription_delivery(&mut self, node: &str, data: Bytes) -> Result<()> {
-        let msg = StreamSubDelivery::decode(data).context("error decoding subscription delivery payload")?;
+    async fn try_handle_subscription_delivery(&mut self, node: &str, data: Bytes) -> Result<Bytes> {
+        let msg = PipelineSubDelivery::decode(data).context("error decoding subscription delivery payload")?;
         let (tx, rx) = oneshot::channel();
         let handler = self.handler.clone();
         tokio::spawn(async move {
@@ -207,10 +158,10 @@ impl SubscriptionTask {
     }
 
     /// Respond with an `ack` on the given data channel.
-    #[tracing::instrument(level = "debug", skip(self, chan))]
-    fn ack(&mut self, chan: &mut H2DataChannel) -> Result<()> {
-        let msg = StreamSubDeliveryResponse {
-            result: Some(StreamSubDeliveryResponseResult::Ack(Default::default())),
+    #[tracing::instrument(level = "debug", skip(self, chan, output))]
+    fn ack(&mut self, chan: &mut H2DataChannel, output: Bytes) -> Result<()> {
+        let msg = PipelineSubDeliveryResponse {
+            result: Some(PipelineSubDeliveryResponseResult::Ack(PipelineStageOutput { output: output.to_vec() })),
         };
         let mut buf = self.buf.split();
         msg.encode(&mut buf).context("error encoding subscription ack response")?;
@@ -222,8 +173,8 @@ impl SubscriptionTask {
     #[tracing::instrument(level = "debug", skip(self, chan, err))]
     fn nack(&mut self, chan: &mut H2DataChannel, err: anyhow::Error) -> Result<()> {
         let proto_err = v1::Error { message: err.to_string() };
-        let msg = StreamSubDeliveryResponse {
-            result: Some(StreamSubDeliveryResponseResult::Nack(proto_err)),
+        let msg = PipelineSubDeliveryResponse {
+            result: Some(PipelineSubDeliveryResponseResult::Nack(proto_err)),
         };
         let mut buf = self.buf.split();
         msg.encode(&mut buf).context("error encoding subscription nack response")?;
@@ -239,7 +190,7 @@ impl SubscriptionTask {
         // FUTURE[metadata]: once metadata system is in place, then only build connections to partitions
         // to which we do not have a live connection.
         if let Err(err) = self.try_build_connections().await {
-            tracing::error!(error = ?err, "error building subscriber connections, attempting to build new connections in 10s");
+            tracing::error!(error = ?err, "error building pipeline subscriber connections, attempting to build new connections in 10s");
             let tx = self.tasks_tx.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
@@ -258,7 +209,7 @@ impl SubscriptionTask {
         let chan = self
             .setup_subscriber_channel(url.clone())
             .await
-            .context("error setting up subscription channel")?;
+            .context("error setting up pipeline subscription channel")?;
         self.active_channels.insert(url.clone());
         self.inbound.push(SubscriberFut::new(url, chan));
 
@@ -269,26 +220,12 @@ impl SubscriptionTask {
     #[tracing::instrument(level = "debug", skip(self, node))]
     async fn setup_subscriber_channel(&mut self, node: Arc<String>) -> Result<H2DataChannel> {
         // Build up request.
-        let body_req = StreamSubSetupRequest {
-            group_name: self.group.clone(),
-            durable: self.config.durable,
-            max_batch_size: self.config.max_batch_size,
-            starting_point: Some(match self.config.starting_point {
-                SubscriptionStartingPoint::Beginning => StreamSubSetupRequestStartingPoint::Beginning(Default::default()),
-                SubscriptionStartingPoint::Latest => StreamSubSetupRequestStartingPoint::Latest(Default::default()),
-                SubscriptionStartingPoint::Offset(offset) => StreamSubSetupRequestStartingPoint::Offset(offset),
-            }),
+        let body_req = PipelineSubSetupRequest {
+            stage_name: self.stage.clone(),
         };
         let mut body = self.buf.clone().split();
         body_req.encode(&mut body).context("error encoding request")?;
-        let uri = format!(
-            "/{}/{}/{}/{}/{}",
-            v1::URL_V1,
-            v1::URL_STREAM,
-            self.ns,
-            self.stream,
-            v1::URL_STREAM_SUBSCRIBE
-        );
+        let uri = format!("/{}/{}/{}/{}", v1::URL_V1, v1::URL_PIPELINE, self.ns, self.pipeline);
         let mut builder = Request::builder().method(Method::POST).uri(uri);
         builder = self.client.set_request_credentials(builder);
         let req = builder.body(()).context("error building request")?;
@@ -307,8 +244,8 @@ impl SubscriptionTask {
             .await
             .context("no response returned after setting up publisher stream")?
             .context("error getting response body")?;
-        let setup_res: StreamSubSetupResponse = self.client.deserialize_response_or_error(res.status(), res_bytes)?;
-        if let Some(StreamSubSetupResponseResult::Err(err)) = setup_res.result {
+        let setup_res: PipelineSubSetupResponse = self.client.deserialize_response_or_error(res.status(), res_bytes)?;
+        if let Some(PipelineSubSetupResponseResult::Err(err)) = setup_res.result {
             bail!(err.message);
         }
         Ok((res.into_body(), tx))

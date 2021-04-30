@@ -304,6 +304,7 @@ name = "hadron-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "futures",
  "hadron",
  "lazy_static",

@@ -42,7 +42,7 @@ pub struct MetadataCache {
     pipeline_names: DashMap<u64, u64>,
 
     /// Index of users.
-    users: DashMap<String, Arc<UserRole>>,
+    users: DashMap<String, Arc<User>>,
     /// Index of tokens.
     tokens: DashMap<u128, Arc<Claims>>,
 }
@@ -58,8 +58,7 @@ impl MetadataCache {
             let _ = index.schema_branches.insert(val.name, val.timestamp);
         }
         for val in users {
-            let role = UserRole::from_i32(val.role).unwrap_or(UserRole::Viewer);
-            let _ = index.users.insert(val.name, Arc::new(role));
+            let _ = index.users.insert(val.name.clone(), Arc::new(val));
         }
         for (key, val) in tokens {
             let _ = index.tokens.insert(key, Arc::new(val));
@@ -110,10 +109,7 @@ impl MetadataCache {
     ///
     /// This returns the last applied timestamp of the schema branch.
     pub fn get_schema_branch(&self, branch: &str) -> Option<i64> {
-        match self.schema_branches.get(branch).map(|val| *val.value()) {
-            Some(last_applied_ts) => Some(last_applied_ts),
-            None => None,
-        }
+        self.schema_branches.get(branch).map(|val| *val.value())
     }
 
     /// Get a namespace by its name.
@@ -148,6 +144,16 @@ impl MetadataCache {
             Some(claims) => Ok(claims),
             None => Err(AppError::UnknownToken.into()),
         }
+    }
+
+    /// Get the given user after validating the given password, else return an auth error.
+    pub fn must_get_user(&self, user: &str, pass: &str) -> anyhow::Result<Arc<User>> {
+        let user = match self.users.get(user) {
+            Some(user) => user.value().clone(),
+            None => return Err(AppError::UnknownUser.into()),
+        };
+        bcrypt::verify(pass, &user.pwhash).map_err(|_| AppError::InvalidCredentials("invalid username password combination".into()))?;
+        Ok(user)
     }
 }
 

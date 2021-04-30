@@ -14,9 +14,7 @@ use crate::client::H2DataChannel;
 use crate::Client;
 
 impl Client {
-    /// Create a new publisher client.
-    ///
-    /// TODO: refactor this to make it specific to a stream.
+    /// Create a new publisher client for the target stream.
     pub fn publisher(&self, name: &str, ns: &str, stream: &str) -> PublisherClient {
         PublisherClient {
             inner: self.clone(),
@@ -43,11 +41,9 @@ pub struct PublisherClient {
 
 impl PublisherClient {
     /// Publish a single payload of data, optionally specifying the partition to target.
-    ///
-    /// TODO: docs
     #[tracing::instrument(level = "debug", skip(self, data))]
     pub async fn publish_payload(&mut self, data: Vec<u8>) -> Result<StreamPubResponse> {
-        // FUTURE: if no partition specified, then hash the message key & select a partition.
+        // FUTURE[key,partition,hash]: if no partition specified, then hash the message key & select a partition.
 
         // Get a handle to an initialize publisher channel ready for publishing data.
         let mut body = self.inner.0.buf.clone().split();
@@ -75,7 +71,7 @@ impl PublisherClient {
     /// Get a handle to the initialized publisher stream for the target stream partition.
     #[tracing::instrument(level = "debug", skip(self))]
     async fn get_publisher_channel(&mut self) -> Result<&mut H2DataChannel> {
-        // FUTURE: use the metadata system to find the node by its metadata partition name.
+        // FUTURE[metadata]: use the metadata system to find the node by its metadata partition name.
 
         // First we check the target channel to ensure it is ready for use. If not, then drop it.
         let node = self.inner.0.url.clone();
@@ -124,7 +120,7 @@ impl PublisherClient {
         let (rx, mut tx) = chan.send_request(req, false).context("error sending request")?;
         tx.send_data(body.freeze(), false).context("error sending request body")?;
         let mut res = rx.await.context("error during request")?;
-        tracing::info!(res = ?res, "response from server");
+        tracing::info!(status = ?res.status(), headers = ?res.headers(), "response from server");
 
         // Decode response body to ensure our channel is ready for use.
         let res_bytes = res
@@ -133,7 +129,7 @@ impl PublisherClient {
             .await
             .context("no response returned after setting up publisher stream")?
             .context("error getting response body")?;
-        let setup_res: StreamPubSetupResponse = self.inner.deserialize_response(res_bytes)?;
+        let setup_res: StreamPubSetupResponse = self.inner.deserialize_response_or_error(res.status(), res_bytes)?;
         if let Some(StreamPubSetupResponseResult::Err(err)) = setup_res.result {
             bail!(err.message);
         }

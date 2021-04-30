@@ -1,6 +1,7 @@
 //! Network server.
 
 mod metadata;
+mod pipeline;
 mod stream;
 
 use std::collections::HashMap;
@@ -13,7 +14,7 @@ use futures::stream::StreamExt;
 use http::Method;
 use prost::Message;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{BroadcastStream, UnboundedReceiverStream};
 
@@ -25,13 +26,14 @@ use crate::models::events::{Event, InitialState, PipelineCreated, StreamCreated}
 use crate::models::prelude::*;
 use crate::models::schema::{Pipeline, Stream};
 pub use crate::server::metadata::MetadataCache;
+use crate::server::pipeline::{PipelineCtl, PipelineSubCtlMsg};
 use crate::server::stream::StreamCtl;
 use crate::utils;
 
 /// An H2 channel (stream) created from an active HTTP2 connection.
-type H2Channel = (http::Request<h2::RecvStream>, h2::server::SendResponse<bytes::Bytes>);
+pub type H2Channel = (http::Request<h2::RecvStream>, h2::server::SendResponse<bytes::Bytes>);
 /// An H2 channel where both ends are streaming bidirectional data.
-type H2DataChannel = (h2::RecvStream, h2::SendStream<Bytes>);
+pub type H2DataChannel = (h2::RecvStream, h2::SendStream<Bytes>);
 
 /// Network server used to handle client requests.
 pub struct Server {
@@ -41,8 +43,10 @@ pub struct Server {
     db: Database,
     /// The system metadata cache.
     cache: Arc<MetadataCache>,
-    /// A map of communication channels to active stream controllers.
-    streams: HashMap<u64, mpsc::Sender<H2Channel>>,
+    /// A map active stream controllers to their communcation channel and offset signal.
+    streams: HashMap<u64, (mpsc::Sender<H2Channel>, watch::Receiver<u64>)>,
+    /// A map active pipeline controllers to their communcation channels.
+    pipelines: HashMap<u64, mpsc::Sender<PipelineSubCtlMsg>>,
 
     /// A channel used for triggering graceful shutdown.
     shutdown_tx: broadcast::Sender<()>,
@@ -64,6 +68,9 @@ pub struct Server {
     // A handle to the MetadataCtl.
     metadata_tx: mpsc::Sender<H2Channel>,
     metadata_ctl: JoinHandle<Result<()>>,
+
+    /// Handles to all spawned controllers.
+    handles: Vec<JoinHandle<Result<()>>>,
 
     /// A general purpose reusable bytes buffer, safe for concurrent use.
     buf: BytesMut,
@@ -95,6 +102,7 @@ impl Server {
                 db,
                 cache: cache.clone(),
                 streams: Default::default(),
+                pipelines: Default::default(),
                 shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
                 shutdown_tx,
                 events_tx,
@@ -104,6 +112,7 @@ impl Server {
                 channels_rx: UnboundedReceiverStream::new(channels_rx),
                 metadata_tx,
                 metadata_ctl,
+                handles: Vec::new(),
                 buf: BytesMut::with_capacity(5000),
             },
             cache,
@@ -130,7 +139,11 @@ impl Server {
         if let Err(err) = self.metadata_ctl.await {
             tracing::error!(error = ?err, "error shutting down metadata controller");
         }
-        // TODO: ensure all stream join handles are awaited as well.
+        for handle in self.handles.drain(..) {
+            if let Err(err) = handle.await {
+                tracing::error!(error = ?err, "error shutting spawned controller");
+            }
+        }
         tracing::debug!("network server shutdown");
         Ok(())
     }
@@ -186,13 +199,32 @@ impl Server {
                         tracing::debug!(ns, name, "handling new stream channel");
                         let stream_hash_id = utils::ns_name_hash_id(ns, name);
                         match self.streams.get(&stream_hash_id) {
-                            Some(stream_tx) => {
+                            Some((stream_tx, _)) => {
                                 tracing::debug!(ns, name, "sending channel to controller");
                                 let _ = stream_tx.send(req).await;
                                 return;
                             }
                             None => {
                                 tracing::debug!(ns, name, "stream controller not found");
+                                Err(AppError::ResourceNotFound.into())
+                            }
+                        }
+                    }
+                    _ => Err(AppError::ResourceNotFound.into()),
+                },
+                // Requests bound for a pipeline controller.
+                Some(proto::v1::URL_PIPELINE) => match (path.next(), path.next()) {
+                    (Some(ns), Some(name)) => {
+                        tracing::debug!(ns, name, "handling new pipeline channel");
+                        let pipeline_hash_id = utils::ns_name_hash_id(ns, name);
+                        match self.pipelines.get(&pipeline_hash_id) {
+                            Some(pipeline_tx) => {
+                                tracing::debug!(ns, name, "sending channel to controller");
+                                let _ = pipeline_tx.send(PipelineSubCtlMsg::Request(req)).await;
+                                return;
+                            }
+                            None => {
+                                tracing::debug!(ns, name, "pipeline controller not found");
                                 Err(AppError::ResourceNotFound.into())
                             }
                         }
@@ -278,13 +310,13 @@ impl Server {
             self.config.clone(),
             self.db.clone(),
             self.cache.clone(),
-            stream.clone(),
+            Arc::clone(stream),
             self.shutdown_tx.clone(),
             rx,
         )
         .await
         .context("error spawning stream controller");
-        let ctl = match stream_res {
+        let (ctl, offset_signal) = match stream_res {
             Ok(ctl) => ctl,
             Err(err) => {
                 tracing::error!(
@@ -297,14 +329,69 @@ impl Server {
                 return;
             }
         };
-        let _ctl_handle = ctl.spawn(); // TODO: push this join handle to a JoinAll which just ensures that they complete.
-        let _ = self.streams.insert(stream.hash_id(), tx);
+        self.handles.push(ctl.spawn());
+        let _ = self.streams.insert(stream.hash_id(), (tx, offset_signal));
     }
 
     /// Spawn a pipeline controller.
     #[tracing::instrument(level = "trace", skip(self, pipeline))]
     async fn spawn_pipeline_controller(&mut self, pipeline: &Arc<Pipeline>) {
-        tracing::info!(?pipeline, "spawning pipeline controller");
+        // Grab the source stream's offset channel.
+        let signal = match self.cache.get_stream(pipeline.namespace(), pipeline.input_stream.as_str()) {
+            Some(stream) => match self.streams.get(&stream.hash_id()) {
+                Some((_, signal)) => signal,
+                None => {
+                    tracing::error!(
+                        "input stream offset channel for pipeline {}/{} not found, this should never happen",
+                        pipeline.metadata.namespace,
+                        pipeline.metadata.name
+                    );
+                    let _ = self.shutdown_tx.send(());
+                    return;
+                }
+            },
+            None => {
+                tracing::error!(
+                    "input stream for pipeline {}/{} not found, this should never happen",
+                    pipeline.metadata.namespace,
+                    pipeline.metadata.name
+                );
+                let _ = self.shutdown_tx.send(());
+                return;
+            }
+        };
+
+        // Instantiate the pipeline controller.
+        let (tx, rx) = mpsc::channel(10_000);
+        let pipeline_res = PipelineCtl::new(
+            self.config.clone(),
+            self.db.clone(),
+            self.cache.clone(),
+            Arc::clone(pipeline),
+            signal.clone(),
+            self.shutdown_tx.clone(),
+            tx.clone(),
+            rx,
+        )
+        .await
+        .context("error spawning pipeline controller");
+
+        // Handle error cases and spawn the controller.
+        let ctl = match pipeline_res {
+            Ok(ctl) => ctl,
+            Err(err) => {
+                tracing::error!(
+                    error = ?err,
+                    "error spawning pipeline controller for {}/{}",
+                    pipeline.metadata.namespace,
+                    pipeline.metadata.name
+                );
+                let _ = self.shutdown_tx.send(());
+                return;
+            }
+        };
+        self.handles.push(ctl.spawn());
+        let _ = self.pipelines.insert(pipeline.hash_id(), tx);
     }
 }
 
@@ -322,7 +409,7 @@ where
         .unwrap_or_else(|| (http::StatusCode::INTERNAL_SERVER_ERROR, "internal server error".into()));
     let resp_res = http::Response::builder()
         .status(status)
-        .header(http::header::CONTENT_TYPE, utils::HEADER_OCTET_STREAM)
+        .header(http::header::CONTENT_TYPE, utils::HEADER_APP_PROTO)
         .body(());
     let resp = match resp_res {
         Ok(resp) => resp,
@@ -339,7 +426,7 @@ where
 
 /// Send a final response over the given H2 channel.
 ///
-/// If a body is given, it will be serialized into the given bytes buf. If not body is given, then
+/// If a body is given, it will be serialized into the given bytes buf. If no body is given, then
 /// a header-only response will be returned with no body.
 #[tracing::instrument(level = "trace", skip(req, buf, headers_res, body))]
 fn send_response<M: Message>(req: &mut H2Channel, mut buf: BytesMut, headers_res: http::Response<()>, body: Option<M>) {
@@ -377,6 +464,19 @@ fn must_get_token<T>(req: &http::Request<T>, config: &Config) -> Result<auth::To
         .ok_or(AppError::Unauthorized)
         .map(|(_, val)| val.clone())?;
     auth::TokenCredentials::from_auth_header(header_val, config)
+}
+
+/// Extract the given request's basic auth, else fail.
+#[tracing::instrument(level = "trace", skip(req))]
+fn must_get_user<'a, T>(req: &'a http::Request<T>) -> Result<auth::UserCredentials> {
+    // Extract the authorization header.
+    let header_val = req
+        .headers()
+        .iter()
+        .find(|(name, _)| name.as_str() == "authorization")
+        .ok_or(AppError::Unauthorized)
+        .map(|(_, val)| val)?;
+    auth::UserCredentials::from_auth_header(header_val)
 }
 
 /// Require that the given request has the given method, else error

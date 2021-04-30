@@ -6,34 +6,33 @@ use prost::Message;
 use crate::error::AppError;
 
 pub const HEADER_OCTET_STREAM: &str = "application/octet-stream";
+pub const HEADER_APP_PROTO: &str = "application/protobuf";
 
 pub const HIERARCHY_TOKEN: &str = ".";
 
 /// Encode a stream entry key using the given prefix & offset.
-pub fn encode_entry_key(prefix: &[u8; 6], offset: u64) -> [u8; 14] {
-    let mut key = [0u8; 14];
+pub fn encode_3_byte_prefix(prefix: &[u8; 3], offset: u64) -> [u8; 12] {
+    let mut key = [0u8; 12];
     match prefix {
-        [b0, b1, b2, b3, b4, b5] => {
+        [b0, b1, b2] => {
             key[0] = *b0;
             key[1] = *b1;
             key[2] = *b2;
-            key[3] = *b3;
-            key[4] = *b4;
-            key[5] = *b5;
         }
     }
     match encode_u64(offset) {
-        [b6, b7, b8, b9, b10, b11, b12, b13] => {
+        [b3, b4, b5, b6, b7, b8, b9, b10] => {
+            key[3] = b3;
+            key[4] = b4;
+            key[5] = b5;
             key[6] = b6;
             key[7] = b7;
             key[8] = b8;
             key[9] = b9;
             key[10] = b10;
-            key[11] = b11;
-            key[12] = b12;
-            key[13] = b13;
         }
     }
+    key[11] = b'/';
     key
 }
 

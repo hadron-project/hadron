@@ -10,6 +10,8 @@ use tokio::sync::RwLock;
 
 use crate::config::Config;
 use crate::error::{ShutdownError, ShutdownResult};
+use crate::models::prelude::*;
+use crate::models::schema::{Pipeline, Stream};
 
 pub type Tree = sled::Tree;
 
@@ -25,6 +27,8 @@ const DATABASE_DIR: &str = "db"; // <dataDir>/db
 const NODE_ID_FILE_NAME: &str = "node_id"; // <dataDir>/node_id
 /// The DB tree prefix used for streams.
 const TREE_STREAM_PREFIX: &str = "streams";
+/// The DB tree prefix used for pipelines.
+const TREE_PIPELINE_PREFIX: &str = "pipelines";
 /// The DB tree name of the metadata tree.
 const TREE_METADATA: &str = "metadata";
 
@@ -136,6 +140,36 @@ impl Database {
             prefix = TREE_STREAM_PREFIX,
             namespace = namespace,
             name = name
+        );
+        let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
+        let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
+            .await
+            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", &name, err))))?;
+        Ok(tree)
+    }
+
+    /// Get a handle to the DB tree for a pipeline partition.
+    pub async fn get_pipeline_tree(&self, pipeline: &Pipeline) -> ShutdownResult<Tree> {
+        let name = format!(
+            "{prefix}/{namespace}/{name}",
+            prefix = TREE_PIPELINE_PREFIX,
+            namespace = pipeline.namespace(),
+            name = pipeline.name()
+        );
+        let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
+        let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
+            .await
+            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", &name, err))))?;
+        Ok(tree)
+    }
+
+    /// Get a handle to the DB tree for a pipeline partition's metadata.
+    pub async fn get_pipeline_tree_metadata(&self, pipeline: &Pipeline) -> ShutdownResult<Tree> {
+        let name = format!(
+            "{prefix}/{namespace}/{name}/metadata",
+            prefix = TREE_PIPELINE_PREFIX,
+            namespace = pipeline.namespace(),
+            name = pipeline.name()
         );
         let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
         let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })

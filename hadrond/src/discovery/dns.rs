@@ -11,7 +11,7 @@ use crate::discovery::PeerSrv;
 
 const DNS_SYS_CONF_ERR: &str = "failed to read system DNS config; on *nix systems, ensure your resolv.conf is present and properly formed";
 
-/// An actor used for DNS based peer discovery.
+/// A controller used for DNS-based peer discovery.
 ///
 /// This discovery system will check for new peers on a regular interval, emitting discovered
 /// peers on a regular interval. This backend is dual-stack aware, and works for IPv4 & IPv6.

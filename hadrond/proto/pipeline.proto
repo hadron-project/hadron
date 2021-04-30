@@ -1,0 +1,27 @@
+// Storage protos for pipeline data.
+syntax = "proto2";
+package pipeline;
+
+// A pipeline instance.
+//
+// Pipeline instances are created when the source stream on the same partition receives a new
+// record which matches the pipeline's trigger criteria.
+message PipelineInstance {
+    // The ID of this object, which always corresponds to the offset of the source stream from
+    // which this instance was created.
+    required uint64 id = 1;
+    // The ID of the parent pipeline object.
+    required uint64 pipeline_id = 2;
+}
+
+// A pipeline stage output record.
+message PipelineStageOutput {
+    // The ID of the pipeline instance with which this output is associated.
+    required uint64 id = 1;
+    // The ID of the parent pipeline object.
+    required uint64 pipeline_id = 2;
+    // The name of the pipeline stage to which this output corresponds.
+    required string stage = 3;
+    // The data payload of the stage output.
+    required bytes data = 4;
+}

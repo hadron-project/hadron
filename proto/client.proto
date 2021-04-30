@@ -171,3 +171,54 @@ message StreamSubDeliveryResponse {
         Error nack = 2;
     }
 }
+
+//////////////////////////////////////////////////////////////////////////////
+// Pipeline Sub //////////////////////////////////////////////////////////////
+
+// A request to setup a pipeline stage subscriber channel.
+message PipelineSubSetupRequest {
+    // The name of the pipeline stage to consume.
+    string stage_name = 1;
+}
+
+// A response to a pipeline stage subscriber setup request.
+message PipelineSubSetupResponse {
+    oneof result {
+        Empty ok = 1;
+        Error err = 2;
+    }
+}
+
+// A payload of pipeline stage inputs for a particular pipeline stage.
+message PipelineSubDelivery {
+    // The name of the pipeline stage to which this delivery corresponds.
+    string stage = 1;
+    // The source stream offset corresponding to this pipeline instance.
+    uint64 offset = 2;
+    // A mapping of pipeline stage inputs based on the definition of this pipeline stage.
+    //
+    // Every key will be the name of the corresponding pipeline stage output which has been declared
+    // as an input dependency for this stage, or the `root_event` if declared as a dependency for
+    // this stage.
+    map<string,bytes> inputs = 3;
+}
+
+// A subscriber response to a subscription delivery, either `ack`ing or `nack`ing the delivery.
+message PipelineSubDeliveryResponse {
+    oneof result {
+        // An acknowledgement of successful processing of this stage and its inputs, along with the
+        // require stage output of this stage.
+        PipelineStageOutput ack = 1;
+        // An error has taken place during subscriber processing, and the delivered batch was not
+        // successfully processed.
+        //
+        // The given error message will be recorded by the server for observability.
+        Error nack = 2;
+    }
+}
+
+// The output of a successful pipeline stage consumption.
+message PipelineStageOutput {
+    // The base output of the corresponding pipeline stage.
+    bytes output = 1;
+}

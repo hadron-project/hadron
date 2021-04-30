@@ -54,10 +54,6 @@ stages:
   # This pipeline stage will receive a copy of the original event, and will then proceed to deploy
   # a new instance as defined in the event, publishing an event to the `deployer` stream when finished.
   - name: deploy-service
-    outputs:
-      - name: deploy-complete
-        stream: deployer
-        namespace: example
 
   # Once the deployer has finished its work, we will need to update our billing system. For this
   # stage, we receive a copy of the original event which triggered this pipeline, as well as the
@@ -67,11 +63,8 @@ stages:
   - name: update-billing
     dependencies:
       - root_event
-      - deploy-service.deploy-complete
-    outputs:
-      - name: billing-updated
-        stream: billing
-        namespace: example
+      - deploy-service
+
   # Once the deployer has finished its work, we will need to update our monitoring system. For this
   # stage, we receive a copy of the original event which triggered this pipeline, as well as the
   # output `deploy-service.deploy-complete` from the `deploy-service` stage.
@@ -80,27 +73,19 @@ stages:
   - name: update-monitoring
     dependencies:
       - root_event
-      - deploy-service.deploy-complete
-    outputs:
-      - name: monitoring-updated
-        stream: monitoring
-        namespace: example
+      - deploy-service
 
   # Once all of the other microservices have finished their work — I.E., once all of the above
   # stages are complete — we perform one final cleanup stage which would logically be handled
   # by our services microservice. Conceptually this stage could update the state of the service
   # to indicate that it has been successfully provisioned.
   #
-  # The sky is the limit for pipeliens like this. We could add a new stage for sending a
-  # notification to the user so that they know their service is ready. As business requirements
-  # evolve, new stages can be added.
+  # The sky is the limit for pipelines like this. We could add a new stage for sending a
+  # notification to the user so that they know their service is ready, etc. As business
+  # requirements evolve, new stages can be added.
   - name: cleanup
     dependencies:
       - root_event
-      - deploy-service.deploy-complete
-      - update-billing.billing-updated
-      - update-monitoring.monitoring-updated
-    outputs:
-      - name: new-service-deployed
-        stream: services
-        namespace: example
+      - deploy-service
+      - update-billing
+      - update-monitoring
