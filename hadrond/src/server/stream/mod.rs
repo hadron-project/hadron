@@ -10,7 +10,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use prost::Message;
 use proto::v1::{StreamPubSetupResponse, StreamPubSetupResponseResult, URL_STREAM_PUBLISH, URL_STREAM_SUBSCRIBE};
 use sled::Tree;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
@@ -51,6 +51,8 @@ pub struct StreamCtl {
     /// A channel of requests for stream subscription.
     subs_tx: mpsc::Sender<StreamSubCtlMsg>,
 
+    /// A channel used for communicating the stream's `next_offset` value.
+    offset_signal: watch::Sender<u64>,
     /// A channel used for triggering graceful shutdown.
     shutdown_tx: broadcast::Sender<()>,
     /// A channel used for triggering graceful shutdown.
@@ -70,13 +72,14 @@ impl StreamCtl {
     pub async fn new(
         config: Arc<Config>, db: Database, cache: Arc<MetadataCache>, stream: Arc<Stream>, shutdown_tx: broadcast::Sender<()>,
         requests: mpsc::Receiver<H2Channel>,
-    ) -> Result<Self> {
+    ) -> Result<(Self, watch::Receiver<u64>)> {
         // Recover stream state.
         let tree = db.get_stream_tree(&stream.metadata.namespace, &stream.metadata.name).await?;
         let tree_metadata = db.get_stream_tree_metadata(&stream.metadata.namespace, &stream.metadata.name).await?;
         let (next_offset, subs) = recover_stream_state(&tree, &tree_metadata).await?;
 
         // Spawn the subscriber controller.
+        let (offset_signal, offset_signal_rx) = watch::channel(next_offset);
         let (subs_tx, subs_rx) = mpsc::channel(100);
         let sub_ctl = subscriber::StreamSubCtl::new(
             config.clone(),
@@ -88,27 +91,32 @@ impl StreamCtl {
             shutdown_tx.clone(),
             subs_tx.clone(),
             subs_rx,
+            offset_signal_rx.clone(),
             subs,
             next_offset,
         )
         .spawn();
 
-        Ok(Self {
-            config,
-            db,
-            tree,
-            tree_metadata,
-            cache,
-            stream,
-            requests: ReceiverStream::new(requests),
-            publishers: FuturesUnordered::new(),
-            subs_tx,
-            shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
-            shutdown_tx,
-            sub_ctl,
-            buf: BytesMut::with_capacity(5000),
-            next_offset,
-        })
+        Ok((
+            Self {
+                config,
+                db,
+                tree,
+                tree_metadata,
+                cache,
+                stream,
+                requests: ReceiverStream::new(requests),
+                publishers: FuturesUnordered::new(),
+                subs_tx,
+                offset_signal,
+                shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
+                shutdown_tx,
+                sub_ctl,
+                buf: BytesMut::with_capacity(5000),
+                next_offset,
+            },
+            offset_signal_rx,
+        ))
     }
 
     pub fn spawn(self) -> JoinHandle<Result<()>> {
@@ -181,7 +189,8 @@ async fn recover_stream_state(stream_tree: &Tree, metadata_tree: &Tree) -> Resul
             .map(|(key, _val)| utils::decode_u64(&key).context("error decoding next offset value from storage"))
             .transpose()?
             .map(|val| val + 1) // We need to know the next offset, not the last written.
-            .unwrap_or(0);
+            // Always start at `1`, not `0`, as this makes subscriber initialization more simple.
+            .unwrap_or(1);
 
         // Fetch all stream subscriber info.
         let mut subs = HashMap::new();

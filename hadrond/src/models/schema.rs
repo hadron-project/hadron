@@ -158,7 +158,8 @@ impl Pipeline {
         }
         // Build a set of all stage names, ensuring the names are valid and no dups.
         let mut has_entrypoint = false;
-        let stage_to_outputs = self.stages.iter().try_fold(HashMap::new(), |mut acc, stage| {
+        let mut stage_names: Vec<&str> = vec![];
+        for stage in self.stages.iter() {
             // Validate stage name.
             ensure!(
                 RE_BASIC_NAME.is_match(&stage.name),
@@ -170,7 +171,7 @@ impl Pipeline {
                 ))
             );
             // Ensure stage name is not duplicated.
-            let is_duplicate = acc.contains_key(stage.name.as_str());
+            let is_duplicate = stage_names.contains(&stage.name.as_str());
             ensure!(
                 !is_duplicate,
                 AppError::InvalidInput(format!(
@@ -184,9 +185,8 @@ impl Pipeline {
             if is_implicit_entry || is_explicity_entry {
                 has_entrypoint = true;
             }
-            acc.insert(stage.name.as_str(), &stage.outputs);
-            Ok(acc)
-        })?;
+            stage_names.push(&stage.name);
+        }
         ensure!(
             has_entrypoint,
             AppError::InvalidInput(format!(
@@ -198,7 +198,7 @@ impl Pipeline {
         // Validate the remainder of the contents of each stage.
         let mut dedup_buf: HashSet<&String> = HashSet::new(); // Single alloc for dedup of string values.
         for stage in self.stages.iter() {
-            stage.validate(&self, &stage_to_outputs, &mut dedup_buf)?;
+            stage.validate(&self, &stage_names, &mut dedup_buf)?;
             dedup_buf.clear();
         }
         Ok(())
@@ -207,14 +207,12 @@ impl Pipeline {
 
 impl PipelineStage {
     /// Validate the content of this stage.
-    fn validate<'a, 'b>(
-        &'a self, pipeline: &'b Pipeline, stages: &'b HashMap<&'b str, &'b Vec<PipelineStageOutput>>, dedup_buf: &'b mut HashSet<&'a String>,
-    ) -> Result<()> {
+    fn validate<'a, 'b>(&'a self, pipeline: &'b Pipeline, stages: &'b [&'b str], dedup_buf: &'b mut HashSet<&'a String>) -> Result<()> {
         // For every `after` constraint, ensure it references an actual stage of this pipeline.
         // Also ensure there are no dups. This also ensures the name is valid.
         for after in self.after.iter() {
             ensure!(
-                stages.contains_key(after.as_str()),
+                stages.contains(&after.as_str()),
                 AppError::InvalidInput(format!(
                     "pipeline `{}` stage `{}` after constraint `{}` references a stage which does not exist in this pipeline",
                     &pipeline.metadata.name, &self.name, &after,
@@ -250,71 +248,18 @@ impl PipelineStage {
             if dep == ROOT_EVENT_TOKEN {
                 continue;
             }
-            let mut split = dep.splitn(2, '.');
-            let (stage, output) = match (split.next(), split.next()) {
-                (Some(stage), Some(output)) => (stage, output),
-                _ => bail!(AppError::InvalidInput(format!(
-                    "pipeline `{}` stage `{}` dependency `{}` is malformed, must follow the pattern of `{{stage}}.{{output}}`",
-                    &pipeline.metadata.name, &self.name, &dep
-                ))),
-            };
-            let outputs = stages.get(&stage).ok_or_else(|| {
-                AppError::InvalidInput(format!(
-                    "pipeline `{}` stage `{}` dependency `{}` references a stage `{}` which does not exist in this pipeline",
-                    &pipeline.metadata.name, &self.name, &dep, &stage,
-                ))
-            })?;
             ensure!(
-                !outputs.is_empty(),
+                stages.iter().any(|stage| stage == dep),
                 AppError::InvalidInput(format!(
-                    "pipeline `{}` stage `{}` dependency `{}` references a stage `{}` which has no declared outputs",
-                    &pipeline.metadata.name, &self.name, &dep, &stage,
-                )),
-            );
-            ensure!(
-                outputs.iter().any(|out| out.name == output),
-                AppError::InvalidInput(format!(
-                    "pipeline `{}` stage `{}` dependency `{}` references output `{}` which does not exist for stage `{}`",
-                    &pipeline.metadata.name, &self.name, &dep, &output, &stage,
-                ))
-            );
-            ensure!(
-                stage != self.name,
-                AppError::InvalidInput(format!(
-                    "pipeline `{}` stage `{}` dependency `{}` can not reference its own stage",
+                    "pipeline `{}` stage `{}` dependency `{}` is a reference to a stage which does not exist",
                     &pipeline.metadata.name, &self.name, &dep,
                 ))
             );
-        }
-        dedup_buf.clear();
-        // For every output, ensure the output names & stream names are valid.
-        for out in self.outputs.iter() {
             ensure!(
-                dedup_buf.insert(&out.name),
+                dep != &self.name,
                 AppError::InvalidInput(format!(
-                    "pipeline `{}` stage `{}` output `{}` has a duplicate name and must be changed or removed",
-                    &pipeline.metadata.name, &self.name, &out.name
-                ))
-            );
-            ensure!(
-                RE_BASIC_NAME.is_match(&out.name),
-                AppError::InvalidInput(format!(
-                    "pipeline `{}` stage `{}` output `{}` name is invalid, must match the pattern `{}`",
-                    &pipeline.metadata.name,
-                    &self.name,
-                    &out.name,
-                    RE_BASIC_NAME.as_str(),
-                ))
-            );
-            ensure!(
-                RE_NAME.is_match(&out.stream),
-                AppError::InvalidInput(format!(
-                    "pipeline `{}` stage `{}` output `{}` stream name `{}` is invalid, must match the pattern `{}`",
-                    &pipeline.metadata.name,
-                    &self.name,
-                    &out.name,
-                    &out.stream,
-                    RE_NAME.as_str(),
+                    "pipeline `{}` stage `{}` dependency `{}` can not reference its own stage",
+                    &pipeline.metadata.name, &self.name, &dep,
                 ))
             );
         }

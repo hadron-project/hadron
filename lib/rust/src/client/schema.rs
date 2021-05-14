@@ -23,8 +23,6 @@ pub struct SchemaClient {
 
 impl SchemaClient {
     /// Run a managed schema update on the cluster.
-    ///
-    /// TODO: docs
     #[tracing::instrument(level = "debug", skip(self, schema, branch, timestamp))]
     pub async fn update_schema(&self, schema: &str, branch: &str, timestamp: i64) -> Result<SchemaUpdateResponse> {
         // Build up request.
@@ -46,7 +44,7 @@ impl SchemaClient {
         let (rx, mut tx) = chan.send_request(req, false).context("error sending request")?;
         tx.send_data(body.freeze(), true).context("error sending request body")?;
         let res = rx.await.context("error during request")?;
-        tracing::info!(res = ?res, "response from server");
+        tracing::info!(status = ?res.status(), headers = ?res.headers(), "response from server");
 
         // Check initial headers response & then proceed to stream in body of response.
         let status = res.status();
@@ -60,8 +58,6 @@ impl SchemaClient {
     }
 
     /// Run a one-off schema update on the cluster.
-    ///
-    /// TODO: docs
     #[tracing::instrument(level = "debug", skip(self, schema))]
     pub async fn update_schema_oneoff(&self, schema: &str) -> Result<SchemaUpdateResponse> {
         // Build up request.
@@ -79,7 +75,7 @@ impl SchemaClient {
         let (rx, mut tx) = chan.send_request(req, false).context("error sending request")?;
         tx.send_data(body.freeze(), true).context("error sending request body")?;
         let res = rx.await.context("error during request")?;
-        tracing::info!(res = ?res, "response from server");
+        tracing::info!(status = ?res.status(), headers = ?res.headers(), "response from server");
 
         // Check initial headers response & then proceed to stream in body of response.
         let status = res.status();

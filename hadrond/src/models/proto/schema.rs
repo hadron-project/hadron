@@ -108,6 +108,10 @@ pub struct Pipeline {
     /// The stages of this pipeline.
     #[prost(message, repeated, tag="6")]
     pub stages: ::prost::alloc::vec::Vec<PipelineStage>,
+    /// The maximum number of pipeline instances which may be executed in parallel per partition.
+    #[prost(uint32, required, tag="7", default="50")]
+    #[serde(default = "super::pipeline_max_parallel_default")]
+    pub max_parallel: u32,
 }
 /// A single pipeline stage.
 #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -125,25 +129,6 @@ pub struct PipelineStage {
     #[prost(string, repeated, tag="3")]
     #[serde(default)]
     pub dependencies: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// All outputs which this stage must produce in order to complete successfully.
-    #[prost(message, repeated, tag="4")]
-    #[serde(default)]
-    pub outputs: ::prost::alloc::vec::Vec<PipelineStageOutput>,
-}
-/// A pipeline stage output definition.
-#[derive(::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PipelineStageOutput {
-    /// The name of this pipeline stage output, which is unique per pipeline stage.
-    #[prost(string, required, tag="1")]
-    pub name: ::prost::alloc::string::String,
-    /// The name of the stream to which this output event is to be published.
-    #[prost(string, required, tag="2")]
-    pub stream: ::prost::alloc::string::String,
-    /// The namespace of the output stream.
-    #[prost(string, required, tag="3")]
-    pub namespace: ::prost::alloc::string::String,
 }
 /// A RPC endpoint definition.
 #[derive(::serde::Serialize, ::serde::Deserialize)]

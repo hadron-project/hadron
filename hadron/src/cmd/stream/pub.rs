@@ -8,7 +8,7 @@ use crate::Hadron;
 /// Publish data to a stream.
 #[derive(StructOpt)]
 #[structopt(name = "pub")]
-pub struct Publish {
+pub struct Pub {
     /// The namespace/stream to which data should be published.
     #[structopt(short, long)]
     stream: String,
@@ -19,7 +19,7 @@ pub struct Publish {
     data: String,
 }
 
-impl Publish {
+impl Pub {
     pub async fn run(&self, base: &Hadron) -> Result<()> {
         // Destructure the target namespace & stream.
         let mut splits = self.stream.splitn(2, '/');

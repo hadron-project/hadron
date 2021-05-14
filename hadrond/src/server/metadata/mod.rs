@@ -15,11 +15,12 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
+use crate::auth::UserRole;
 use crate::config::Config;
 use crate::database::Database;
 use crate::error::AppError;
 use crate::models::{events, schema};
-use crate::server::{must_get_token, require_method, send_error, send_response, H2Channel};
+use crate::server::{must_get_token, must_get_user, require_method, send_error, send_response, H2Channel};
 use crate::utils;
 
 pub use cache::MetadataCache;
@@ -115,6 +116,7 @@ impl MetadataCtl {
                 )
                 .await
             }
+            proto::v1::ENDPOINT_METADATA_AUTH_CREATE_TOKEN => handle_create_token(&self.config, self.cache.clone(), &mut req).await,
             _ => Err(AppError::ResourceNotFound.into()),
         };
         if let Err(err) = res {
@@ -123,8 +125,35 @@ impl MetadataCtl {
     }
 }
 
+/// Handle a request to create a new auth token.
+///
+/// This endpoint can only be called by a user, and the calling user must be either a
+/// root or admin user.
+///
+/// A successful token creation will result in a new token being created and stored on disk — only
+/// the token ID and its permissions model are stored on disk.
+#[tracing::instrument(level = "trace", skip(config, cache, req))]
+async fn handle_create_token(config: &Config, cache: Arc<MetadataCache>, req: &mut H2Channel) -> Result<()> {
+    let (ref mut req_chan, ref mut res_chan) = req;
+    require_method(&req_chan, Method::POST)?;
+
+    // Extract the calling user's info and then fetch their data from metadata cache.
+    let creds = must_get_user(&req_chan)?;
+    let user = creds.username()?;
+    let pass = creds.password()?;
+    let user = cache.must_get_user(user, pass)?;
+    if !matches!(user.role(), UserRole::Root | UserRole::Admin) {
+        bail!(AppError::Unauthorized);
+    }
+
+    // Decode the given request body containing the token claims to be assigned to the new token.
+    // TODO: CRITICAL PATH: finish up token creation.
+
+    Ok(())
+}
+
 /// Handle a request to get the cluster's metadata.
-#[tracing::instrument(level = "trace", skip(req))]
+#[tracing::instrument(level = "trace", skip(config, req))]
 async fn handle_metadata_query(config: &Config, req: &mut H2Channel) -> Result<()> {
     let (ref mut req_chan, ref mut res_chan) = req;
     require_method(&req_chan, Method::GET)?;
@@ -144,7 +173,7 @@ async fn handle_metadata_query(config: &Config, req: &mut H2Channel) -> Result<(
 }
 
 /// Handle a request to update the clsuter's schema.
-#[tracing::instrument(level = "trace", skip(db, config, cache, events_tx, req, buf))]
+#[tracing::instrument(level = "trace", skip(db, tree, config, cache, events_tx, req, buf))]
 async fn handle_metadata_update_schema(
     db: Database, tree: Tree, config: &Config, cache: Arc<MetadataCache>, events_tx: &broadcast::Sender<Arc<events::Event>>, req: &mut H2Channel,
     buf: BytesMut,

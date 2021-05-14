@@ -129,7 +129,7 @@ impl StreamCtl {
 
         // Respond to publisher.
         tracing::debug!(self.next_offset, "finished writing data to stream");
-        let _ = self.subs_tx.send(StreamSubCtlMsg::NextOffsetUpdated(self.next_offset)).await;
+        let _ = self.offset_signal.send(self.next_offset);
         Ok(self.next_offset - 1)
     }
 }

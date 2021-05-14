@@ -79,6 +79,9 @@ message Pipeline {
     repeated string triggers = 5;
     // The stages of this pipeline.
     repeated PipelineStage stages = 6;
+
+    // The maximum number of pipeline instances which may be executed in parallel per partition.
+    required uint32 max_parallel = 7 [default = 50];
 }
 
 // A single pipeline stage.
@@ -89,18 +92,6 @@ message PipelineStage {
     repeated string after = 2;
     // All inputs which this stage depends upon in order to be started.
     repeated string dependencies = 3;
-    // All outputs which this stage must produce in order to complete successfully.
-    repeated PipelineStageOutput outputs = 4;
-}
-
-// A pipeline stage output definition.
-message PipelineStageOutput {
-    // The name of this pipeline stage output, which is unique per pipeline stage.
-    required string name = 1;
-    // The name of the stream to which this output event is to be published.
-    required string stream = 2;
-    // The namespace of the output stream.
-    required string namespace = 3;
 }
 
 // A RPC endpoint definition.

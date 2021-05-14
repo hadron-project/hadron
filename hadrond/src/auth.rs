@@ -4,14 +4,65 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 use crate::error::AppError;
-use crate::models::auth::{User, UserRole};
+pub use crate::models::auth::{User, UserRole};
 use crate::utils;
 
+/// The authorization header basic prefix.
+const BASIC_PREFIX: &str = "basic ";
 /// The authorization header bearer prefix.
 const BEARER_PREFIX: &str = "bearer ";
 
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////
+pub struct UserCredentials(String);
+
+impl UserCredentials {
+    /// Extract a user name & PW hash from the given header.
+    pub fn from_auth_header(header: &http::HeaderValue) -> Result<Self> {
+        let header_str = header
+            .to_str()
+            .map_err(|_| AppError::InvalidCredentials("must be a valid string value".into()))?;
+
+        // Split the header on the basic auth prefix & ensure the leading segment is empty.
+        let mut splits = header_str.splitn(2, BASIC_PREFIX);
+        ensure!(
+            splits.next() == Some(""),
+            AppError::InvalidCredentials("authorization header value must begin with 'basic '".into()),
+        );
+
+        // Decode the credentials value.
+        let datab64 = match splits.next() {
+            Some(datab64) if !datab64.is_empty() => datab64,
+            _ => bail!(AppError::InvalidCredentials("no basic auth credentials detected in header".into())),
+        };
+        let creds = match base64::decode(&datab64) {
+            Ok(creds_bytes) => match String::from_utf8(creds_bytes) {
+                Ok(creds) => creds,
+                Err(_) => bail!(AppError::InvalidCredentials(
+                    "decoded basic auth credentials were not a valid string value".into()
+                )),
+            },
+            Err(_) => bail!(AppError::InvalidCredentials("could not base64 decode basic auth credentials".into())),
+        };
+        Ok(UserCredentials(creds))
+    }
+
+    /// Extract the username of the credentials, else err if they are malformed.
+    pub fn username(&self) -> Result<&str> {
+        Ok(self
+            .0
+            .splitn(2, ':')
+            .next()
+            .ok_or_else(|| AppError::InvalidCredentials("basic auth credentials were malformed, could not extract username".into()))?)
+    }
+
+    /// Extract the password of the credentials, else err if they are malformed.
+    pub fn password(&self) -> Result<&str> {
+        let mut segs = self.0.splitn(2, ':');
+        segs.next();
+        Ok(segs
+            .next()
+            .ok_or_else(|| AppError::InvalidCredentials("basic auth credentials were malformed, could not extract password".into()))?)
+    }
+}
 
 /// A token credenitals set, containing the ID of the token and other associated data.
 ///
@@ -29,19 +80,19 @@ impl TokenCredentials {
     pub fn from_auth_header(header: http::HeaderValue, _config: &Config) -> Result<Self> {
         let header_str = header
             .to_str()
-            .map_err(|_| AppError::MalformedCredentials("must be a valid string value".into()))?;
+            .map_err(|_| AppError::InvalidCredentials("must be a valid string value".into()))?;
 
         // Split the header on the bearer prefix & ensure the leading segment is empty.
         let mut splits = header_str.splitn(2, BEARER_PREFIX);
         ensure!(
             splits.next() == Some(""),
-            AppError::MalformedCredentials("authorization header value must begin with 'bearer '".into()),
+            AppError::InvalidCredentials("authorization header value must begin with 'bearer '".into()),
         );
 
         // Check the final segment and ensure we have a populated value.
         let token = match splits.next() {
             Some(token) if !token.is_empty() => token.to_string(),
-            _ => bail!(AppError::MalformedCredentials("no token detected in header".into())),
+            _ => bail!(AppError::InvalidCredentials("no token detected in header".into())),
         };
         tracing::trace!(%token, "auth token detected");
         // let claims: Claims = jsonwebtoken::decode(token.as_ref()) // TODO: finish this up and remove stubbed claims below.

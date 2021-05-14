@@ -15,9 +15,12 @@ pub enum AppError {
     /// The caller's authorization token is unknown.
     #[error("the given authorization token is unknown")]
     UnknownToken,
-    /// The caller's credentials are malformed.
-    #[error("the given authorization credentials are malformed: {0}")]
-    MalformedCredentials(String),
+    /// The caller's authorization username is unknown.
+    #[error("the given authorization username is unknown")]
+    UnknownUser,
+    /// The caller's credentials are malformed or invalid.
+    #[error("the given authorization credentials are malformed or invalid: {0}")]
+    InvalidCredentials(String),
     /// The given input was invalid.
     #[error("validation error: {0}")]
     InvalidInput(String),
@@ -37,8 +40,8 @@ impl AppError {
     pub fn status_and_message(&self) -> (http::StatusCode, String) {
         let status = match self {
             AppError::Unauthorized => http::StatusCode::FORBIDDEN,
-            AppError::UnknownToken => http::StatusCode::UNAUTHORIZED,
-            AppError::MalformedCredentials(_) => http::StatusCode::BAD_REQUEST,
+            AppError::UnknownToken | AppError::UnknownUser => http::StatusCode::UNAUTHORIZED,
+            AppError::InvalidCredentials(_) => http::StatusCode::UNAUTHORIZED,
             AppError::InvalidInput(_) => http::StatusCode::BAD_REQUEST,
             AppError::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
             AppError::ResourceNotFound => http::StatusCode::NOT_FOUND,

@@ -1,3 +1,3 @@
-pub mod r#pub;
+pub mod pipeline;
 pub mod schema;
-pub mod sub;
+pub mod stream;

@@ -1,5 +1,6 @@
 //! The core Hadron client.
 
+mod pipeline;
 mod publisher;
 mod schema;
 mod subscriber;
@@ -18,11 +19,11 @@ use proto::v1;
 use tokio::net::TcpStream;
 use tokio::sync::{watch, RwLock};
 
+use crate::common::{H2Channel, H2DataChannel};
+pub use pipeline::PipelineSubscription;
 pub use subscriber::{SubscriberConfig, Subscription, SubscriptionStartingPoint};
 
 pub(crate) type ConnectionMap = Arc<RwLock<HashMap<Arc<String>, Connection>>>;
-pub(crate) type H2DataChannel = (h2::RecvStream, h2::SendStream<Bytes>);
-pub(crate) type H2Channel = SendRequest<Bytes>;
 
 /// A client for communicating with a Hadron cluster.
 ///
@@ -149,12 +150,6 @@ impl Client {
         h2.ready().await.context("error testing H2 connection to hadron server")
     }
 
-    /// Deserialize the given response body as a concrete type
-    #[tracing::instrument(level = "debug", skip(self, buf))]
-    pub(crate) fn deserialize_response<M: Message + Default>(&self, buf: Bytes) -> Result<M> {
-        M::decode(buf.as_ref()).context("error decoding response body")
-    }
-
     /// Deserialize the given response body as a concrete type, or an error depending
     /// on the status code.
     #[tracing::instrument(level = "debug", skip(self, buf))]
@@ -236,7 +231,7 @@ async fn establish_h2_connection_with_backoff(target: Arc<String>) -> Result<H2C
         tracing::debug!(node = %&target, "establishing TCP connection");
         // At the beginning of each iteration, we check the metadata stream to see if the target
         // still exists. If not, we refuse to reconnect, unless it is the original node of the client.
-        // TODO: impl this once we have the metadata system in place.
+        // FUTURE[metadata]: impl this once we have the metadata system in place.
 
         // Establish TCP connection.
         let tcp_res = TcpStream::connect(target.as_str()).await;

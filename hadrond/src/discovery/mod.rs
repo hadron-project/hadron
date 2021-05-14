@@ -1,13 +1,8 @@
-//! Peer discovery actor abstraction.
+//! Peer discovery.
 //!
-//! This module provides an abstraction over the peer discovery system. The interface here is
-//! quite simple. All possible discovery actors implement the `Discovery` trait. Based on the
-//! runtime configuration for this system, the appropriate discovery actor will be created using
-//! this modules `new_discovery_instance` function. The returned object should be used for
-//! registering a listener to observe peer discovery changes.
-//!
-//! The discovery actors do not expect any input from other actors. Other actors which need to
-//! observe the stream of changes coming from this actor should subscribe to this actor.
+//! Discovery backends do not expect any input from other controllers. Other controllers which
+//! need to observe the stream of changes coming from this controller should subscribe to this
+//! controller's output stream.
 
 mod dns;
 
@@ -20,9 +15,7 @@ use tokio::task::JoinHandle;
 
 use crate::config::{Config, DiscoveryBackend};
 
-/// An actor which provides a uniform interface to the peer discovery system.
-///
-/// See the README.md in this directory for additional information on actor responsibilities.
+/// A controller which provides a uniform interface to the peer discovery system.
 pub struct Discovery {
     /// The observed set of IP addresses currently being tracked by this system.
     ///
