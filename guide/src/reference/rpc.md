@@ -8,16 +8,14 @@ RPC Endpoints are declared in YAML as part of the [Schema Management system](./s
 ```yaml
 ## The kind of object being defined. In this case, a pipeline.
 kind: Endpoint
-## The spec of this object.
-spec:
-  ## The namespace in which this endpoint is to be created.
-  namespace: required string
-  ## The name of the endpoint. Each endpoint must have a unique name per namespace.
-  name: required string
-  ## The input RPC mode.
-  input: oneof Single | Stream
-  ## The output RPC mode.
-  output: oneof Single | Stream
+## The namespace in which this endpoint is to be created.
+namespace: required string
+## The name of the endpoint. Each endpoint must have a unique name per namespace.
+name: required string
+## The input RPC mode.
+input: enum Single | Stream
+## The output RPC mode.
+output: enum Single | Stream
 ```
 
 ### Details

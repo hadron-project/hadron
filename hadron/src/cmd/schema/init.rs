@@ -18,8 +18,8 @@ const INIT_SCHEMA: &str = r#"# Add your schema changes here. Each schema stateme
 # Here is an example `Namespace` declaration:
 ---
 kind: Namespace
-spec:
-  name: example-namespace
+name: example
+description: This is just an example namespace.
 
 # See the docs at https://docs.hadron.rs/guide/reference/schema.html
 "#;

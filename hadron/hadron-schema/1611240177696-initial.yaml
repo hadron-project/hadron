@@ -42,7 +42,6 @@ kind: Pipeline
 name: instance-creation
 namespace: example
 description: A pipeline defining the instance creation workflow.
-replicaSet: local/repl0
 inputStream: services
 triggers:
   - service-created

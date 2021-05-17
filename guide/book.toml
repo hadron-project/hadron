@@ -2,10 +2,10 @@
 authors = ["Anthony Dodd <Dodd.AnthonyJosiah@gmail.com>"]
 language = "en"
 multilingual = false
-src = "guide/src"
+src = "src"
 title = "Hadron | Distributed event streaming, event orchestration & messaging platform"
 description = "The Hadron user guide."
 
 [build]
-build-dir = "guide/book"
+build-dir = "book"
 create-missing = false

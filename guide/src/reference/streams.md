@@ -8,38 +8,28 @@ Streams are declared in YAML as part of the [Schema Management system](./schema.
 ```yaml
 ## The kind of object being defined. In this case, a stream.
 kind: Stream
-## The spec of this object.
-spec:
-  ## The namespace in which this stream is to be created.
-  namespace: required string
+## The namespace in which this stream is to be created.
+namespace: required string
+## The name of the stream. Each stream must have a unique name per namespace.
+name: required string
 
-  ## The name of the stream. Each stream must have a unique name per namespace.
-  name: required string
+## The cluster replica sets which are to be used as partitions for this stream.
+partitions: required string
 
-  ## The number of partitions to create for this stream.
-  partitions: required unsigned integer (default 1)
-
-  ## The replication factor of each partition of this stream.
-  replicationFactor: required unsigned integer (default 1)
-
-  ## An optional TTL duration specifying how long records are to be kept on
-  ## the stream.
-  ##
-  ## If not specified, then records will stay on the stream forever.
-  ttl: optional duration (default none)
+## An optional TTL duration specifying how long records are to be kept on
+## the stream.
+##
+## If not specified, then records will stay on the stream forever.
+ttl: optional duration (default none)
 ```
 
 Streams can be updated the same way all other Hadron DDL objects can be updated. See the [Schema Management chapter](./schema.md) for more details.
 
-## Stream Types
-### Standard
-An append-only, immutable log with a configurable number of partitions.
-
-#### Details
+### Details
 - Stream names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
 - Streams may have one or more partitions, which may be increased as needed. Horizontally scaling the Hadron cluster and adding more partitions to a stream will allow the write throughput of the stream to horizontally scale.
-- Stream data is replicated accross cluster members based on the stream's replication factor. The Hadron cluster uses its own built-in Raft consensus system to assign stream partition leaders and followers for replication.
-- Streams must first be created via the Hadron DDL system. See the [Schema Management](./schema.md) chapter for more details.
+- Stream data is replicated across each partition's replica set.
+- Streams must first be created via the Hadron schema system. See the [Schema Management](./schema.md) chapter for more details.
 
 ## Subscriptions
 Subscriptions represent a client's interest to consume data from a stream. Subscriptions are created when a client submits a subscription request. Subscription requests must specify the target stream to subscribe to and a name to use for the subscription.
@@ -52,23 +42,16 @@ Subscriptions represent a client's interest to consume data from a stream. Subsc
 
 **Subscription Config:** when creating a subscription, there are various configuration options which my be specified in order to control behavior.
 - `maxParallelConsumers` (default none): the maximum number of consumers allowed to process messages in parallel. If set to 1, then only one consumer is allowed to process messages at a time for the consumer group.
-- `serverPingInterval` (default 5s): the rate at which the server will ping a consumer to check for liveness. If the consumer fails to respond too many times, the server will sever the connection.
-- `serverPingFailureThreshold` (default 2): the number of consecutive failed server-sent pings allowed before a consumer connection will be severed.
 
 **Consumer Config:** each individual consumer within a group has its own isolated configuration options.
-- `consumerPingInterval` (default 5s): the rate at which the consumer will ping the server to check for liveness. If the server fails to respond too many times, the consumer will sever the connection and try to establish a new connection.
-- `consumerPingFailureThreshold` (default 2): the number of consecutive failed consumer-sent pings allowed before the consumer's connection will be severed and the connection will be retried.
 - `batchSize` (default 100): the maximum number of messages which will be delivered to the consumer per batch.
 - `batchWaitMillis` (default 500): the amount of time in milliseconds which the consumer should delay for its batch to fill. This only applies when the consumer's batch has been partially filled.
 
 Subscriptions may be deleted using the `StreamUnsub` client API.
 
 ### Ack & Nack
-Messages being consumed from a stream must be ack'ed. Once a message is ack'd, it will not be re-delivered again to the same consumer group.
+Messages being consumed from a stream must be ack'ed. Once a message is ack'd, it will not be delivered again to the same consumer group.
 
 Messages may be nack'ed, which will cause immediate redelivery by default. A redelivery timeout may be specified, which will cause a timeout to be applied before redelivery of the message to a consumer. Redelivery timeouts are not durable, and are held in-memory by Hadron.
 
 If a client disconnects while it was processing unacknowledged messages, Hadron will redeliver those messages to other live consumers of the same subscription consumer group.
-
-## Transactions
-Clients may transactionally ack a stream message and or publish a set of messages to other streams all within a single transaction.
