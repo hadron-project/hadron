@@ -49,6 +49,74 @@ pub struct MetadataResponse {
     #[prost(message, repeated, tag="3")]
     pub all_replica_sets: ::prost::alloc::vec::Vec<ReplicaSet>,
 }
+/// A request to create a token.
+///
+/// The API is as follows:
+/// - If the token is to be granted `all` access, then no other fields will be considered.
+/// - If the token is to be granted `metrics` access, then no other fields will be consdiered.
+/// - If neither of the above are true, then a token will be created with the given set
+/// of namespace grants.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateTokenRequest {
+    /// Grant permissions on all resources in the system.
+    #[prost(bool, tag="1")]
+    pub all: bool,
+    /// Grant permissions on only the cluster metrics system.
+    #[prost(bool, tag="2")]
+    pub metrics: bool,
+    /// Grant permissions on namespace scoped resources.
+    #[prost(message, repeated, tag="3")]
+    pub namespaced: ::prost::alloc::vec::Vec<NamespaceGrant>,
+}
+/// A response to a token creation request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateTokenResponse {
+    #[prost(oneof="create_token_response::Result", tags="1, 2")]
+    pub result: ::core::option::Option<create_token_response::Result>,
+}
+/// Nested message and enum types in `CreateTokenResponse`.
+pub mod create_token_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(string, tag="1")]
+        Ok(::prost::alloc::string::String),
+        #[prost(message, tag="2")]
+        Err(super::Error),
+    }
+}
+/// A permissions grant on a set of resources of a specific namespace.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NamespaceGrant {
+    /// The namespace to which this grant applies.
+    #[prost(string, tag="1")]
+    pub namespace: ::prost::alloc::string::String,
+    /// Grant full access to all resources of the namespace.
+    #[prost(bool, tag="2")]
+    pub all: bool,
+    /// Permissions granted on ephemeral messaging exchanges.
+    #[prost(message, repeated, tag="3")]
+    pub exchanges: ::prost::alloc::vec::Vec<NameMatcher>,
+    /// Permissions granted on RPC endpoints.
+    #[prost(message, repeated, tag="4")]
+    pub endpoints: ::prost::alloc::vec::Vec<NameMatcher>,
+    /// Permissions granted on streams.
+    #[prost(message, repeated, tag="5")]
+    pub streams: ::prost::alloc::vec::Vec<NameMatcher>,
+    /// Permissions to modify the schema of the namespace.
+    ///
+    /// A token with schema permissions is allowed to create, update & delete streams, pipelines
+    /// and other core resources in the associated namespace.
+    #[prost(bool, tag="6")]
+    pub schema: bool,
+}
+/// A name matcher along with the associated access level for a successful match.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NameMatcher {
+    #[prost(string, tag="1")]
+    pub matcher: ::prost::alloc::string::String,
+    #[prost(enumeration="PubSubAccess", tag="2")]
+    pub access: i32,
+}
 ///////////////////////////////////////////////////////////////////////////////
 // Schema /////////////////////////////////////////////////////////////////////
 
@@ -309,4 +377,15 @@ pub struct PipelineStageOutput {
     /// The base output of the corresponding pipeline stage.
     #[prost(bytes="vec", tag="1")]
     pub output: ::prost::alloc::vec::Vec<u8>,
+}
+//////////////////////////////////////////////////////////////////////////////
+// Auth //////////////////////////////////////////////////////////////////////
+
+/// An enumeration of possible pub/sub access levels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PubSubAccess {
+    Pub = 0,
+    Sub = 1,
+    All = 2,
 }

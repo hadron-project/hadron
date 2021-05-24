@@ -1,2 +1,2 @@
-mod client; // GENERATED CODE
+mod client;
 pub mod v1;

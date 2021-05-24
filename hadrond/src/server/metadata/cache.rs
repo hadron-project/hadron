@@ -50,7 +50,7 @@ pub struct MetadataCache {
 impl MetadataCache {
     /// Create a new instance.
     pub fn new(
-        users: Vec<User>, tokens: Vec<(u128, Claims)>, namespaces: Vec<Arc<schema::Namespace>>, streams: Vec<Arc<schema::Stream>>,
+        users: Vec<User>, tokens: Vec<Claims>, namespaces: Vec<Arc<schema::Namespace>>, streams: Vec<Arc<schema::Stream>>,
         pipelines: Vec<Arc<schema::Pipeline>>, schema_branches: Vec<schema::SchemaBranch>,
     ) -> Self {
         let index = Self::default();
@@ -60,8 +60,8 @@ impl MetadataCache {
         for val in users {
             let _ = index.users.insert(val.name.clone(), Arc::new(val));
         }
-        for (key, val) in tokens {
-            let _ = index.tokens.insert(key, Arc::new(val));
+        for val in tokens {
+            let _ = index.tokens.insert(val.id.as_u128(), Arc::new(val));
         }
         for val in namespaces {
             index.namespace_names.insert(val.name.clone(), val.id);

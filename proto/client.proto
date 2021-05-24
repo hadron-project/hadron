@@ -44,6 +44,65 @@ message MetadataResponse {
     repeated ReplicaSet all_replica_sets = 3;
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// Auth //////////////////////////////////////////////////////////////////////
+
+// An enumeration of possible pub/sub access levels.
+enum PubSubAccess {
+    Pub = 0;
+    Sub = 1;
+    All = 2;
+}
+
+// A request to create a token.
+//
+// The API is as follows:
+// - If the token is to be granted `all` access, then no other fields will be considered.
+// - If the token is to be granted `metrics` access, then no other fields will be consdiered.
+// - If neither of the above are true, then a token will be created with the given set
+// of namespace grants.
+message CreateTokenRequest {
+    // Grant permissions on all resources in the system.
+    bool all = 1;
+    // Grant permissions on only the cluster metrics system.
+    bool metrics = 2;
+    // Grant permissions on namespace scoped resources.
+    repeated NamespaceGrant namespaced = 3;
+}
+
+// A response to a token creation request.
+message CreateTokenResponse {
+    oneof result {
+        string ok = 1;
+        Error err = 2;
+    }
+}
+
+// A permissions grant on a set of resources of a specific namespace.
+message NamespaceGrant {
+    // The namespace to which this grant applies.
+    string namespace = 1;
+    // Grant full access to all resources of the namespace.
+    bool all = 2;
+    // Permissions granted on ephemeral messaging exchanges.
+    repeated NameMatcher exchanges = 3;
+    // Permissions granted on RPC endpoints.
+    repeated NameMatcher endpoints = 4;
+    // Permissions granted on streams.
+    repeated NameMatcher streams = 5;
+    // Permissions to modify the schema of the namespace.
+    //
+    // A token with schema permissions is allowed to create, update & delete streams, pipelines
+    // and other core resources in the associated namespace.
+    bool schema = 6;
+}
+
+// A name matcher along with the associated access level for a successful match.
+message NameMatcher {
+    string matcher = 1;
+    PubSubAccess access = 2;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Schema /////////////////////////////////////////////////////////////////////
 

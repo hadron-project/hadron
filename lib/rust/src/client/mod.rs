@@ -1,5 +1,6 @@
 //! The core Hadron client.
 
+mod auth;
 mod pipeline;
 mod publisher;
 mod schema;

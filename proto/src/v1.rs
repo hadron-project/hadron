@@ -25,6 +25,8 @@ pub const ENDPOINT_METADATA_SCHEMA_UPDATE: &str = "/v1/metadata/schema_update";
 /// The V1 endpoint of the metadata auth create token handler.
 pub const ENDPOINT_METADATA_AUTH_CREATE_TOKEN: &str = "/v1/metadata/auth/create_token";
 
+pub type CreateTokenResponseResult = create_token_response::Result;
+
 pub type SchemaUpdateRequestType = schema_update_request::Type;
 
 pub type StreamPubResponseResult = stream_pub_response::Result;

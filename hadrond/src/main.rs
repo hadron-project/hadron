@@ -25,10 +25,12 @@ async fn main() -> Result<()> {
 
     let cfg = Arc::new(Config::new());
     tracing::info!(
+        client_port = %cfg.client_port,
         node_name = %cfg.node_name,
         repl_set_name = %cfg.repl_set_name,
         leader_name = %cfg.leader_name,
         metadata_repl_set_name = %cfg.metadata_repl_set_name,
+        storage_data_path = %cfg.storage_data_path,
         "starting hadron",
     );
     if let Err(err) = App::new(cfg).await?.spawn().await {
