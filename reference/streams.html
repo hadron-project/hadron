@@ -199,13 +199,9 @@ ttl: optional duration (default none)
 <p><strong>Subscription Config:</strong> when creating a subscription, there are various configuration options which my be specified in order to control behavior.</p>
 <ul>
 <li><code>maxParallelConsumers</code> (default none): the maximum number of consumers allowed to process messages in parallel. If set to 1, then only one consumer is allowed to process messages at a time for the consumer group.</li>
-<li><code>serverPingInterval</code> (default 5s): the rate at which the server will ping a consumer to check for liveness. If the consumer fails to respond too many times, the server will sever the connection.</li>
-<li><code>serverPingFailureThreshold</code> (default 2): the number of consecutive failed server-sent pings allowed before a consumer connection will be severed.</li>
 </ul>
 <p><strong>Consumer Config:</strong> each individual consumer within a group has its own isolated configuration options.</p>
 <ul>
-<li><code>consumerPingInterval</code> (default 5s): the rate at which the consumer will ping the server to check for liveness. If the server fails to respond too many times, the consumer will sever the connection and try to establish a new connection.</li>
-<li><code>consumerPingFailureThreshold</code> (default 2): the number of consecutive failed consumer-sent pings allowed before the consumer's connection will be severed and the connection will be retried.</li>
 <li><code>batchSize</code> (default 100): the maximum number of messages which will be delivered to the consumer per batch.</li>
 <li><code>batchWaitMillis</code> (default 500): the amount of time in milliseconds which the consumer should delay for its batch to fill. This only applies when the consumer's batch has been partially filled.</li>
 </ul>

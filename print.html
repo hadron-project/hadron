@@ -172,7 +172,7 @@
 <p>Older AMQP style systems were great, but fall short of Kafka-like streaming capabilities, specifically message persistence. Kafka-like systems lack ephemeral &amp; RPC messaging. More recent blends of the technologies, offer a nice combination, but lack many of the core features needed from both domains. Hadron offers the best of all of these paradigms, adds Pipelines for more powerful architectures, and is shipped as a single binary, written in Rust, with blazing speed, safety, and reliability.</p>
 <p>Hadron also features a very simple wire protocol based on protocol buffers for client-server communication, but also ships with a powerful Rust client library for native use in Rust, or for use in any other language supporting C FFI. Language specific wrappers are (will be) maintained in various languages to smooth out any FFI roughness.</p>
 <h3><a class="header" href="#learn" id="learn">Learn</a></h3>
-<p>Head over to the <a href="https://hadron-project.github.io/hadron/index.html">Hadron Guide</a> to learn more.</p>
+<p>Head over to the <a href="https://hadron-project.github.io/hadron/">Hadron Guide</a> to learn more.</p>
 <h3><a class="header" href="#license" id="license">LICENSE</a></h3>
 <p>Unless otherwise noted, the Hadron source files are distributed under the Apache Version 2.0 license found in the LICENSE file.</p>
 <h1><a class="header" href="#schema-management" id="schema-management">Schema Management</a></h1>
@@ -338,13 +338,9 @@ ttl: optional duration (default none)
 <p><strong>Subscription Config:</strong> when creating a subscription, there are various configuration options which my be specified in order to control behavior.</p>
 <ul>
 <li><code>maxParallelConsumers</code> (default none): the maximum number of consumers allowed to process messages in parallel. If set to 1, then only one consumer is allowed to process messages at a time for the consumer group.</li>
-<li><code>serverPingInterval</code> (default 5s): the rate at which the server will ping a consumer to check for liveness. If the consumer fails to respond too many times, the server will sever the connection.</li>
-<li><code>serverPingFailureThreshold</code> (default 2): the number of consecutive failed server-sent pings allowed before a consumer connection will be severed.</li>
 </ul>
 <p><strong>Consumer Config:</strong> each individual consumer within a group has its own isolated configuration options.</p>
 <ul>
-<li><code>consumerPingInterval</code> (default 5s): the rate at which the consumer will ping the server to check for liveness. If the server fails to respond too many times, the consumer will sever the connection and try to establish a new connection.</li>
-<li><code>consumerPingFailureThreshold</code> (default 2): the number of consecutive failed consumer-sent pings allowed before the consumer's connection will be severed and the connection will be retried.</li>
 <li><code>batchSize</code> (default 100): the maximum number of messages which will be delivered to the consumer per batch.</li>
 <li><code>batchWaitMillis</code> (default 500): the amount of time in milliseconds which the consumer should delay for its batch to fill. This only applies when the consumer's batch has been partially filled.</li>
 </ul>
