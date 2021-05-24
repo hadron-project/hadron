@@ -8,12 +8,10 @@ Namespaces are declared in YAML as part of the [Schema Management system](./sche
 ```yaml
 ## The kind of object being defined. In this case, a namespace.
 kind: Namespace
-## The spec of this object.
-spec:
-  ## The name of the namespace. Each namespace must have a unique name.
-  name: required string
-  ## A description of this namespace.
-  description: required string
+## The name of the namespace. Each namespace must have a unique name.
+name: required string
+## A description of this namespace.
+description: required string
 ```
 
 ### Details

@@ -8,7 +8,7 @@ The guiding principals of the Hadron Schema Management system are as follows:
 - Must be explicit, clear, well-defined.
 - Must be idempotent.
 
-The Hadron CLI is used for all aspects of schema management, and schema management files should be committed to one's code repository. Very importantly, Hadron schema management is designed to be idempotent, ensuring that the cluster does not end up in an unexpected state as teams roll changes to their applications.
+The Hadron CLI is used for all aspects of schema management, and schema management files should be committed to one's code repository. Very importantly, Hadron schema management is designed to be idempotent, ensuring that the cluster does not end up in an unexpected state as teams roll changes for their applications.
 
 Hadron uses YAML for its schema language. Simply run `hadron schema init {branchName}` to create a new schema management directory. Here, we will use `service-xyz` as the value for `{branchName}` (more on this later). The Hadron CLI will use the directory `hadron-schema` by default, but this value may be overridden. This will give you a directory structure as follows:
 
@@ -32,8 +32,8 @@ Here are the internals of the `1608743979-initial.yaml` file:
 # Here is an example `Namespace` declaration:
 ---
 kind: Namespace
-spec:
-  name: example-namespace
+name: example
+description: This is just an example namespace.
 
 # See the docs at https://docs.hadron.rs/guide/reference/schema.html
 ```

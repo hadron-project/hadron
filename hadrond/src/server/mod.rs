@@ -280,7 +280,8 @@ impl Server {
             }
         }
         for pipeline in event.pipelines.iter() {
-            if pipeline.replica_set == self.config.repl_set_name {
+            let stream_hash = utils::ns_name_hash_id(pipeline.namespace(), &pipeline.input_stream);
+            if self.streams.contains_key(&stream_hash) {
                 self.spawn_pipeline_controller(pipeline).await;
             }
         }
@@ -289,7 +290,8 @@ impl Server {
     /// Handle an event indicating that a new pipeline was created.
     #[tracing::instrument(level = "trace", skip(self, event))]
     async fn handle_event_pipeline_created(&mut self, event: &PipelineCreated) {
-        if event.pipeline.replica_set == self.config.repl_set_name {
+        let stream_hash = utils::ns_name_hash_id(event.pipeline.namespace(), &event.pipeline.input_stream);
+        if self.streams.contains_key(&stream_hash) {
             self.spawn_pipeline_controller(&event.pipeline).await;
         }
     }

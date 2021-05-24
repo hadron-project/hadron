@@ -92,24 +92,18 @@ pub struct Pipeline {
     #[prost(message, required, tag="2")]
     #[serde(flatten)]
     pub metadata: Metadata,
-    /// The replica set on which this pipeline is to run.
-    ///
-    /// The replication factor of the data on this pipeline is governed by the configuration of
-    /// the assigned replica set.
-    #[prost(string, required, tag="3")]
-    pub replica_set: ::prost::alloc::string::String,
     /// The name of the stream which will trigger this pipeline.
-    #[prost(string, required, tag="4")]
+    #[prost(string, required, tag="3")]
     pub input_stream: ::prost::alloc::string::String,
     /// Event type matchers which will trigger this pipeline.
-    #[prost(string, repeated, tag="5")]
+    #[prost(string, repeated, tag="4")]
     #[serde(default)]
     pub triggers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// The stages of this pipeline.
-    #[prost(message, repeated, tag="6")]
+    #[prost(message, repeated, tag="5")]
     pub stages: ::prost::alloc::vec::Vec<PipelineStage>,
     /// The maximum number of pipeline instances which may be executed in parallel per partition.
-    #[prost(uint32, required, tag="7", default="50")]
+    #[prost(uint32, required, tag="6")]
     #[serde(default = "super::pipeline_max_parallel_default")]
     pub max_parallel: u32,
 }

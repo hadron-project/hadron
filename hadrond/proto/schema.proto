@@ -68,20 +68,15 @@ message Pipeline {
     required uint64 id = 1;
     // Object metadata.
     required Metadata metadata = 2;
-    // The replica set on which this pipeline is to run.
-    //
-    // The replication factor of the data on this pipeline is governed by the configuration of
-    // the assigned replica set.
-    required string replica_set = 3;
     // The name of the stream which will trigger this pipeline.
-    required string input_stream = 4;
+    required string input_stream = 3;
     // Event type matchers which will trigger this pipeline.
-    repeated string triggers = 5;
+    repeated string triggers = 4;
     // The stages of this pipeline.
-    repeated PipelineStage stages = 6;
+    repeated PipelineStage stages = 5;
 
     // The maximum number of pipeline instances which may be executed in parallel per partition.
-    required uint32 max_parallel = 7 [default = 50];
+    required uint32 max_parallel = 6;
 }
 
 // A single pipeline stage.
