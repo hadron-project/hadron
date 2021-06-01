@@ -24,6 +24,8 @@ pub const ENDPOINT_METADATA_QUERY: &str = "/v1/metadata/query";
 pub const ENDPOINT_METADATA_SCHEMA_UPDATE: &str = "/v1/metadata/schema_update";
 /// The V1 endpoint of the metadata auth create token handler.
 pub const ENDPOINT_METADATA_AUTH_CREATE_TOKEN: &str = "/v1/metadata/auth/create_token";
+/// The V1 endpoint of the metadata auth create user handler.
+pub const ENDPOINT_METADATA_AUTH_CREATE_USER: &str = "/v1/metadata/auth/create_user";
 
 pub type CreateTokenResponseResult = create_token_response::Result;
 

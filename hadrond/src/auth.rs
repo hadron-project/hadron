@@ -7,9 +7,9 @@ use crate::error::AppError;
 pub use crate::models::auth::{User, UserRole};
 use crate::utils;
 
-/// The authorization header basic prefix.
+/// The authorization header basic prefix — for user creds.
 const BASIC_PREFIX: &str = "basic ";
-/// The authorization header bearer prefix.
+/// The authorization header bearer prefix — for token creds.
 const BEARER_PREFIX: &str = "bearer ";
 
 pub struct UserCredentials(String);

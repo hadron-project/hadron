@@ -107,6 +107,7 @@ impl MetadataCtl {
             proto::v1::ENDPOINT_METADATA_QUERY => self.handle_metadata_query(&mut req).await,
             proto::v1::ENDPOINT_METADATA_SCHEMA_UPDATE => self.handle_metadata_update_schema(&mut req).await,
             proto::v1::ENDPOINT_METADATA_AUTH_CREATE_TOKEN => self.handle_create_token(&mut req).await,
+            proto::v1::ENDPOINT_METADATA_AUTH_CREATE_USER => self.handle_create_user(&mut req).await,
             _ => Err(AppError::ResourceNotFound.into()),
         };
         if let Err(err) = res {
@@ -164,6 +165,52 @@ impl MetadataCtl {
             result: Some(proto::v1::CreateTokenResponseResult::Ok(jwt)),
         };
         send_response(req, self.buf.split(), res, Some(res_object));
+        Ok(())
+    }
+
+    /// Handle a request to create a new user.
+    ///
+    /// This endpoint can only be called by a user, and the calling user must be either a
+    /// root or admin user.
+    #[tracing::instrument(level = "trace", skip(self, req))]
+    async fn handle_create_user(&mut self, req: &mut H2Channel) -> Result<()> {
+        let (ref mut req_chan, ref mut res_chan) = req;
+        require_method(&req_chan, Method::POST)?;
+
+        // Extract the calling user's info and then fetch their data from metadata cache.
+        let creds = must_get_user(&req_chan)?;
+        let user = creds.username()?;
+        let pass = creds.password()?;
+        let user = self.cache.must_get_user(user, pass)?;
+        if !matches!(user.role(), UserRole::Root | UserRole::Admin) {
+            bail!(AppError::Unauthorized);
+        }
+
+        // Extract and validate contents of request.
+        let body_stream = req_chan.body_mut();
+        let body = body_stream
+            .data()
+            .await
+            .context("no body found in request")?
+            .context("error reading request body")?;
+
+        // // Decode body & validate the contents of the request.
+        // let token_req = proto::v1::CreateTokenRequest::decode(body.as_ref()).map_err(|err| AppError::InvalidInput(err.to_string()))?;
+        // let claims = Claims::from_create_token_request(token_req)?;
+        // let jwt =
+        //     encode_jwt(&Header::new(Algorithm::RS512), &claims, &self.config.metadata_config.jwt_encoding_key).context("error encoding new JWT")?;
+
+        // // Apply the new token to disk for long-term usage & respond with new token info.
+        // storage::create_token(self.tree.clone(), &claims).await?;
+        // let res = http::Response::builder()
+        //     .status(http::StatusCode::OK)
+        //     .header(http::header::CONTENT_TYPE, utils::HEADER_OCTET_STREAM)
+        //     .body(())
+        //     .context("error building response")?;
+        // let res_object = proto::v1::CreateTokenResponse {
+        //     result: Some(proto::v1::CreateTokenResponseResult::Ok(jwt)),
+        // };
+        // send_response(req, self.buf.split(), res, Some(res_object));
         Ok(())
     }
 

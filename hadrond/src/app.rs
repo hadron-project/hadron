@@ -10,9 +10,10 @@ use tokio_stream::StreamMap;
 
 use crate::config::Config;
 use crate::database::Database;
+use crate::k8s::watch::Controller;
 use crate::server::Server;
 
-pub struct App {
+pub struct AppServer {
     /// The application's runtime config.
     config: Arc<Config>,
     /// The application's database system.
@@ -24,16 +25,18 @@ pub struct App {
     shutdown_rx: BroadcastStream<()>,
     /// A handle to the network server.
     server: JoinHandle<Result<()>>,
+    /// A handle to the k8s watcher controller.
+    controller: JoinHandle<Result<()>>,
 }
 
-impl App {
+impl AppServer {
     /// Create a new instance.
     pub async fn new(config: Arc<Config>) -> Result<Self> {
         // App shutdown channel.
         let (shutdown_tx, shutdown_rx) = broadcast::channel(100);
         let (events_tx, events_rx) = broadcast::channel(10_000); // 10k before lagging.
 
-        // Initialize this nodes storage.
+        // Initialize this node's storage.
         let db = Database::new(config.clone()).await.context("error opening database")?;
 
         // Spawn the network server.
@@ -42,12 +45,17 @@ impl App {
             .context("error creating network server")?;
         let server = server.spawn();
 
+        // Initialize the K8s client.
+        let client = kube::Client::try_default().await.context("error initializing K8s client")?;
+        let controller = Controller::new(client, shutdown_tx.clone()).spawn();
+
         Ok(Self {
             config,
             db,
             shutdown_rx: BroadcastStream::new(shutdown_rx),
             shutdown_tx,
             server,
+            controller,
         })
     }
 
@@ -82,7 +90,10 @@ impl App {
         if let Err(err) = self.server.await {
             tracing::error!(error = ?err, "error shutting down network server");
         }
-        tracing::debug!("Hadron shutdown");
+        if let Err(err) = self.controller.await {
+            tracing::error!(error = ?err, "error shutting down k8s watcher controller");
+        }
+        tracing::debug!("Hadron shutdown complete");
         Ok(())
     }
 

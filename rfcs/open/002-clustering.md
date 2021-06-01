@@ -1,51 +1,68 @@
-# Clustering
+# Kubernetes Native | Clustering
 ```
 Author: Dodd
 Status: InDesign
 ```
 
-Hadron clusters will be composed of multiple replica sets, where each replica set represents a logical "partition" for streams & pipelines. Replica sets communicate with each other via a standard discovery system. A cluster must have a single replica set configured as the metadata replica set. HA is reckoned in terms of stream & pipeline availability, not in terms of the availability of a single replica set.
+Hadron is the Kubernetes native and CloudEvents native distributed event streaming, event orchestration & messaging platform.
 
-Each replica set is statically configured with exactly one master and any number of replicas. Roles are established statically in config.
+Key Advantages with this cluster design:
+- Relentless pursuit of simplicity.
+- All K8s native, using the K8s API as the universal API. Stand on the shoulders of giants. Don't reinvent the wheel.
+- No distributed consensus overhead for read/write path to streams, pipelines &c.
+- We get to leverage — often at no cost overhead for us — all of the innovation in the K8s ecosystem: policy, networking, distribution, common knowledge base &c.
 
-- Config changes require restarts. When a node first comes online, it will not fully start until it is able to establish a connection with the members of its replica set & determine that their config matches. This is treated as the handshake. Config to match:
-    - replica set name
-    - node names
-    - role per node
-- If handshake fails, backoff and try again. Warn about the potential misconfiguration issue.
-- It is recommended that replica set names semantically indicate geo and or cloud infomration, as well as purpose. Though the only hard requirement is that replica set names be unique throughout a cluster.
-    - An example of such a partition naming scheme could be: `aws.us-east-1/p0`, `aws.us-east-1/p1`, `gcp.asia-southeast1/p0`, `gcp.asia-southeast1/p1`.
-    - In this example, replica sets span two different clouds, and two different regions.
+## Hadron Operator
+The Hadron experience starts with the Hadron Operator. A Hadron Operator StatefulSet is deployed, along with all of its various CRDs. Then a HadronCluster CR is created which the Operator will use to provision a StatefulSet of Hadron worker nodes.
 
-## Consensus
-Consensus within a replica set is dead simple, and is based on static config. The leader is always known and doesn't change. An entry is committed based on majority replication.
+All provisioned Hadron clusters leverage the Hadron Operator which provisioned them for consensus & leadership rulings. The Operator uses K8s Leases with ServerSideApply (SSA) to ensure idempotent updates which do not overwrite during race conditions.
 
-## Cluster
-Clusters are composed of multiple replica sets which dynamically discover each other.
+The Hadron Operator is intended to run as a cluster-wide controller, but can be limited to a single namespace if needed.
 
-- Each replica set may be part of only one cluster. If the cluster discovery info & ports match, then the replica sets will form a cluster. Certificates are exchanged for clustering security.
-- A single replica set may be statically configured as the metadata group. This group will then be responsible for all cluster wide metadata changes, such as stream and pipeline definitions.
-- HA is achieved by having multiple partitions assigned to the same stream. Clients are able to detect when a partition is down, and so they will failover to one which is alive.
+- When an Operator replica has acquired the Lease, it then works to perform reconciliation tasks, other leadership tasks, and renews the lease for as long as possible.
+- Operator replicas will contend for lease acquisition, and will follow the same pattern as K8s core controllers: https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/ Lease checking will be based on lease expiration time plus randomized interval to reduce contention.
+- All resource updates from the leader will use SSA to avoid race conditions. Conflicts will result in a check-lock-check followed by a forced update when it is safe to do so — ensuring that updates do not fail indefinitely.
+- All members of a Hadron cluster observe changes to the CRs which apply to their cluster, and react when applicable.
 
-## Metadata
-- A single replica set acts as the metadata leader for a cluster based on static config.
-- Metadata is asynchronously replicated to all members of the cluster, always with an associated metadata index.
-    - This allows for a cluster to more easily span the globe, multiple regions and differnet clouds.
-    - Clients can query for metadata at any location, and they will always be as up-to-date as a direct query to metadata replica set directly, due to the constant async replication of config.
-- Hadron schema objects declare their "partition" assignments explicitly.
-    - For example, when a stream is declared, it will declare its partitions as a list of replica set names.
-    - It could declare that the stream has 4 partitions, as follows: `aws.us-east-1/p0`, `aws.us-east-1/p1`, `gcp.asia-southeast1/p0`, `gcp.asia-southeast1/p1`.
-    - These would match replica set names of actual replica sets in the cluster.
-    - As clients publish data to these partitions, they can hash to a specific partition of the region where their data needs to reside, or hard code the partition they are targetting.
-    - This supports cases where data semantically belongs on the same stream, but is optimized to reduce latency by geolocating replica sets in the regions where the data is being processed, GDPR or similar requirements.
-    - The cluster will still see all of these partitions as participating in the same stream.
+## Operations
+- Hadron clusters are deployed as StatefulSets along with various other CRs.
+- Horizontally scaling write throughput will typically be a matter of just scaling up the number of replicas of one of the Hadron cluster's StatefulSet.
+- Multiple StatefulSets can be created for multi-zone or multi-region clusters. CRs can be federated. The Hadron scheduler will select based on their StatefulSet/pod labels.
 
-## Stream Subscribers
-- Clients will create stream subscriber channels on all partitions of a target stream.
-- Clients are always part of "group", and each partition will load balance deliveries across all active members of a group.
-- A client may receive multiple concurrent deliveries from different partitions. Concurrent consumption rate is configurable.
+## Cluster Resources
+Streams, Pipelines, Exchanges, RPC Endpoints, MaterializedViews and any other future objects will be declared as K8s CRDs.
 
-## Stream Publishers
-- Producers will be able to specify durability of payloads, and the async replication system will report back as batches are replicated.
-- If there are no replicas of a replica set, then we will fsync each batch written to disk. If there are replicas, then "durable" writes means that a majority of the replica set has the data on disk, and no flush required on write path.
-- Writes should be batched across clients for better efficiency, and will be applied to disk using a durable batch. This is actually exactly how the sled periodic fsync behavior will be once we introduce the replication system.
+- Object CRs will declare selectors which will influence the Hadron Operator's scheduler to place objects on matching cluster pods. Selectors may include cluster, region, zone, &c.
+- For now, let's stick with the most simple label selectors.
+- Hadron can generate K8s Services with label selectors pointing to various pods matching resource assignments. May be useful for exchanges, endpoints, and maybe streams. This data will be updated as object leadership changes take place as well.
+- Client metadata queries would literally be a read of the in-memory config in K8s, and can be sent to any node of a Hadron cluster.
+- We do not destroy objects which are no longer declared in K8s config, instead we can represent them as stale objects which admins can remove.
+- We can allow for objects to declare that they need to be replicated to other specific regions for survivability, this will also be based on labels in CRs.
+- The Hadron Operator also functions as the Validating Admissions Webhook for Hadron CRs.
+
+### Credentials
+#secrets #users #tokens #serviceaccount #clusterrole #opa
+
+- Hadron uses AuthGrants to declare a secret JWT to be minted and granted access to the Hadron API and its various resources.
+- These grants allow for hierarchical matching on Hadron resource object names.
+- The corresponding generated tokens can be referenced by workloads within the K8s cluster seamlessly.
+- Creation of all Hadron CRs can be limited to ServiceAccounts with various roles using native K8s resources, helping to ensure secure access to Hadron resources.
+- JWT creation & verification use standard RSA keys. Administrators are recommended to use cert-manager for CA creation and generation of public and private keys for cluster use.
+
+### Stream ISR
+The ISR model is used by partition leaders to report their in-sync replicas.
+
+- Partition leaders report this info to whichever Hadron Operator claims to be their leader.
+- The Operator makes idempotent and atomic changes to CRs for assignments, and all other nodes just react to these changes.
+- Partition leadership changes will be made in such a way that entry commitment will uphold cluster consensus requirements. Cluster leader can use two-phase updates to nodes & CRs to ensure an inoperable partition doesn't enter into an invalid state, potentially marking a partition as unavailable when a new leader can not be nominated.
+- When a stream partition leader dies, the Operator leader will make an epoch-stamped update to the partition's leader assignment, and all Hadron worker nodes will observe this change, and can reject replication for an old leader which is supposed to be dead.
+
+### Multi-Region
+- Multi-region will continue to work exactly as expected, and in a K8s native manner. CRs can be federated, and updated to select "regional" pods as "regional" partitions &c.
+- Publishers can select on "regions" to optimize write path.
+
+### Use Case: Global RPC Endpoints & Exchanges:
+- DNS-based networking will send traffic to local regional LB (using cloud provider Global LB or the like).
+- Ingresses can be used to map RPC or Exchange traffic to a provisioned Hadron service in K8s (handles leadership via labels).
+- RPC or Exchange consumers within the backend Hadron cluster can then handle the inbound connections/requests.
+- Consumers from other clusters could establish their own connections to consume cross-region data if needed.
