@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use hadron::{PipelineSubDelivery, PipelineSubscription};
+use hadron::PipelineSubDelivery;
 use structopt::StructOpt;
 
 use crate::Hadron;
@@ -13,7 +13,7 @@ use crate::Hadron;
 #[derive(StructOpt)]
 #[structopt(name = "sub")]
 pub struct Sub {
-    /// The namespace/pipeline to which the subscription should be made.
+    /// The pipeline to which the subscription should be made.
     pipeline: String,
     /// The pipeline stage to process.
     stage: String,
@@ -21,21 +21,15 @@ pub struct Sub {
 
 impl Sub {
     pub async fn run(&self, base: &Hadron) -> Result<()> {
-        // Destructure the target namespace & pipeline.
-        let mut splits = self.pipeline.splitn(2, '/');
-        let (ns, pipeline) = (splits.next().unwrap_or(""), splits.next().unwrap_or(""));
-
-        tracing::info!("subscribing to pipeline {}/{} on stage {}", ns, pipeline, self.stage);
+        tracing::info!("subscribing to pipeline {} on stage {}", self.pipeline, self.stage);
         let handler = Arc::new(StdoutHandler {});
         let client = base.get_client().await?;
-        let sub = client.pipeline(handler, ns, pipeline, &self.stage);
+        let sub = client
+            .pipeline(&self.pipeline, &self.stage, handler)
+            .await
+            .context("error creating pipeline subscription")?;
         let _ = tokio::signal::ctrl_c().await;
         sub.cancel().await;
-        Ok(())
-    }
-
-    /// Handle a subscription payload delivery.
-    async fn handle_delivery_payload() -> Result<()> {
         Ok(())
     }
 }

@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: hadron-operator
+  labels:
+    app: hadron-operator
+    app.kubernetes.io/name: hadron-operator
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    {{- range $label, $val := .Values.deployment.labels }}
+    {{ $label }}: {{ $val }}
+    {{- end }}
+  annotations:
+    {{- range $annotation, $val := .Values.deployment.annotations }}
+    {{ $annotation }}: {{ $val }}
+    {{- end }}
+spec:
+  replicas: {{ .Values.deployment.replicas | default 1 }}
+  selector:
+    matchLabels:
+        app: hadron-operator
+  template:
+    metadata:
+      annotations:
+        {{- range $annotation, $val := .Values.pod.annotations }}
+        {{ $annotation }}: {{ $val }}
+        {{- end }}
+      labels:
+        app: hadron-operator
+        app.kubernetes.io/name: hadron-operator
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion }}
+        {{- range $label, $val := .Values.pod.labels }}
+        {{ $label }}: {{ $val }}
+        {{- end }}
+
+    spec:
+      terminationGracePeriodSeconds: 30
+      serviceAccountName: hadron-operator
+      automountServiceAccountToken: true
+
+      imagePullSecrets: {{ .Values.pod.imagePullSecrets | toJson }}
+
+      nodeSelector: {{ .Values.pod.nodeSelector | toJson }}
+      affinity: {{ .Values.pod.affinity | toJson }}
+      tolerations: {{ .Values.pod.tolerations | toJson }}
+      topologySpreadConstraints: {{ .Values.pod.topologySpreadConstraints | toJson }}
+      securityContext: {{ .Values.pod.securityContext | toJson }}
+
+      containers:
+        - name: hadron-operator
+          image: {{ required "required value .Values.container.image.repo" .Values.container.image.repo }}:{{ required "required value .Values.container.image.tag" .Values.container.image.tag }}
+          imagePullPolicy: {{ .Values.container.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - containerPort: {{ required "required value .Values.container.clientPort" .Values.container.clientPort }}
+            - containerPort: {{ required "required value .Values.container.httpPort" .Values.container.httpPort }}
+
+          env:
+          - name: RUST_LOG
+            value: {{ required "required value .Values.container.env.logging" .Values.container.env.logging }}
+          - name: CLIENT_PORT
+            value: {{ .Values.container.clientPort }}
+          - name: HTTP_PORT
+            value: {{ .Values.container.httpPort }}
+
+          - name: NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: "metadata.namespace"
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: "metadata.name"
+
+          - name: LEASE_DURATION_SECONDS
+            value: {{ required "required value .Values.container.env.lease.durationSeconds" .Values.container.env.lease.durationSeconds }}
+          - name: LEASE_RENEW_SECONDS
+            value: {{ required "required value .Values.container.env.lease.renewSeconds" .Values.container.env.lease.renewSeconds }}
+
+          - name: JWT_ENCODING_KEY
+{{ required "required value .Values.container.env.jwt.encodingKey" .Values.container.env.jwt.encodingKey | toYaml | indent 12 }}
+          - name: JWT_DECODING_KEY
+{{ required "required value .Values.container.env.jwt.decodingKey" .Values.container.env.jwt.decodingKey | toYaml | indent 12 }}
+
+          resources: {{ .Values.container.resources | toJson }}
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.container.httpPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.container.httpPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 5

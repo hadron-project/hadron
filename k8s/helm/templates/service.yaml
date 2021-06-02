@@ -2,21 +2,58 @@
 kind: Service
 apiVersion: v1
 metadata:
-  name: {{.Values.service.name}}
+  name: hadron-operator
   namespace: {{.Values.namespace | default .Release.Namespace}}
-  {{- if .Values.service.annotations}}
+  {{- if .Values.service.client.annotations}}
   annotations:
-{{toYaml .Values.service.annotations | indent 4}}
+{{toYaml .Values.service.client.annotations | indent 4}}
   {{- end}}
   labels:
-    # TODO: update this to use helm helpers and more precise selection.
-    app: hadron
+    app: hadron-operator
+    app.kubernetes.io/name: hadron-operator
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    {{- if .Values.service.client.labels}}
+{{toYaml .Values.service.client.labels | indent 4}}
+    {{- end}}
 spec:
   type: ClusterIP
   selector:
-    app: hadron
+    app: hadron-operator
   ports:
     - name: http
-      port: {{.Values.service.port}}
+      port: {{required "required value .Values.service.client.port" .Values.service.client.port}}
       protocol: TCP
-      targetPort: {{.Values.service.targetPort}}
+      targetPort: {{required "required value .Values.container.clientPort" .Values.container.clientPort}}
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: hadron-operator-vaw
+  namespace: {{.Values.namespace | default .Release.Namespace}}
+  {{- if .Values.service.vaw.annotations}}
+  annotations:
+{{toYaml .Values.service.vaw.annotations | indent 4}}
+  {{- end}}
+  labels:
+    app: hadron-operator
+    app.kubernetes.io/name: hadron-operator
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    {{- if .Values.service.vaw.labels}}
+{{toYaml .Values.service.vaw.labels | indent 4}}
+    {{- end}}
+spec:
+  type: ClusterIP
+  selector:
+    app: hadron-operator
+  ports:
+    - name: http
+      port: {{required "required value .Values.service.vaw.port" .Values.service.vaw.port}}
+      protocol: TCP
+      targetPort: {{required "required value .Values.container.httpPort" .Values.container.httpPort}}

@@ -1,79 +1,84 @@
-## The service which will be used by clients for communicating with the Hadron cluster.
+## Services for the Operator.
 service:
-  name: hadron
+  client:
+    annotations: {}
+    labels: {}
+    port: 7000
+  vaw:
+    annotations: {}
+    labels: {}
+    port: 7001
+
+## Deployment spec.
+deployment:
+  replicas: 3
   annotations: {}
-  port: 7000
-  targetPort: 7000
+  labels: {}
 
-## The service which the Hadron cluster itself uses for internal communication.
-serviceInternal:
-  name: hadron-internal
+## Pod spec.
+pod:
   annotations: {}
-  port: 7001
-  targetPort: 7001
+  labels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  securityContext: {}
+  imagePullSecrets: []
 
-statefulSet:
-  name: hadron
-
-  serviceName: hadron
-  replicas: 5
-
+## Operator's container spec.
+container:
+  ## Operator image.
   image:
-    fullName: docker.io/hadron-project/hadron:latest
+    repo: ghcr.io/hadron-project/hadron/hadron-operator
+    tag: latest
     pullPolicy: IfNotPresent
 
-  pod:
-    annotations: {}
+  ## The port used for client connections.
+  clientPort: 7000
+  ## The port used for HTTP webhooks & healthchecks.
+  httpPort: 7001
 
-  ## Server Config
-  server:
+  ## Operator's container resources.
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+  ## Operator env vars.
+  env:
     ## Logging configuration.
-    logging: "error,hadrond=trace"
-    ## The port which client network traffic is to use.
-    clientPort: 7000
-    ## The port which cluster internal network traffic is to use.
-    serverPort: 7001
+    logging: "error,hadron-operator=trace"
 
-  ## Raft Config
-  raft:
-    ## The rate at which the Raft leader will send heartbeats in milliseconds.
-    heartbeatIntervalMillis: 400
-    ## The maximum amount of time for a Raft node to wait before triggering an election.
-    electionTimeoutMax: 1800
-    ## The minimum amount of time for a Raft node to wait before triggering an election.
-    electionTimeoutMin: 900
+    ## K8s Leadership Config
+    lease:
+      ## The duration in seconds for which a lease is considered held.
+      durationSeconds: 60
+      ## The duration that a lease holder will retry refreshing lease.
+      renewSeconds: 10
 
-
-  ## Storage Config
-  storage:
-    ## The path where the persistent volume for data storage will be mounted.
-    dbPath: /usr/local/hadron/data
-
-  ## Volume Config
-  volume:
-    ## The size of the persistent volume to provision for data storage.
-    volumeSize: 5Gi
-    ## The name of the storage class to use.
-    ##
-    ## NOTE: create your own storage class using your K8s storage provisioner,
-    ## and overwrite this value.
-    storageClassName: "standard"
-    ## The access modes for the persistent volume for data storage.
-    accessModes: [ "ReadWriteOnce" ]
-
-  ## Cluster Config
-  clustering:
-    ## The number of seconds to delay before issuing an initial cluster formation command.
-    ## TODO: set this value lower once dynamic cluster membership is done.
-    formationDelaySeconds: 60
-    ## The discovery backend to use.
-    discoveryBackend: DNS
-    ## The DNS name to use for service discovery.
-    dnsName: "*.hadron-internal.default.svc.cluster.local."
-    ## The interval in seconds which the DNS backend will poll for DNS updates.
-    dnsInterval: 5
-
-  ## Client Config
-  client:
-    ## The threshold in seconds of not receiving a heartbeat from a client, after which it is reckoned to be dead.
-    livenessThreshold: 10
+    ## JWT Config
+    jwt:
+      ## The value to use for referencing the JWT encoding key. Will be inlined as YAML.
+      ## Should have a single key `value` or `valueFrom`. EG:
+      ## ```
+      ## encodingKey:
+      ##   valueFrom:
+      ##     secretKeyRef:
+      ##       name: secret-123
+      ##       key: encodingKey
+      ## ```
+      encodingKey: null
+      ## The value to use for referencing the JWT decoding key. Will be inlined as YAML.
+      ## Should have a single key `value` or `valueFrom`. EG:
+      ## ```
+      ## decodingKey:
+      ##   valueFrom:
+      ##     secretKeyRef:
+      ##       name: secret-123
+      ##       key: ecodingKey
+      ## ```
+      decodingKey: null

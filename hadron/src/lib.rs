@@ -1,18 +1,12 @@
 //! The Hadron CLI.
 
-#![allow(dead_code)] // TODO: remove
-#![allow(unused_imports)] // TOOD: remove
-
 /* TODO:
-- [ ] need to ensure that the CLI can be aborted at any point. Don't block ^C.
 - [ ] create a CLI endpoint for batch publishing.
 - [ ] docs, docs, docs!
 */
 
 mod client;
 mod cmd;
-mod error;
-mod parser;
 
 use anyhow::Result;
 use hadron::Client;
@@ -66,9 +60,7 @@ impl Hadron {
             .init();
 
         match &self.action {
-            HadronSubcommands::Auth(inner) => inner.run(&self).await,
             HadronSubcommands::Pipeline(inner) => inner.run(&self).await,
-            HadronSubcommands::Schema(inner) => inner.run(&self).await,
             HadronSubcommands::Stream(inner) => inner.run(&self).await,
         }
     }
@@ -87,15 +79,9 @@ impl Hadron {
 
 #[derive(StructOpt)]
 pub enum HadronSubcommands {
-    /// Hadron auth interaction.
-    #[structopt(name = "auth")]
-    Auth(cmd::auth::Auth),
     /// Hadron pipeline interaction.
     #[structopt(name = "pipeline")]
     Pipeline(cmd::pipeline::Pipeline),
-    /// Hadron schema.
-    #[structopt(name = "schema")]
-    Schema(cmd::schema::Schema),
     /// Hadron stream interaction.
     #[structopt(name = "stream")]
     Stream(cmd::stream::Stream),

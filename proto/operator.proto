@@ -1,0 +1,10 @@
+syntax = "proto3";
+package operator;
+
+// The Hadron Kubernetes operator interface.
+service Operator {
+    // TODO: impl these.
+
+    // Resize the PVs of a Stream's backing StatefulSet.
+    // rpc ResizeStreamPvc(ResizeStreamPvcRequest) returns (ResizeStreamPvcResponse);
+}

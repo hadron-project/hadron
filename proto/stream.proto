@@ -1,0 +1,217 @@
+syntax = "proto3";
+package stream;
+
+// The Hadron stream controller interface.
+service StreamController {
+    // Open a metadata stream.
+    rpc Metadata(MetadataRequest) returns (stream MetadataResponse);
+
+    // Open a stream publisher channel.
+    rpc StreamPublish(stream StreamPublishRequest) returns (stream StreamPublishResponse);
+
+    // Open a stream subscriber channel.
+    rpc StreamSubscribe(stream StreamSubscribeRequest) returns (stream StreamSubscribeResponse);
+
+    // Open a pipeline subscriber channel.
+    rpc PipelineSubscribe(stream PipelineSubscribeRequest) returns (stream PipelineSubscribeResponse);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Components /////////////////////////////////////////////////////////////////
+
+// An empty message.
+message Empty {}
+
+// An event record formatted according to the CloudEvents specification.
+message Event {
+    // The ID of this event, which is always the offset of this event on its stream partition.
+    //
+    // See [`id`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#id).
+    uint64 id = 1;
+    // The source of this event, formatted as `/{cluster}/{stream}/{partition}/`.
+    //
+    // See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
+    string source = 2;
+    // The CloudEvents specification version which the event uses.
+    //
+    // See [`specversion`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#specversion).
+    string specversion = 3;
+    // The type identifier of this event.
+    //
+    // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
+    string type = 4;
+    // The subject of the event in the context of the event producer.
+    //
+    // This is used by Hadron in much the same way that Kafka uses the event `key`.
+    //
+    // See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
+    string subject = 5;
+    // Any additional optional attributes or extension attributes of this event.
+    //
+    // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
+    // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
+    map<string, string> optattrs = 6;
+    // The data payload of this event.
+    bytes data = 7;
+}
+
+// A new event record to be published to a stream partition.
+message NewEvent {
+    // The type identifier of this event.
+    //
+    // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
+    string type = 1;
+    // The subject of the event in the context of the event producer.
+    //
+    // This is used by Hadron in much the same way that Kafka uses the event `key`.
+    //
+    // See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
+    string subject = 2;
+    // Any additional optional attributes or extension attributes of this event.
+    //
+    // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
+    // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
+    map<string, string> optattrs = 3;
+    // The data payload of this event.
+    bytes data = 4;
+}
+
+// The replication acknowledgement mode to use for a write batch.
+enum WriteAck {
+    // Wait until all in-sync replicas have acknowledged the write.
+    ALL = 0;
+    // Wait until a majority of in-sync replicas have acknowledged the write.
+    MAJORITY = 1;
+    // Do not wait for replica write acknowledgement.
+    NONE = 2;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Stream Publish ////////////////////////////////////////////////////////////
+
+// A request to publish data to a stream.
+message StreamPublishRequest {
+    // The batch of entries to publish.
+    repeated NewEvent batch = 1;
+    // Fsync after writing batch.
+    bool fsync = 2;
+    // The replication acknowledgement mode for the batch.
+    WriteAck ack = 3;
+}
+
+// A response from publishing data to a stream.
+message StreamPublishResponse {
+    // The offset of the last entry to be written to the stream.
+    uint64 last_offset = 1;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Stream Subscribe //////////////////////////////////////////////////////////
+
+// A request to subscribe to data on a stream.
+message StreamSubscribeRequest {
+    oneof action {
+        // Setup a stream subscription.
+        StreamSubscribeSetup setup = 1;
+        // All events delivered on the last payload have been processed.
+        Empty ack = 2;
+        // An error has taken place during subscriber processing, and the delivered batch was not
+        // successfully processed.
+        //
+        // The given error message will be recorded by the server for observability.
+        string nack = 3;
+    }
+}
+
+// A request to setup a stream subscriber channel.
+message StreamSubscribeSetup {
+    // The name of the subscriber.
+    string group_name = 1;
+    // A bool indicating if this subscription should be considered durable; if `false`, then its
+    // offsets will be held in memory only.
+    bool durable = 2;
+    // The maximum batch size for this subscriber.
+    uint32 max_batch_size = 3;
+
+    reserved 4 to 9;
+    // The starting point from which to begin the subscription, if the subscription has no
+    // previously recorded offsets.
+    oneof starting_point {
+        Empty beginning = 10;
+        Empty latest = 11;
+        uint64 offset = 12;
+    }
+    reserved 13 to 20;
+}
+
+// A delivery of data for a stream subscription.
+message StreamSubscribeResponse {
+    // A batch of records for subscriber processing.
+    repeated Event batch = 1;
+    // The last offset included in this batch.
+    uint64 last_included_offset = 2;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Pipeline Sub //////////////////////////////////////////////////////////////
+
+// A request to setup a pipeline stage subscriber channel.
+message PipelineSubscribeRequest {
+    // The name of the pipeline to process.
+    string pipeline = 1;
+
+    reserved 2 to 9; // For future use.
+
+    oneof action {
+        // Setup the subscriber channel to process the given stage name.
+        string stage_name = 10;
+        // An acknowledgement of successful processing of this stage and its inputs, along with the
+        // required stage output of the stage.
+        PipelineStageOutput ack = 11;
+        // An error has taken place during subscriber processing, and the delivered data was not
+        // successfully processed.
+        //
+        // The given error message will be recorded by the server for observability.
+        string nack = 12;
+    }
+}
+
+// A payload of pipeline stage inputs for a particular pipeline stage.
+message PipelineSubscribeResponse {
+    // The name of the pipeline stage to which this delivery corresponds.
+    string stage = 1;
+    // The source stream offset corresponding to this pipeline instance.
+    uint64 offset = 2;
+    // A mapping of pipeline stage inputs based on the definition of this pipeline stage.
+    //
+    // Every key will be the name of the corresponding pipeline stage output which has been declared
+    // as an input dependency for this stage, or the `root_event` if declared as a dependency for
+    // this stage.
+    map<string, bytes> inputs = 3;
+}
+
+// The output of a successful pipeline stage consumption.
+message PipelineStageOutput {
+    // The base output of the corresponding pipeline stage.
+    bytes output = 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Metadata ///////////////////////////////////////////////////////////////////
+
+// A request to open a metadata stream.
+message MetadataRequest {}
+
+// A response to a metadata subscription setup request.
+message MetadataResponse {
+    // All partitions of the stream.
+    repeated StreamPartition partitions = 1;
+}
+
+// Stream partition metadata.
+message StreamPartition {
+    // The Kubernetes internal address of this partition.
+    string internal = 1;
+    // The Kubernetes external address of this partition, or empty string if not externally accessible.
+    string external = 2;
+}

@@ -1,5 +1,6 @@
 # NOTE WELL: this Dockerfile assumes a context from the root of this repo.
 FROM debian:stretch-slim
 ARG ARTIFACT_PATH="hadrond/.artifacts/hadrond"
+RUN apt-get update -y && apt-get install -y libssl-dev pkg-config
 COPY ${ARTIFACT_PATH} /bin/hadrond
 CMD ["/bin/hadrond"]

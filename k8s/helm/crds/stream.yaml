@@ -6,6 +6,7 @@ metadata:
 spec:
   group: hadron.rs
   names:
+    categories: []
     kind: Stream
     plural: streams
     shortNames:
@@ -17,12 +18,15 @@ spec:
         - jsonPath: ".spec.partitions"
           name: Partitions
           type: number
-        - jsonPath: ".spec.replicas"
-          name: Replicas
-          type: number
         - jsonPath: ".spec.ttl"
           name: TTL
           type: number
+        - jsonPath: ".spec.pvc_access_modes"
+          name: PVC Access Modes
+          type: "[]string"
+        - jsonPath: ".spec.pvc_storage_class"
+          name: PVC Storage Class
+          type: string
       name: v1
       schema:
         openAPIV3Schema:
@@ -32,46 +36,38 @@ spec:
               description: CRD spec for the Stream resource.
               properties:
                 partitions:
-                  description: The number of partitions to be created for this stream.
+                  description: "The number of partitions to be created for this stream.\n\nThis value can be dynamically scaled up and down and directly corresponds to the number of pods in the corresponding StatefulSet. Scaling down the number of partitions will cause the data of the removed partitions to be lost. Use with care."
                   format: uint8
                   minimum: 0.0
                   type: integer
-                replicas:
-                  description: The number of replicas to be used per partition.
-                  format: uint8
-                  minimum: 0.0
-                  type: integer
+                pvc_access_modes:
+                  description: "The access modes to use for the Stream's backing StatefulSet PVC."
+                  items:
+                    type: string
+                  nullable: true
+                  type: array
+                pvc_storage_class:
+                  description: "The storage class to use for the Stream's backing StatefulSet PVC."
+                  items:
+                    type: string
+                  nullable: true
+                  type: array
                 ttl:
-                  description: "An optional TTL in seconds specifying how long records are to be kept on the stream.\n\nIf `0`, then records will stay on the stream forever."
+                  default: 0
+                  description: "An optional TTL in seconds specifying how long records are to be kept on the stream.\n\nIf `0`, then records will stay on the stream forever. Modifying this value will require a restart of the stream's StatefulSet."
                   format: uint64
                   minimum: 0.0
                   type: integer
               required:
                 - partitions
-                - replicas
-                - ttl
               type: object
             status:
               description: CRD status object.
               nullable: true
-              properties:
-                partitions:
-                  description: The number of partitions to be created for this stream.
-                  format: uint8
-                  minimum: 0.0
-                  type: integer
-                replicas:
-                  description: The number of replicas to be used per partition.
-                  format: uint8
-                  minimum: 0.0
-                  type: integer
-              required:
-                - partitions
-                - replicas
               type: object
           required:
             - spec
-          title: Stream
+          title: StreamCRD
           type: object
       served: true
       storage: true

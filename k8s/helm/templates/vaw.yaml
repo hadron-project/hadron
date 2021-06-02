@@ -1,0 +1,25 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: cr.validations.hadron.rs
+webhooks:
+- name: cr.validations.hadron.rs
+  rules:
+  - apiGroups:   ["hadron.rs"]
+    apiVersions: ["*"]
+    operations:  ["CREATE", "UPDATE"]
+    resources:
+    - "streams"
+    - "streams/status"
+    - "pipelines"
+    - "pipelines/status"
+    - "tokens"
+    - "tokens/status"
+    scope: Namespaced
+  clientConfig:
+    service:
+      namespace: {{.Values.namespace | default .Release.Namespace}}
+      name: hadron-operator-vaw
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+  timeoutSeconds: 5

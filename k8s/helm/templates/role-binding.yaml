@@ -1,0 +1,20 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hadron-operator
+  namespace: {{.Values.namespace | default .Release.Namespace}}
+  labels:
+    app: hadron-operator
+    app.kubernetes.io/name: hadron-operator
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+subjects:
+- kind: ServiceAccount
+  name: hadron-operator
+  namespace: {{.Values.namespace | default .Release.Namespace}}
+roleRef:
+  kind: Role
+  name: hadron-operator
+  apiGroup: rbac.authorization.k8s.io
