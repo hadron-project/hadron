@@ -6,7 +6,9 @@
 // - finish up cluster level config.
 // - finish up replica discovery mechanism.
 
-use serde::Deserialize;
+use jsonwebtoken::{DecodingKey, EncodingKey};
+use serde::de::{value::BorrowedBytesDeserializer, DeserializeOwned, Error as DeError};
+use serde::{Deserialize, Deserializer};
 // use serde_aux::prelude::*; // Will use later.
 
 /// Runtime configuration data.
@@ -29,11 +31,43 @@ pub struct Config {
     /// The path to the database on disk.
     #[serde(default = "crate::database::default_data_path")]
     pub storage_data_path: String,
-    // /// The discovery backend to use.
-    // #[serde(flatten)]
-    // pub discovery_backend: DiscoveryBackend,
+
+    /// Configuration for the cluster's metadata replica set.
+    #[serde(flatten)]
+    pub metadata_config: MetadataConfig,
 }
 
+/// Runtime configuration specifically for a cluster's metadata replica set.
+#[derive(Clone, Debug, Deserialize)]
+pub struct MetadataConfig {
+    /// The JWT encoding key.
+    #[serde(deserialize_with = "MetadataConfig::parse_encoding_key")]
+    pub jwt_encoding_key: EncodingKey,
+    /// The JWT decoding key.
+    #[serde(deserialize_with = "MetadataConfig::parse_decoding_key")]
+    pub jwt_decoding_key: DecodingKey<'static>,
+}
+
+impl MetadataConfig {
+    /// Parse the decoding key from the config source.
+    fn parse_encoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<EncodingKey, D::Error> {
+        let bytes: String = Deserialize::deserialize(val)?;
+        EncodingKey::from_rsa_pem(bytes.as_bytes()).map_err(|err| DeError::custom(err.to_string()))
+    }
+
+    /// Parse the decoding key from the config source.
+    fn parse_decoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<DecodingKey<'static>, D::Error> {
+        let bytes: String = Deserialize::deserialize(val)?;
+        DecodingKey::from_rsa_pem(bytes.as_bytes())
+            .map_err(|err| DeError::custom(err.to_string()))
+            .map(|val| val.into_static())
+    }
+}
+
+// /// The discovery backend to use.
+// #[serde(flatten)]
+// pub discovery_backend: DiscoveryBackend,
+//
 // /// All available discovery backends currently implemented in this system.
 // #[derive(Clone, Debug, Deserialize)]
 // #[serde(tag = "discovery_backend", rename_all = "UPPERCASE")]
@@ -72,10 +106,7 @@ impl Config {
                 std::thread::sleep(std::time::Duration::from_secs(5)); // Just give a little time to see the error before bailing.
                 std::process::exit(1);
             }
-            Ok(config) => {
-                tracing::info!(?config, "runtime configuration");
-                config
-            }
+            Ok(config) => config,
         };
         config
     }

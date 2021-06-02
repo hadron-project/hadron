@@ -1,15 +1,15 @@
 use anyhow::{bail, ensure, Result};
+use proto::v1::CreateTokenRequest;
 use serde::{Deserialize, Serialize};
-// use tonic::metadata::AsciiMetadataValue;
 
 use crate::config::Config;
 use crate::error::AppError;
 pub use crate::models::auth::{User, UserRole};
 use crate::utils;
 
-/// The authorization header basic prefix.
+/// The authorization header basic prefix — for user creds.
 const BASIC_PREFIX: &str = "basic ";
-/// The authorization header bearer prefix.
+/// The authorization header bearer prefix — for token creds.
 const BEARER_PREFIX: &str = "bearer ";
 
 pub struct UserCredentials(String);
@@ -98,7 +98,7 @@ impl TokenCredentials {
         // let claims: Claims = jsonwebtoken::decode(token.as_ref()) // TODO: finish this up and remove stubbed claims below.
         let claims = Claims {
             id: uuid::Uuid::from_u128(0),
-            claims: ClaimsVersion::V1(ClaimsV1::All),
+            claims: ClaimsVersion::V1(ClaimsV1::All {}),
         };
         Ok(TokenCredentials { claims, header })
     }
@@ -106,12 +106,10 @@ impl TokenCredentials {
 
 /// The data model of a JWT issued by Hadron.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "v")]
 pub struct Claims {
     /// The ID of this token.
     pub id: uuid::Uuid,
     /// The version of the claims being used.
-    #[serde(flatten)]
     pub claims: ClaimsVersion,
 }
 
@@ -120,8 +118,8 @@ impl Claims {
     pub fn check_stream_pub_auth(&self, ns: &str, stream: &str) -> Result<()> {
         match &self.claims {
             ClaimsVersion::V1(v) => match v {
-                ClaimsV1::All => Ok(()),
-                ClaimsV1::Namespaced(grants) => {
+                ClaimsV1::All {} => Ok(()),
+                ClaimsV1::Namespaced { grants } => {
                     let is_authorized = grants.iter().any(|grant| match grant {
                         NamespaceGrant::Full { namespace } => namespace == ns,
                         NamespaceGrant::Limited { namespace, .. } if namespace != ns => false,
@@ -133,7 +131,7 @@ impl Claims {
                     ensure!(is_authorized, AppError::Unauthorized);
                     Ok(())
                 }
-                ClaimsV1::Metrics => Err(AppError::Unauthorized.into()),
+                ClaimsV1::Metrics {} => Err(AppError::Unauthorized.into()),
             },
         }
     }
@@ -142,8 +140,8 @@ impl Claims {
     pub fn check_stream_sub_auth(&self, ns: &str, stream: &str) -> Result<()> {
         match &self.claims {
             ClaimsVersion::V1(v) => match v {
-                ClaimsV1::All => Ok(()),
-                ClaimsV1::Namespaced(grants) => {
+                ClaimsV1::All {} => Ok(()),
+                ClaimsV1::Namespaced { grants } => {
                     let is_authorized = grants.iter().any(|grant| match grant {
                         NamespaceGrant::Full { namespace } => namespace == ns,
                         NamespaceGrant::Limited { namespace, .. } if namespace != ns => false,
@@ -155,7 +153,7 @@ impl Claims {
                     ensure!(is_authorized, AppError::Unauthorized);
                     Ok(())
                 }
-                ClaimsV1::Metrics => Err(AppError::Unauthorized.into()),
+                ClaimsV1::Metrics {} => Err(AppError::Unauthorized.into()),
             },
         }
     }
@@ -164,8 +162,8 @@ impl Claims {
     pub fn check_schema_auth(&self, ns: &str) -> Result<()> {
         match &self.claims {
             ClaimsVersion::V1(v) => match v {
-                ClaimsV1::All => Ok(()),
-                ClaimsV1::Namespaced(grants) => {
+                ClaimsV1::All {} => Ok(()),
+                ClaimsV1::Namespaced { grants } => {
                     let is_authorized = grants.iter().any(|grant| match grant {
                         NamespaceGrant::Full { namespace } => namespace == ns,
                         NamespaceGrant::Limited { namespace, .. } if namespace != ns => false,
@@ -174,9 +172,72 @@ impl Claims {
                     ensure!(is_authorized, AppError::Unauthorized);
                     Ok(())
                 }
-                ClaimsV1::Metrics => Err(AppError::Unauthorized.into()),
+                ClaimsV1::Metrics {} => Err(AppError::Unauthorized.into()),
             },
         }
+    }
+
+    /// Create a new token claims object from the given client request to create a token.
+    pub fn from_create_token_request(req: CreateTokenRequest) -> Result<Self> {
+        let id = uuid::Uuid::new_v4();
+        let claimsv1 = match (req.all, req.metrics) {
+            (true, _) => ClaimsV1::All {},
+            (false, true) => ClaimsV1::Metrics {},
+            _ => ClaimsV1::Namespaced {
+                grants: req
+                    .namespaced
+                    .into_iter()
+                    .try_fold(vec![], |mut acc, grant| -> Result<Vec<NamespaceGrant>> {
+                        let nsgrant = if grant.all {
+                            NamespaceGrant::Full { namespace: grant.namespace }
+                        } else {
+                            NamespaceGrant::Limited {
+                                namespace: grant.namespace,
+                                schema: grant.schema,
+                                exchanges: grant
+                                    .exchanges
+                                    .into_iter()
+                                    .try_fold(vec![], |mut acc, val| -> Result<Vec<NameMatcherGrant>> {
+                                        acc.push(NameMatcherGrant {
+                                            access: PubSubAccess::must_from_i32(val.access)?,
+                                            matcher: val.matcher.parse()?,
+                                        });
+                                        Ok(acc)
+                                    })
+                                    .map(|val| if val.is_empty() { None } else { Some(val) })?,
+                                endpoints: grant
+                                    .endpoints
+                                    .into_iter()
+                                    .try_fold(vec![], |mut acc, val| -> Result<Vec<NameMatcherGrant>> {
+                                        acc.push(NameMatcherGrant {
+                                            access: PubSubAccess::must_from_i32(val.access)?,
+                                            matcher: val.matcher.parse()?,
+                                        });
+                                        Ok(acc)
+                                    })
+                                    .map(|val| if val.is_empty() { None } else { Some(val) })?,
+                                streams: grant
+                                    .streams
+                                    .into_iter()
+                                    .try_fold(vec![], |mut acc, val| -> Result<Vec<NameMatcherGrant>> {
+                                        acc.push(NameMatcherGrant {
+                                            access: PubSubAccess::must_from_i32(val.access)?,
+                                            matcher: val.matcher.parse()?,
+                                        });
+                                        Ok(acc)
+                                    })
+                                    .map(|val| if val.is_empty() { None } else { Some(val) })?,
+                            }
+                        };
+                        acc.push(nsgrant);
+                        Ok(acc)
+                    })?,
+            },
+        };
+        Ok(Claims {
+            id,
+            claims: ClaimsVersion::V1(claimsv1),
+        })
     }
 }
 
@@ -193,11 +254,11 @@ pub enum ClaimsVersion {
 #[serde(tag = "type")]
 pub enum ClaimsV1 {
     /// A permissions grant on all resources in the system.
-    All,
+    All {},
     /// A set of permissions granted on namespace scoped resources.
-    Namespaced(Vec<NamespaceGrant>),
+    Namespaced { grants: Vec<NamespaceGrant> },
     /// A permissions grant on only the cluster metrics system.
-    Metrics,
+    Metrics {},
 }
 
 /// A permissions grant on a set of resources of a specific namespace.
@@ -217,12 +278,12 @@ pub enum NamespaceGrant {
     Limited {
         /// The namespace to which this grant applies.
         namespace: String,
-        /// Permissions granted on the namespace's ephemeral messaging exchange.
-        messaging: Option<Access>,
+        /// Permissions granted on ephemeral messaging exchanges.
+        exchanges: Option<Vec<NameMatcherGrant>>,
         /// Permissions granted on RPC endpoints.
-        endpoints: Option<Vec<EndpointGrant>>,
+        endpoints: Option<Vec<NameMatcherGrant>>,
         /// Permissions granted on streams.
-        streams: Option<Vec<StreamGrant>>,
+        streams: Option<Vec<NameMatcherGrant>>,
         /// Permissions to modify the schema of the namespace.
         ///
         /// A token with schema permissions is allowed to create, update & delete streams, pipelines
@@ -231,15 +292,16 @@ pub enum NamespaceGrant {
     },
 }
 
-/// An enumeration of possible access levels.
+/// An enumeration of possible pub/sub access levels.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Access {
+#[repr(i32)]
+pub enum PubSubAccess {
     Pub,
     Sub,
     All,
 }
 
-impl Access {
+impl PubSubAccess {
     /// Check if this access level represents a sufficient grant to be able to publish.
     pub fn can_publish(&self) -> bool {
         match self {
@@ -255,25 +317,51 @@ impl Access {
             Self::Pub => false,
         }
     }
+
+    /// Convert the given i32 into an instance, else 400 error.
+    pub fn must_from_i32(val: i32) -> Result<Self> {
+        match val {
+            0 => Ok(Self::Pub),
+            1 => Ok(Self::Sub),
+            2 => Ok(Self::All),
+            _ => Err(AppError::InvalidInput(format!("unrecognized pub/sub access level given '{}'", val)).into()),
+        }
+    }
 }
 
 /// A permissions grant on a set of matching endpoints.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EndpointGrant {
+pub struct NameMatcherGrant {
     pub matcher: NameMatcher,
-    pub access: Access,
-}
-
-/// A permissions grant on a set of matching streams.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct StreamGrant {
-    pub matcher: NameMatcher,
-    pub access: Access,
+    pub access: PubSubAccess,
 }
 
 /// A fully qualified matcher over a hierarchical name specification.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct NameMatcher(pub Vec<NameMatchSegment>);
+
+impl std::str::FromStr for NameMatcher {
+    type Err = anyhow::Error;
+
+    fn from_str(val: &str) -> Result<Self> {
+        let segments = val.split('.').try_fold(vec![], |mut acc, seg| -> Result<Vec<NameMatchSegment>> {
+            acc.push(match seg {
+                "*" => NameMatchSegment::Wild,
+                ">" => NameMatchSegment::Remaining,
+                _ => NameMatchSegment::Literal { literal: seg.to_owned() },
+            });
+            Ok(acc)
+        })?;
+        // Validate that there is no intermediate `>` in the matcher, as it must always be at the end.
+        if let Some((idx, _)) = segments.iter().enumerate().find(|(_, val)| matches!(val, NameMatchSegment::Remaining)) {
+            if idx < segments.len() - 1 {
+                return Err(AppError::InvalidInput("the name matcher wildcard `>` may only appear at the end of a matcher string".into()).into());
+            }
+        }
+        Ok(Self(segments))
+    }
+}
 
 /// A name match segment variant.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -281,9 +369,11 @@ pub struct NameMatcher(pub Vec<NameMatchSegment>);
 pub enum NameMatchSegment {
     /// A match on a literal segment.
     Literal { literal: String },
-    /// A wildcard match on a single segment.
+    /// A wildcard match on a single segment, represented as `*` in a matcher string.
     Wild,
-    /// A wildcard match on all remaining segments. Does not match if there are no remaining segments.
+    /// A wildcard match on all remaining segments, represented as `>` in a matcher string.
+    ///
+    /// Does not match if there are no remaining segments.
     Remaining,
 }
 

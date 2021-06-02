@@ -22,6 +22,23 @@ const PREFIX_NAMESPACE: &str = "/namespaces/";
 const PREFIX_PIPELINES: &str = "/pipelines/";
 const PREFIX_STREAMS: &str = "/streams/";
 const PREFIX_USERS: &str = "/users/";
+const PREFIX_TOKENS: &str = "/tokens/";
+
+/// Create a new auth token in the database.
+#[tracing::instrument(level = "trace", skip(tree, token))]
+pub async fn create_token(tree: Tree, token: &Claims) -> Result<()> {
+    let claims_data = serde_yaml::to_vec(&token).context("error encoding token claims for storage")?;
+    let token_key = format!("{}{}", PREFIX_TOKENS, token.id.as_u128());
+    Database::spawn_blocking(move || -> ShutdownResult<()> {
+        tree.insert(token_key.as_bytes(), claims_data.as_slice())
+            .context("error inserting new auth token into database")?;
+        Ok(())
+    })
+    .await??;
+    // FUTURE[clustering]: need to emit metadata events so that the metadata replication system
+    // can propagate this info down to other members of the cluster.
+    Ok(())
+}
 
 /// Apply a set of schema update statements to the system.
 #[tracing::instrument(level = "trace", skip(db, cache, statements, branch, timestamp))]
@@ -57,7 +74,7 @@ pub async fn apply_schema_updates(
     tracing::debug!("applying changes to db");
     Database::spawn_blocking(move || -> ShutdownResult<()> {
         tree.apply_batch(db_batch).context("error applying db batch")?;
-        // TODO: don't flush when we have replicas.
+        // FUTURE[replication]: don't flush when we have replicas.
         tree.flush().context("error flushing db changes")?;
         Ok(())
     })
@@ -283,16 +300,21 @@ pub async fn recover_user_permissions(db: &Tree) -> Result<Vec<auth::User>> {
 }
 
 /// Recover the system's token permissions state.
-#[tracing::instrument(level = "trace", skip(_db))]
-pub async fn recover_token_permissions(_db: &Tree) -> Result<Vec<(u128, Claims)>> {
-    // TODO: recover token state.
-    Ok(vec![(
-        0,
-        Claims {
-            id: uuid::Uuid::from_u128(0),
-            claims: ClaimsVersion::V1(ClaimsV1::All),
-        },
-    )])
+#[tracing::instrument(level = "trace", skip(db))]
+pub async fn recover_token_permissions(db: &Tree) -> Result<Vec<Claims>> {
+    let db_inner = db.clone();
+    let mut data = Database::spawn_blocking(move || -> Result<Vec<Claims>> {
+        let mut data = vec![];
+        for entry_res in db_inner.scan_prefix(PREFIX_TOKENS) {
+            let (_key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
+            let model: Claims = serde_yaml::from_slice(&entry).context("error decoding auth token from storage")?;
+            data.push(model);
+        }
+        Ok(data)
+    })
+    .await??;
+    tracing::debug!(count = data.len(), "recovered tokens");
+    Ok(data)
 }
 
 /// Initialize the root user.

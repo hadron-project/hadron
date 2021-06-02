@@ -1,10 +1,12 @@
+//! The Hadron server.
+
 use std::io::Write;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use tracing_subscriber::prelude::*;
 
-use hadrond::{App, Config};
+use hadrond::{AppServer, Config};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,13 +27,15 @@ async fn main() -> Result<()> {
 
     let cfg = Arc::new(Config::new());
     tracing::info!(
+        client_port = %cfg.client_port,
         node_name = %cfg.node_name,
         repl_set_name = %cfg.repl_set_name,
         leader_name = %cfg.leader_name,
         metadata_repl_set_name = %cfg.metadata_repl_set_name,
-        "starting hadron",
+        storage_data_path = %cfg.storage_data_path,
+        "starting hadron server",
     );
-    if let Err(err) = App::new(cfg).await?.spawn().await {
+    if let Err(err) = AppServer::new(cfg).await?.spawn().await {
         tracing::error!(error = ?err);
     }
 

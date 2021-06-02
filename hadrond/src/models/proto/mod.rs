@@ -1,4 +1,5 @@
 pub(super) mod auth;
+pub(super) mod common;
 pub(super) mod pipeline;
 pub(super) mod schema;
 pub(super) mod stream;

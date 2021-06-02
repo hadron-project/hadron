@@ -12,6 +12,7 @@
 mod client;
 mod cmd;
 mod error;
+mod parser;
 
 use anyhow::Result;
 use hadron::Client;
@@ -65,6 +66,7 @@ impl Hadron {
             .init();
 
         match &self.action {
+            HadronSubcommands::Auth(inner) => inner.run(&self).await,
             HadronSubcommands::Pipeline(inner) => inner.run(&self).await,
             HadronSubcommands::Schema(inner) => inner.run(&self).await,
             HadronSubcommands::Stream(inner) => inner.run(&self).await,
@@ -85,6 +87,9 @@ impl Hadron {
 
 #[derive(StructOpt)]
 pub enum HadronSubcommands {
+    /// Hadron auth interaction.
+    #[structopt(name = "auth")]
+    Auth(cmd::auth::Auth),
     /// Hadron pipeline interaction.
     #[structopt(name = "pipeline")]
     Pipeline(cmd::pipeline::Pipeline),

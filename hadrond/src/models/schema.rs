@@ -11,6 +11,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use crate::auth::Claims;
 use crate::error::AppError;
 pub use crate::models::proto::schema::*;
 use crate::models::traits::Namespaced;
@@ -33,7 +34,10 @@ lazy_static! {
 
 /// Deserialize a set of schema statements from the given input, statically validate each
 /// statement & then dynamically validate the end results using the given metadata cache.
-pub fn decode_and_validate(input: &str, cache: Arc<MetadataCache>) -> Result<Vec<SchemaStatement>> {
+///
+/// Dynamic validation must also ensure that the given claims are authorized to mutate the
+/// corresponding namespaces of each schema statement.
+pub fn decode_and_validate(input: &str, cache: &MetadataCache, claims: &Claims) -> Result<Vec<SchemaStatement>> {
     // Decode statements.
     let statements: Vec<SchemaStatement> =
         serde_yaml::from_str_multidoc(&input).map_err(|err| AppError::InvalidInput(format!("error parsing schema update: {}", err)))?;
