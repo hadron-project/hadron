@@ -1,10 +1,13 @@
 //! Network server.
 
+mod events;
 mod metadata;
 mod pipeline;
+mod pipeline_replica;
 mod stream;
+mod stream_replica;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -16,18 +19,19 @@ use prost::Message;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
-use tokio_stream::wrappers::{BroadcastStream, UnboundedReceiverStream};
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
 use crate::auth;
 use crate::config::Config;
+use crate::crd::{Pipeline, Stream};
 use crate::database::Database;
 use crate::error::AppError;
-use crate::models::events::{Event, InitialState, PipelineCreated, StreamCreated};
-use crate::models::prelude::*;
-use crate::models::schema::{Pipeline, Stream};
+use crate::k8s::events::CrdStateChange;
 pub use crate::server::metadata::MetadataCache;
-use crate::server::pipeline::{PipelineCtl, PipelineSubCtlMsg};
-use crate::server::stream::StreamCtl;
+use crate::server::pipeline::PipelineCtlMsg;
+use crate::server::pipeline_replica::PipelineReplicaCtlMsg;
+use crate::server::stream::StreamCtlMsg;
+use crate::server::stream_replica::StreamReplicaCtlMsg;
 use crate::utils;
 
 /// An H2 channel (stream) created from an active HTTP2 connection.
@@ -44,9 +48,24 @@ pub struct Server {
     /// The system metadata cache.
     cache: Arc<MetadataCache>,
     /// A map active stream controllers to their communcation channel and offset signal.
-    streams: HashMap<u64, (mpsc::Sender<H2Channel>, watch::Receiver<u64>)>,
+    ///
+    /// Note that across all partitions of a stream, a pod may only be used once as a partition leader.
+    streams: HashMap<String, BTreeMap<u8, StreamHandle>>,
+    /// A map of active stream replica controllers to their communication channel.
+    ///
+    /// Note that per stream partition, a pod may only be assigned once for replication.
+    stream_replicas: HashMap<String, BTreeMap<u8, StreamReplicaHandle>>,
     /// A map active pipeline controllers to their communcation channels.
-    pipelines: HashMap<u64, mpsc::Sender<PipelineSubCtlMsg>>,
+    ///
+    /// Note that across all partitions of a stream, a pod may only be used once as a partition leader,
+    /// and pipelines follow their source stream's schedule, so this constraint applies for pipelines as well.
+    pipelines: HashMap<String, BTreeMap<u8, PipelineHandle>>,
+    /// A map of active pipeline replica controllers to their communication channel.
+    ///
+    /// Note that per stream partition, a pod may only be assigned once for replication,
+    /// and pipelines follow their source stream's schedule, so this constraint applies
+    /// for pipelines as well.
+    pipeline_replicas: HashMap<String, BTreeMap<u8, PipelineReplicaHandle>>,
 
     /// A channel used for triggering graceful shutdown.
     shutdown_tx: broadcast::Sender<()>,
@@ -54,23 +73,14 @@ pub struct Server {
     shutdown_rx: BroadcastStream<()>,
 
     /// A MPMC channel used for system events.
-    events_tx: broadcast::Sender<Arc<Event>>,
-    /// A MPMC channel used for system events.
-    events_rx: broadcast::Receiver<Arc<Event>>,
+    events_rx: mpsc::Receiver<CrdStateChange>,
 
     /// The TCP listener used by this server.
     listener: TcpListener,
     /// The channel used to handle H2 channels as they arrive.
-    channels_tx: mpsc::UnboundedSender<H2Channel>,
+    channels_tx: mpsc::Sender<H2Channel>,
     /// The channel used to handle H2 channels as they arrive.
-    channels_rx: UnboundedReceiverStream<H2Channel>,
-
-    // A handle to the MetadataCtl.
-    metadata_tx: mpsc::Sender<H2Channel>,
-    metadata_ctl: JoinHandle<Result<()>>,
-
-    /// Handles to all spawned controllers.
-    handles: Vec<JoinHandle<Result<()>>>,
+    channels_rx: ReceiverStream<H2Channel>,
 
     /// A general purpose reusable bytes buffer, safe for concurrent use.
     buf: BytesMut,
@@ -79,8 +89,7 @@ pub struct Server {
 impl Server {
     /// Create a new instance.
     pub async fn new(
-        config: Arc<Config>, db: Database, shutdown_tx: broadcast::Sender<()>, events_tx: broadcast::Sender<Arc<Event>>,
-        events_rx: broadcast::Receiver<Arc<Event>>,
+        config: Arc<Config>, db: Database, shutdown_tx: broadcast::Sender<()>, events_rx: mpsc::Receiver<CrdStateChange>,
     ) -> Result<(Self, Arc<MetadataCache>)> {
         // Build TCP listener.
         let addr = format!("0.0.0.0:{}", config.client_port);
@@ -89,30 +98,23 @@ impl Server {
             .with_context(|| format!("error creating network listener on addr {}", addr))?;
         tracing::info!("server is listening on {}", addr);
 
-        // Spawn the metadata controller.
-        let (metadata_tx, metadata_rx) = mpsc::channel(100);
-        let (metadata_ctl, cache) =
-            metadata::MetadataCtl::new(config.clone(), db.clone(), shutdown_tx.clone(), metadata_rx, events_tx.clone()).await?;
-        let metadata_ctl = metadata_ctl.spawn();
-
-        let (channels_tx, channels_rx) = mpsc::unbounded_channel();
+        let cache = Arc::new(MetadataCache::default());
+        let (channels_tx, channels_rx) = mpsc::channel(10_000);
         Ok((
             Self {
                 config,
                 db,
                 cache: cache.clone(),
                 streams: Default::default(),
+                stream_replicas: Default::default(),
                 pipelines: Default::default(),
+                pipeline_replicas: Default::default(),
                 shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
                 shutdown_tx,
-                events_tx,
                 events_rx,
                 listener,
                 channels_tx,
-                channels_rx: UnboundedReceiverStream::new(channels_rx),
-                metadata_tx,
-                metadata_ctl,
-                handles: Vec::new(),
+                channels_rx: ReceiverStream::new(channels_rx),
                 buf: BytesMut::with_capacity(5000),
             },
             cache,
@@ -130,18 +132,24 @@ impl Server {
             tokio::select! {
                 Ok((socket, addr)) = self.listener.accept() => self.spawn_connection(socket, addr),
                 Some(h2chan) = self.channels_rx.next() => self.route_request(h2chan).await,
-                event_res = self.events_rx.recv() => self.handle_event_res(event_res).await,
-                Some(_) = self.shutdown_rx.next() => break,
+                Some(event) = self.events_rx.recv() => self.handle_event(event).await,
+                _ = self.shutdown_rx.next() => break,
             }
         }
 
         // Begin shutdown routine.
-        if let Err(err) = self.metadata_ctl.await {
-            tracing::error!(error = ?err, "error shutting down metadata controller");
+        for (_, stream) in self.streams.drain() {
+            for (_, handle) in stream {
+                if let Err(err) = handle.handle.await {
+                    tracing::error!(error = ?err, "error awaiting shutdown of spawned stream controller");
+                }
+            }
         }
-        for handle in self.handles.drain(..) {
-            if let Err(err) = handle.await {
-                tracing::error!(error = ?err, "error shutting spawned controller");
+        for (_, pipeline) in self.pipelines.drain() {
+            for (_, handle) in pipeline {
+                if let Err(err) = handle.handle.await {
+                    tracing::error!(error = ?err, "error awaiting shutdown of spawned pipeline controller");
+                }
             }
         }
         tracing::debug!("network server shutdown");
@@ -153,7 +161,9 @@ impl Server {
     fn spawn_connection(&mut self, socket: TcpStream, _addr: SocketAddr) {
         let (tx, mut shutdown) = (self.channels_tx.clone(), BroadcastStream::new(self.shutdown_tx.subscribe()));
         tokio::spawn(async move {
-            let handshake_res = h2::server::handshake(socket).await.context("error performing H2 handshake");
+            let handshake_res = h2::server::handshake(socket)
+                .await
+                .context("error performing H2 handshake");
             let mut conn = match handshake_res {
                 Ok(conn) => conn,
                 Err(err) => {
@@ -165,7 +175,7 @@ impl Server {
                 tokio::select! {
                     chan_opt = conn.accept() => match chan_opt {
                         Some(Ok(h2chan)) => {
-                            let _ = tx.send(h2chan);
+                            let _ = tx.send(h2chan).await;
                         },
                         Some(Err(err)) => {
                             tracing::error!(error = ?err, "error handling new H2 stream");
@@ -173,7 +183,7 @@ impl Server {
                         }
                         None => break,
                     },
-                    Some(_) = shutdown.next() => break,
+                    _ = shutdown.next() => break,
                 }
             }
         });
@@ -188,47 +198,26 @@ impl Server {
         let res: Result<()> = match path.next() {
             // Handle V1 requests.
             Some(proto::v1::URL_V1) => match path.next() {
-                // Metadata requests.
-                Some(proto::v1::URL_METADATA) => {
-                    let _ = self.metadata_tx.send(req).await;
-                    return;
-                }
                 // Requests bound for a stream controller.
                 Some(proto::v1::URL_STREAM) => match (path.next(), path.next()) {
-                    (Some(ns), Some(name)) => {
-                        tracing::debug!(ns, name, "handling new stream channel");
-                        let stream_hash_id = utils::ns_name_hash_id(ns, name);
-                        match self.streams.get(&stream_hash_id) {
-                            Some((stream_tx, _)) => {
-                                tracing::debug!(ns, name, "sending channel to controller");
-                                let _ = stream_tx.send(req).await;
-                                return;
-                            }
-                            None => {
-                                tracing::debug!(ns, name, "stream controller not found");
-                                Err(AppError::ResourceNotFound.into())
-                            }
+                    (Some(name), Some(partition)) => match self.get_v1_stream_handle(name, partition) {
+                        Ok(handle) => {
+                            let _ = handle.tx.send(StreamCtlMsg::Request(req)).await;
+                            return;
                         }
-                    }
+                        Err(err) => Err(err),
+                    },
                     _ => Err(AppError::ResourceNotFound.into()),
                 },
                 // Requests bound for a pipeline controller.
                 Some(proto::v1::URL_PIPELINE) => match (path.next(), path.next()) {
-                    (Some(ns), Some(name)) => {
-                        tracing::debug!(ns, name, "handling new pipeline channel");
-                        let pipeline_hash_id = utils::ns_name_hash_id(ns, name);
-                        match self.pipelines.get(&pipeline_hash_id) {
-                            Some(pipeline_tx) => {
-                                tracing::debug!(ns, name, "sending channel to controller");
-                                let _ = pipeline_tx.send(PipelineSubCtlMsg::Request(req)).await;
-                                return;
-                            }
-                            None => {
-                                tracing::debug!(ns, name, "pipeline controller not found");
-                                Err(AppError::ResourceNotFound.into())
-                            }
+                    (Some(name), Some(partition)) => match self.get_v1_pipeline_handle(name, partition) {
+                        Ok(handle) => {
+                            let _ = handle.tx.send(PipelineCtlMsg::Request(req)).await;
+                            return;
                         }
-                    }
+                        Err(err) => Err(err),
+                    },
                     _ => Err(AppError::ResourceNotFound.into()),
                 },
                 _ => Err(AppError::ResourceNotFound.into()),
@@ -240,160 +229,28 @@ impl Server {
         }
     }
 
-    /// Handle a system metadata event.
-    #[tracing::instrument(level = "trace", skip(self, event_res))]
-    async fn handle_event_res(&mut self, event_res: std::result::Result<Arc<Event>, broadcast::error::RecvError>) {
-        let mut event_res = Some(event_res);
-        loop {
-            let event = match event_res.take() {
-                Some(Ok(event)) => event,
-                Some(Err(err)) => {
-                    // Shutdown if we've run into an error on the events channel.
-                    tracing::error!(error = ?err, "error consuming system metadata events, shutting down");
-                    let _ = self.shutdown_tx.send(());
-                    return;
-                }
-                None => return,
-            };
-            match event.as_ref() {
-                Event::Initial(e) => self.handle_event_initial(e).await,
-                Event::PipelineCreated(e) => self.handle_event_pipeline_created(e).await,
-                Event::StreamCreated(e) => self.handle_event_stream_created(e).await,
-            }
-            event_res = match self.events_rx.try_recv() {
-                Ok(ok) => Some(Ok(ok)),
-                Err(err) => match err {
-                    broadcast::error::TryRecvError::Empty => return,
-                    broadcast::error::TryRecvError::Closed => Some(Err(broadcast::error::RecvError::Closed)),
-                    broadcast::error::TryRecvError::Lagged(val) => Some(Err(broadcast::error::RecvError::Lagged(val))),
-                },
-            }
-        }
+    /// Get a reference to the target stream handle for the given request info.
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn get_v1_stream_handle(&self, name: &str, partition: &str) -> Result<&StreamHandle> {
+        let partition: u8 = partition
+            .parse()
+            .map_err(|_| AppError::InvalidInput("invalid stream partition provided".into()))?;
+        self.streams
+            .get(name)
+            .and_then(|partitions| partitions.get(&partition))
+            .ok_or_else(|| AppError::ResourceNotFound.into())
     }
 
-    /// Handle an initial metadata payload following a system recovery.
-    #[tracing::instrument(level = "trace", skip(self, event))]
-    async fn handle_event_initial(&mut self, event: &InitialState) {
-        for stream in event.streams.iter() {
-            if stream.partitions.contains(&self.config.repl_set_name) {
-                self.spawn_stream_controller(stream).await;
-            }
-        }
-        for pipeline in event.pipelines.iter() {
-            let stream_hash = utils::ns_name_hash_id(pipeline.namespace(), &pipeline.input_stream);
-            if self.streams.contains_key(&stream_hash) {
-                self.spawn_pipeline_controller(pipeline).await;
-            }
-        }
-    }
-
-    /// Handle an event indicating that a new pipeline was created.
-    #[tracing::instrument(level = "trace", skip(self, event))]
-    async fn handle_event_pipeline_created(&mut self, event: &PipelineCreated) {
-        let stream_hash = utils::ns_name_hash_id(event.pipeline.namespace(), &event.pipeline.input_stream);
-        if self.streams.contains_key(&stream_hash) {
-            self.spawn_pipeline_controller(&event.pipeline).await;
-        }
-    }
-
-    /// Handle an event indicating that a new stream was created.
-    #[tracing::instrument(level = "trace", skip(self, event))]
-    async fn handle_event_stream_created(&mut self, event: &StreamCreated) {
-        if event.stream.partitions.contains(&self.config.repl_set_name) {
-            self.spawn_stream_controller(&event.stream).await;
-        }
-    }
-
-    /// Spawn a stream controller.
-    #[tracing::instrument(level = "trace", skip(self, stream))]
-    async fn spawn_stream_controller(&mut self, stream: &Arc<Stream>) {
-        let (tx, rx) = mpsc::channel(10_000);
-        let stream_res = StreamCtl::new(
-            self.config.clone(),
-            self.db.clone(),
-            self.cache.clone(),
-            Arc::clone(stream),
-            self.shutdown_tx.clone(),
-            rx,
-        )
-        .await
-        .context("error spawning stream controller");
-        let (ctl, offset_signal) = match stream_res {
-            Ok(ctl) => ctl,
-            Err(err) => {
-                tracing::error!(
-                    error = ?err,
-                    "error spawning stream controller for {}/{}",
-                    stream.metadata.namespace,
-                    stream.metadata.name
-                );
-                let _ = self.shutdown_tx.send(());
-                return;
-            }
-        };
-        self.handles.push(ctl.spawn());
-        let _ = self.streams.insert(stream.hash_id(), (tx, offset_signal));
-    }
-
-    /// Spawn a pipeline controller.
-    #[tracing::instrument(level = "trace", skip(self, pipeline))]
-    async fn spawn_pipeline_controller(&mut self, pipeline: &Arc<Pipeline>) {
-        // Grab the source stream's offset channel.
-        let signal = match self.cache.get_stream(pipeline.namespace(), pipeline.input_stream.as_str()) {
-            Some(stream) => match self.streams.get(&stream.hash_id()) {
-                Some((_, signal)) => signal,
-                None => {
-                    tracing::error!(
-                        "input stream offset channel for pipeline {}/{} not found, this should never happen",
-                        pipeline.metadata.namespace,
-                        pipeline.metadata.name
-                    );
-                    let _ = self.shutdown_tx.send(());
-                    return;
-                }
-            },
-            None => {
-                tracing::error!(
-                    "input stream for pipeline {}/{} not found, this should never happen",
-                    pipeline.metadata.namespace,
-                    pipeline.metadata.name
-                );
-                let _ = self.shutdown_tx.send(());
-                return;
-            }
-        };
-
-        // Instantiate the pipeline controller.
-        let (tx, rx) = mpsc::channel(10_000);
-        let pipeline_res = PipelineCtl::new(
-            self.config.clone(),
-            self.db.clone(),
-            self.cache.clone(),
-            Arc::clone(pipeline),
-            signal.clone(),
-            self.shutdown_tx.clone(),
-            tx.clone(),
-            rx,
-        )
-        .await
-        .context("error spawning pipeline controller");
-
-        // Handle error cases and spawn the controller.
-        let ctl = match pipeline_res {
-            Ok(ctl) => ctl,
-            Err(err) => {
-                tracing::error!(
-                    error = ?err,
-                    "error spawning pipeline controller for {}/{}",
-                    pipeline.metadata.namespace,
-                    pipeline.metadata.name
-                );
-                let _ = self.shutdown_tx.send(());
-                return;
-            }
-        };
-        self.handles.push(ctl.spawn());
-        let _ = self.pipelines.insert(pipeline.hash_id(), tx);
+    /// Get a reference to the target pipeline handle for the given request info.
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn get_v1_pipeline_handle(&self, name: &str, partition: &str) -> Result<&PipelineHandle> {
+        let partition: u8 = partition
+            .parse()
+            .map_err(|_| AppError::InvalidInput("invalid pipeline partition provided".into()))?;
+        self.pipelines
+            .get(name)
+            .and_then(|partitions| partitions.get(&partition))
+            .ok_or_else(|| AppError::ResourceNotFound.into())
     }
 }
 
@@ -484,9 +341,68 @@ fn must_get_user<'a, T>(req: &'a http::Request<T>) -> Result<auth::UserCredentia
 /// Require that the given request has the given method, else error
 #[tracing::instrument(level = "trace", skip(req))]
 fn require_method<T>(req: &http::Request<T>, method: Method) -> Result<()> {
+    #[allow(unused_variables)] // A linting bug in `matches!` it would seem.
     if matches!(req.method(), method) {
         Ok(())
     } else {
         Err(AppError::MethodNotAllowed.into())
     }
+}
+
+/// A handle to a live stream controller.
+struct StreamHandle {
+    /// A pointer to the stream object.
+    ///
+    /// This is always kept up-to-date as data flows in from K8s.
+    pub stream: Arc<Stream>,
+    /// The stream partition of this controller.
+    pub partition: u8,
+    /// The controller's communication channel.
+    pub tx: mpsc::Sender<StreamCtlMsg>,
+    /// A signal of the stream's last offset.
+    pub last_offset: watch::Receiver<u64>,
+    /// The spawned controller's join handle.
+    pub handle: JoinHandle<Result<()>>,
+}
+
+/// A handle to a live stream replica controller.
+struct StreamReplicaHandle {
+    /// A pointer to the stream object.
+    ///
+    /// This is always kept up-to-date as data flows in from K8s.
+    pub stream: Arc<Stream>,
+    /// The stream partition of this controller.
+    pub partition: u8,
+    /// The controller's communication channel.
+    pub tx: mpsc::Sender<StreamReplicaCtlMsg>,
+    /// The spawned controller's join handle.
+    pub handle: JoinHandle<Result<()>>,
+}
+
+/// A handle to a live pipeline controller.
+struct PipelineHandle {
+    /// A pointer to the pipeline object.
+    ///
+    /// This is always kept up-to-date as data flows in from K8s.
+    pub pipeline: Arc<Pipeline>,
+    /// The pipeline partition of this controller.
+    pub partition: u8,
+    /// The controller's communication channel.
+    pub tx: mpsc::Sender<PipelineCtlMsg>,
+    /// The spawned controller's join handle.
+    pub handle: JoinHandle<Result<()>>,
+}
+
+/// A handle to a live pipeline replica controller.
+struct PipelineReplicaHandle {
+    /// A pointer to the pipeline object.
+    ///
+    /// This is always kept up-to-date as data flows in from K8s.
+    pub pipeline: Arc<Pipeline>,
+    /// The pipeline partition of this controller.
+    pub partition: u8,
+    /// The controller's communication channel.
+    pub tx: mpsc::Sender<PipelineReplicaCtlMsg>,
+    /// The spawned controller's join handle.
+    pub handle: JoinHandle<Result<()>>,
 }

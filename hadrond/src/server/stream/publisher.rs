@@ -7,15 +7,18 @@ use futures::prelude::*;
 use http::Method;
 use prost::Message;
 use proto::v1::{
-    StreamPubRequest, StreamPubResponse, StreamPubResponseOk, StreamPubResponseResult, StreamPubSetupRequest, StreamPubSetupResponse,
+    Event, StreamPubRequest, StreamPubResponse, StreamPubResponseOk, StreamPubResponseResult, StreamPubSetupRequest, StreamPubSetupResponse,
     StreamPubSetupResponseResult,
 };
 
-use crate::database::Database;
+use crate::crd::RequiredMetadata;
 use crate::error::{AppError, ShutdownError, ERR_DB_FLUSH};
-use crate::server::stream::{subscriber::StreamSubCtlMsg, StreamCtl};
+use crate::server::stream::StreamCtl;
 use crate::server::{must_get_token, require_method, H2Channel, H2DataChannel};
 use crate::utils;
+
+/// The CloudEvents spec version currently being used.
+const CLOUD_EVENTS_SPEC_VERSION: &str = "1.0";
 
 impl StreamCtl {
     /// Validate a stream publisher channel before full setup.
@@ -23,8 +26,8 @@ impl StreamCtl {
     pub(super) async fn validate_publisher_channel(&mut self, req: &mut H2Channel) -> Result<h2::SendStream<Bytes>> {
         require_method(&req.0, Method::POST)?;
         let creds = must_get_token(&req.0, self.config.as_ref())?;
-        let claims = self.cache.must_get_token_claims(&creds.claims.id.as_u128())?;
-        claims.check_stream_pub_auth(&self.stream.metadata.namespace, &self.stream.metadata.name)?;
+        let claims = self.cache.must_get_token_claims(&creds.claims.id)?;
+        claims.check_stream_pub_auth(self.stream.name())?;
 
         // Read initial body so that we know the name of the publisher.
         let mut body_req = req
@@ -48,7 +51,9 @@ impl StreamCtl {
             result: Some(StreamPubSetupResponseResult::Ok(Default::default())),
         };
         let mut setup_res_buf = self.buf.split();
-        setup_res.encode(&mut setup_res_buf).context("error encoding stream pub setup response")?;
+        setup_res
+            .encode(&mut setup_res_buf)
+            .context("error encoding stream pub setup response")?;
         res_chan
             .send_data(setup_res_buf.freeze(), false)
             .context("error sending stream pub setup response")?;
@@ -83,9 +88,7 @@ impl StreamCtl {
                 }
                 let app_err = err.downcast::<AppError>().unwrap_or_else(AppError::from);
                 let proto = StreamPubResponse {
-                    result: Some(StreamPubResponseResult::Err(proto::v1::Error {
-                        message: app_err.to_string(),
-                    })),
+                    result: Some(StreamPubResponseResult::Err(proto::v1::Error { message: app_err.to_string() })),
                 };
                 if let Err(err) = proto.encode(&mut buf) {
                     tracing::error!(error = ?err, "error encoding publisher response payload");
@@ -111,26 +114,36 @@ impl StreamCtl {
 
         // Assign an offset to each entry in the payload and write as a batch.
         let mut batch = sled::Batch::default();
-        for entry in data.batch {
-            tracing::debug!("data: {}", String::from_utf8_lossy(&entry));
-            batch.insert(&utils::encode_u64(self.next_offset), entry);
+        for new_event in data.batch {
+            let entry = utils::encode_model(&Event {
+                id: self.next_offset,
+                source: self.source_identifier.clone(),
+                specversion: CLOUD_EVENTS_SPEC_VERSION.into(),
+                r#type: new_event.r#type,
+                optattrs: new_event.optattrs,
+                data: new_event.data,
+            })
+            .context("error encoding stream event record for storage")?;
+            batch.insert(&utils::encode_u64(self.next_offset), entry.as_slice());
             self.next_offset += 1;
         }
-        let tree = self.tree.clone();
-        Database::spawn_blocking(move || {
-            tree.apply_batch(batch)
-                .context("error applying write batch")
-                .map_err(ShutdownError::from)?;
-            tree.flush().context(ERR_DB_FLUSH).map_err(ShutdownError::from)
-        })
-        .await??;
+        self.tree
+            .apply_batch(batch)
+            .context("error applying write batch")
+            .map_err(ShutdownError::from)?;
+        self.tree
+            .flush_async()
+            .await
+            .context(ERR_DB_FLUSH)
+            .map_err(ShutdownError::from)?;
 
         // FUTURE: Send the channel to a watch group to await async replication.
 
         // Respond to publisher.
         tracing::debug!(self.next_offset, "finished writing data to stream");
-        let _ = self.offset_signal.send(self.next_offset);
-        Ok(self.next_offset - 1)
+        let offset = self.next_offset - 1;
+        let _ = self.offset_signal.send(offset);
+        Ok(offset)
     }
 }
 

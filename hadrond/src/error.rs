@@ -16,6 +16,7 @@ pub enum AppError {
     #[error("the given authorization token is unknown")]
     UnknownToken,
     /// The caller's authorization username is unknown.
+    #[allow(dead_code)]
     #[error("the given authorization username is unknown")]
     UnknownUser,
     /// The caller's credentials are malformed or invalid.

@@ -4,14 +4,26 @@
 //! ready to be synced with the cluster.
 
 use anyhow::{Context, Result};
-use hadrond::crd::stream::Stream;
+use hadrond::crd::{Pipeline, Stream, Token};
 
 fn main() -> Result<()> {
-    let crd = Stream::crd();
-    let contents = serde_yaml::to_string(&crd).context("error serializing CRD to yaml")?;
     let canon = std::fs::canonicalize("..").context("error getting canonical path of current dir")?;
-    let crd_path = canon.join("k8s").join("helm").join("crds").join("stream.yaml");
-    std::fs::write(&crd_path, &contents).with_context(|| format!("error writing CRD to {:?}", &crd_path))?;
-    println!("CRD written to {:?}", &crd_path);
+    let crds_path = canon.join("k8s").join("helm").join("crds");
+
+    let stream = Stream::crd();
+    let stream_yaml = serde_yaml::to_string(&stream).context("error serializing Stream CRD to yaml")?;
+    std::fs::write(crds_path.join("stream.yaml"), &stream_yaml).with_context(|| format!("error writing Stream CRD to {:?}", &crds_path))?;
+    println!("Stream CRD written to {:?}", &crds_path);
+
+    let pipeline = Pipeline::crd();
+    let pipeline_yaml = serde_yaml::to_string(&pipeline).context("error serializing Pipeline CRD to yaml")?;
+    std::fs::write(crds_path.join("pipeline.yaml"), &pipeline_yaml).with_context(|| format!("error writing Pipeline CRD to {:?}", &crds_path))?;
+    println!("Pipeline CRD written to {:?}", &crds_path);
+
+    let token = Token::crd();
+    let token_yaml = serde_yaml::to_string(&token).context("error serializing Token CRD to yaml")?;
+    std::fs::write(crds_path.join("token.yaml"), &token_yaml).with_context(|| format!("error writing Token CRD to {:?}", &crds_path))?;
+    println!("Token CRD written to {:?}", &crds_path);
+
     Ok(())
 }

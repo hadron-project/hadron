@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use bytes::Bytes;
+use proto::v1::Event;
+use sled::IVec;
 use uuid::Uuid;
 
 pub use crate::models::proto::pipeline::*;
@@ -11,8 +12,10 @@ pub use crate::models::proto::pipeline::*;
 pub struct ActivePipelineInstance {
     /// The model of the pipeline instance, directly from storage.
     pub instance: PipelineInstance,
-    /// A copy of the stream record which triggered this instance.
-    pub root_event: Bytes,
+    /// A copy of the stream event which triggered this instance.
+    pub root_event: Event,
+    /// A copy of the raw bytes of the root event.
+    pub root_event_bytes: IVec,
     /// A mapping of stage names to their completion outputs.
     pub outputs: HashMap<String, PipelineStageOutput>,
     /// A mapping of active deliveries by stage name to the channel ID currently processing

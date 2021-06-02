@@ -14,6 +14,9 @@ spec:
   scope: Namespaced
   versions:
     - additionalPrinterColumns:
+        - jsonPath: ".spec.cluster"
+          name: Cluster
+          type: string
         - jsonPath: ".spec.partitions"
           name: Partitions
           type: number
@@ -31,6 +34,9 @@ spec:
             spec:
               description: CRD spec for the Stream resource.
               properties:
+                cluster:
+                  description: The cluster to which this token belongs.
+                  type: string
                 partitions:
                   description: The number of partitions to be created for this stream.
                   format: uint8
@@ -42,32 +48,62 @@ spec:
                   minimum: 0.0
                   type: integer
                 ttl:
+                  default: 0
                   description: "An optional TTL in seconds specifying how long records are to be kept on the stream.\n\nIf `0`, then records will stay on the stream forever."
                   format: uint64
                   minimum: 0.0
                   type: integer
               required:
+                - cluster
                 - partitions
                 - replicas
-                - ttl
               type: object
             status:
               description: CRD status object.
               nullable: true
               properties:
+                epoch:
+                  description: The serial epoch of this partition assignment configuration.
+                  format: uint64
+                  minimum: 0.0
+                  type: integer
                 partitions:
-                  description: The number of partitions to be created for this stream.
-                  format: uint8
-                  minimum: 0.0
-                  type: integer
-                replicas:
-                  description: The number of replicas to be used per partition.
-                  format: uint8
-                  minimum: 0.0
-                  type: integer
+                  description: State info on all partitions.
+                  items:
+                    description: "State information of a partition.\n\n## RuntimeState Stable: - all assigned pods are running and healthy.\n\nUnstable: - at least one backing pod is unhealthy or has been deleted.\n\n## ScheduleState Scheduled: - a leader has been assigned. - the last known target replica count has been matched.\n\nUnschedulable: - a leader could not be assigned. - the last known target replica count could not be matched.\n\nNeedsReplicas: - a leader has been assigned. - some replicas have been assigned, but the last known target replica count could not be matched."
+                    properties:
+                      leader:
+                        description: The name of the pod which is currently the leader of the partition.
+                        type: string
+                      replicas:
+                        description: The names of all pods acting as replicas for the partition.
+                        items:
+                          type: string
+                        type: array
+                      runtimeState:
+                        description: "The partition's runtime state."
+                        enum:
+                          - Stable
+                          - Unstable
+                          - Unknown
+                        type: string
+                      scheduleState:
+                        description: "The partition's schedule state."
+                        enum:
+                          - Scheduled
+                          - Unschedulable
+                          - NeedsReplicas
+                        type: string
+                    required:
+                      - leader
+                      - replicas
+                      - runtimeState
+                      - scheduleState
+                    type: object
+                  type: array
               required:
+                - epoch
                 - partitions
-                - replicas
               type: object
           required:
             - spec

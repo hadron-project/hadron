@@ -1,0 +1,38 @@
+apiVersion: hadron.rs/v1
+kind: Stream
+metadata:
+  name: events
+  namespace: default
+spec:
+  cluster: hadron
+  partitions: 3
+  # 1 leader node & 2 replicas.
+  replicas: 2
+  ttl: 0
+
+---
+apiVersion: hadron.rs/v1
+kind: Pipeline
+metadata:
+  name: service-creation
+  namespace: default
+spec:
+  cluster: hadron
+  sourceStream: events
+  triggers: ""
+  maxParallel: 50
+  stages:
+    - name: deploy-service
+
+    - name: setup-monitoring
+      dependencies: ["deploy-service"]
+    - name: setup-billing
+      dependencies: ["deploy-service"]
+    - name: email-customer
+      dependencies: ["deploy-service"]
+
+    - name: cleanup
+      dependencies:
+        - setup-monitoring
+        - setup-billing
+        - email-customer

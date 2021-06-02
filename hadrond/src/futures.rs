@@ -31,7 +31,7 @@ impl Stream for LivenessStream {
             }
             Poll::Ready(opt) => match opt {
                 Some(res) => match res {
-                    Ok(data) => {
+                    Ok(_data) => {
                         tracing::warn!(group = ?&*self.group, channel = ?self.chan_id, "protocol error, unexpected data payload received from subscriber");
                         self.chan = Some(chan);
                         Poll::Pending

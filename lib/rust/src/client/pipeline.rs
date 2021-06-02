@@ -102,7 +102,7 @@ impl SubscriptionTask {
             tokio::select! {
                 Some((node, delivery_opt)) = self.inbound.next() => self.handle_subscription_delivery(node, delivery_opt).await,
                 Some(task) = self.tasks_rx.next() => self.handle_sub_task(task).await,
-                _res = &mut self.shutdown => break,
+                _ = &mut self.shutdown => break,
             }
         }
     }

@@ -8,9 +8,9 @@ pub struct PipelineInstance {
     /// which this instance was created.
     #[prost(uint64, required, tag="1")]
     pub id: u64,
-    /// The ID of the parent pipeline object.
-    #[prost(uint64, required, tag="2")]
-    pub pipeline_id: u64,
+    /// The name of the parent pipeline object.
+    #[prost(string, required, tag="2")]
+    pub pipeline: ::prost::alloc::string::String,
 }
 /// A pipeline stage output record.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -19,8 +19,8 @@ pub struct PipelineStageOutput {
     #[prost(uint64, required, tag="1")]
     pub id: u64,
     /// The ID of the parent pipeline object.
-    #[prost(uint64, required, tag="2")]
-    pub pipeline_id: u64,
+    #[prost(string, required, tag="2")]
+    pub pipeline: ::prost::alloc::string::String,
     /// The name of the pipeline stage to which this output corresponds.
     #[prost(string, required, tag="3")]
     pub stage: ::prost::alloc::string::String,

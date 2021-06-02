@@ -1,0 +1,116 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: tokens.hadron.rs
+spec:
+  group: hadron.rs
+  names:
+    kind: Token
+    plural: tokens
+    shortNames:
+      - token
+    singular: token
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: ".spec.cluster"
+          name: Cluster
+          type: string
+        - jsonPath: ".status.secretName"
+          name: Secret
+          type: string
+      name: v1
+      schema:
+        openAPIV3Schema:
+          description: "Auto-generated derived type for TokenSpec via `CustomResource`"
+          properties:
+            spec:
+              description: "CRD spec for the Token resource.\n\nTokens are used to establish authentication & authorization controls within a Hadron cluster."
+              properties:
+                all:
+                  description: "Grant full access to all resources of the cluster.\n\nIf this value is true, then all other values are ignored."
+                  type: boolean
+                cluster:
+                  description: The cluster to which this token belongs.
+                  type: string
+                endpoints:
+                  description: "Permissions granted on RPC endpoints.\n\nAll grants are structured as `{name}={access}` and are comma-separated for multiple grants."
+                  properties:
+                    pub:
+                      description: Object names for which publishing access is granted.
+                      items:
+                        type: string
+                      type: array
+                    sub:
+                      description: Object names for which subscription access is granted.
+                      items:
+                        type: string
+                      type: array
+                  required:
+                    - pub
+                    - sub
+                  type: object
+                exchanges:
+                  description: "Permissions granted on ephemeral messaging exchanges.\n\nAll grants are structured as `{name}={access}` and are comma-separated for multiple grants."
+                  properties:
+                    pub:
+                      description: Object names for which publishing access is granted.
+                      items:
+                        type: string
+                      type: array
+                    sub:
+                      description: Object names for which subscription access is granted.
+                      items:
+                        type: string
+                      type: array
+                  required:
+                    - pub
+                    - sub
+                  type: object
+                streams:
+                  description: "Permissions granted on streams.\n\nAll grants are structured as `{name}={access}` and are comma-separated for multiple grants."
+                  properties:
+                    pub:
+                      description: Object names for which publishing access is granted.
+                      items:
+                        type: string
+                      type: array
+                    sub:
+                      description: Object names for which subscription access is granted.
+                      items:
+                        type: string
+                      type: array
+                  required:
+                    - pub
+                    - sub
+                  type: object
+              required:
+                - all
+                - cluster
+                - endpoints
+                - exchanges
+                - streams
+              type: object
+            status:
+              description: CRD status object.
+              nullable: true
+              properties:
+                secretName:
+                  description: The name of the corresponding secret once created.
+                  type: string
+                tokenId:
+                  description: The ID of the created token.
+                  type: string
+              required:
+                - secretName
+                - tokenId
+              type: object
+          required:
+            - spec
+          title: Token
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

@@ -1,6 +1,5 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::task::{Context as TaskContext, Poll};
 
 use anyhow::{bail, Context, Result};
 use bytes::{Bytes, BytesMut};
@@ -8,11 +7,11 @@ use futures::stream::StreamExt;
 use http::Method;
 use prost::Message;
 use proto::v1::{
-    Record, StreamSubDelivery, StreamSubDeliveryResponse, StreamSubDeliveryResponseResult, StreamSubSetupRequest, StreamSubSetupRequestStartingPoint,
+    Event, StreamSubDelivery, StreamSubDeliveryResponse, StreamSubDeliveryResponseResult, StreamSubSetupRequest, StreamSubSetupRequestStartingPoint,
     StreamSubSetupResponse, StreamSubSetupResponseResult,
 };
 use rand::seq::IteratorRandom;
-use sled::{IVec, Tree};
+use sled::Tree;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::{
@@ -22,10 +21,11 @@ use tokio_stream::{
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::crd::{RequiredMetadata, Stream};
 use crate::database::Database;
 use crate::error::{AppError, ShutdownError, ShutdownResult, ERR_DB_FLUSH, ERR_ITER_FAILURE};
 use crate::futures::LivenessStream;
-use crate::models::{schema::Stream, stream::Subscription};
+use crate::models::stream::Subscription;
 use crate::server::stream::{PREFIX_STREAM_SUBS, PREFIX_STREAM_SUB_OFFSETS};
 use crate::server::{must_get_token, require_method, send_error, H2Channel, H2DataChannel, MetadataCache};
 use crate::utils;
@@ -35,7 +35,7 @@ pub struct StreamSubCtl {
     /// The application's runtime config.
     config: Arc<Config>,
     /// The application's database system.
-    db: Database,
+    _db: Database,
     /// This stream's database tree for storing stream records.
     tree: Tree,
     /// This stream's database tree for metadata storage.
@@ -44,6 +44,8 @@ pub struct StreamSubCtl {
     metadata: Arc<MetadataCache>,
     /// The data model of the stream with which this controller is associated.
     stream: Arc<Stream>,
+    /// The stream partition of this controller.
+    partition: u8,
 
     /// Data on all subscriptions and active subscribers.
     subs: SubscriberInfo,
@@ -63,6 +65,8 @@ pub struct StreamSubCtl {
     shutdown_tx: broadcast::Sender<()>,
     /// A channel used for triggering graceful shutdown.
     shutdown_rx: BroadcastStream<()>,
+    /// A bool indicating that this controller has been descheduled and needs to shutdown.
+    descheduled: bool,
 
     /// A general purpose reusable bytes buffer, safe for concurrent use.
     buf: BytesMut,
@@ -71,18 +75,19 @@ pub struct StreamSubCtl {
 impl StreamSubCtl {
     /// Create a new instance.
     pub fn new(
-        config: Arc<Config>, db: Database, tree: Tree, tree_metadata: Tree, metadata: Arc<MetadataCache>, stream: Arc<Stream>,
+        config: Arc<Config>, db: Database, tree: Tree, tree_metadata: Tree, metadata: Arc<MetadataCache>, stream: Arc<Stream>, partition: u8,
         shutdown_tx: broadcast::Sender<()>, events_tx: mpsc::Sender<StreamSubCtlMsg>, events_rx: mpsc::Receiver<StreamSubCtlMsg>,
         stream_offset: watch::Receiver<u64>, subs: Vec<(Subscription, u64)>, next_offset: u64,
     ) -> Self {
         let subs = SubscriberInfo::new(subs);
         Self {
             config,
-            db,
+            _db: db,
             tree,
             tree_metadata,
             metadata,
             stream,
+            partition,
             subs,
             next_offset,
             events_tx,
@@ -91,6 +96,7 @@ impl StreamSubCtl {
             liveness_checks: StreamMap::new(),
             shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
             shutdown_tx,
+            descheduled: false,
             buf: BytesMut::with_capacity(5000),
         }
     }
@@ -100,27 +106,22 @@ impl StreamSubCtl {
     }
 
     async fn run(mut self) -> Result<()> {
-        tracing::debug!(
-            "stream subscriber controller {}/{} has started",
-            self.stream.metadata.namespace,
-            self.stream.metadata.name
-        );
+        tracing::debug!("stream subscriber controller {}/{} has started", self.stream.name(), self.partition,);
 
         loop {
+            if self.descheduled {
+                break;
+            }
             tokio::select! {
                 Some(msg) = self.events_rx.next() => self.handle_msg(msg).await,
                 Some(offset) = self.stream_offset.next() => self.handle_offset_update(offset).await,
                 Some(dead_chan) = self.liveness_checks.next() => self.handle_dead_subscriber(dead_chan.1).await,
-                Some(_) = self.shutdown_rx.next() => break,
+                _ = self.shutdown_rx.next() => break,
             }
         }
 
         // Begin shutdown routine.
-        tracing::debug!(
-            "stream subscriber controller {}/{} has shutdown",
-            self.stream.metadata.namespace,
-            self.stream.metadata.name
-        );
+        tracing::debug!("stream subscriber controller {}/{} has shutdown", self.stream.name(), self.partition,);
         Ok(())
     }
 
@@ -131,6 +132,9 @@ impl StreamSubCtl {
             StreamSubCtlMsg::Request(req) => self.handle_request(req).await,
             StreamSubCtlMsg::FetchStreamRecords(res) => self.handle_fetch_stream_records_result(res).await,
             StreamSubCtlMsg::DeliveryResponse(res) => self.handle_delivery_response(res).await,
+            StreamSubCtlMsg::Shutdown => {
+                self.descheduled = true;
+            }
         }
     }
 
@@ -144,7 +148,7 @@ impl StreamSubCtl {
     /// Handle any dead channels.
     #[tracing::instrument(level = "trace", skip(self, dead_chan))]
     async fn handle_dead_subscriber(&mut self, dead_chan: (Arc<String>, Uuid, H2DataChannel)) {
-        let (group_name, id, chan) = (dead_chan.0, dead_chan.1, dead_chan.2);
+        let (group_name, id, _chan) = (dead_chan.0, dead_chan.1, dead_chan.2);
         tracing::debug!(?id, group_name = ?&*group_name, "dropping stream subscriber channel");
         self.liveness_checks.remove(&id);
         let group = match self.subs.groups.get_mut(&*group_name) {
@@ -152,7 +156,9 @@ impl StreamSubCtl {
             None => return,
         };
         group.active_channels.remove(&id);
-        self.subs.groups.retain(|_, group| group.durable || !group.active_channels.is_empty());
+        self.subs
+            .groups
+            .retain(|_, group| group.durable || !group.active_channels.is_empty());
     }
 
     /// Handle a request which has been sent to this controller.
@@ -187,7 +193,7 @@ impl StreamSubCtl {
         // Roll a new ID for the channel & add it to the group's active channels.
         let h2_data_chan = (req.0.into_body(), chan);
         let id = Uuid::new_v4();
-        group.active_channels.insert(id, SubChannel::MonitoringLiveness);
+        group.active_channels.insert(id, SubChannelState::MonitoringLiveness);
         self.liveness_checks.insert(
             id,
             LivenessStream {
@@ -223,7 +229,7 @@ impl StreamSubCtl {
         group.is_fetching_data = false;
 
         // Encode the fetched data for delivery.
-        let last_included_offset = match fetched_data.data.last().map(|(offset, _)| *offset) {
+        let last_included_offset = match fetched_data.data.last().map(|event| event.id) {
             Some(offset) => offset,
             None => {
                 tracing::debug!("empty fetch payload returned from stream fetch");
@@ -233,14 +239,7 @@ impl StreamSubCtl {
         let mut buf = self.buf.split();
         let msg = StreamSubDelivery {
             last_included_offset,
-            batch: fetched_data
-                .data
-                .iter()
-                .map(|(offset, data)| Record {
-                    offset: *offset,
-                    data: data.to_vec(), // TODO: too much copying ... do something else.
-                })
-                .collect(),
+            batch: fetched_data.data.as_ref().clone(),
         };
         if let Err(err) = msg.encode(&mut buf) {
             tracing::error!(error = ?err, "error encoding subscription delivery payload");
@@ -255,7 +254,7 @@ impl StreamSubCtl {
 
     /// Handle the response from a subscriber following a data payload delivery.
     #[tracing::instrument(level = "trace", skip(self, res), fields(group = ?res.group_name, last_offset = res.orig_data.1))]
-    async fn handle_delivery_response(&mut self, mut res: DeliveryResponse) {
+    async fn handle_delivery_response(&mut self, res: DeliveryResponse) {
         if let Err(err) = self.try_handle_delivery_response(res).await {
             tracing::error!(error = ?err, "error handling subscriber ack/nack response");
             if err.downcast_ref::<ShutdownError>().is_some() {
@@ -272,8 +271,8 @@ impl StreamSubCtl {
     async fn validate_subscriber_channel(&mut self, req: &mut H2Channel) -> Result<(h2::SendStream<Bytes>, StreamSubSetupRequest)> {
         require_method(&req.0, Method::POST)?;
         let creds = must_get_token(&req.0, self.config.as_ref())?;
-        let claims = self.metadata.must_get_token_claims(&creds.claims.id.as_u128())?;
-        claims.check_stream_sub_auth(&self.stream.metadata.namespace, &self.stream.metadata.name)?;
+        let claims = self.metadata.must_get_token_claims(&creds.claims.id)?;
+        claims.check_stream_sub_auth(self.stream.name())?;
 
         // Read initial body so that we know the name of the subscriber.
         let mut body_req = req
@@ -305,7 +304,9 @@ impl StreamSubCtl {
             result: Some(StreamSubSetupResponseResult::Ok(Default::default())),
         };
         let mut setup_res_buf = self.buf.split();
-        setup_res.encode(&mut setup_res_buf).context("error encoding stream sub setup response")?;
+        setup_res
+            .encode(&mut setup_res_buf)
+            .context("error encoding stream sub setup response")?;
         res_chan
             .send_data(setup_res_buf.freeze(), false)
             .context("error sending stream sub setup response")?;
@@ -331,7 +332,7 @@ impl StreamSubCtl {
             }
             None => stream_current_offset,
         };
-        let mut entry = self.subs.groups.entry(sub.group_name.clone())
+        let entry = self.subs.groups.entry(sub.group_name.clone())
             // Ensure the subscription model exists.
             .or_insert_with(|| {
                 let durable = sub.durable;
@@ -344,24 +345,26 @@ impl StreamSubCtl {
 
         // If the subscription is durable & did not already exist, then write the subscription model to disk.
         if sub.durable && !already_exists {
-            let tree_metadata = self.tree_metadata.clone();
             let mut buf = self.buf.split();
-            entry.subscription.encode(&mut buf).context("error encoding subscription record")?;
+            entry
+                .subscription
+                .encode(&mut buf)
+                .context("error encoding subscription record")?;
             let stream_model_key = format!("{}{}", PREFIX_STREAM_SUBS, sub.group_name);
             let stream_offset_key = format!("{}{}", PREFIX_STREAM_SUB_OFFSETS, sub.group_name);
-            Database::spawn_blocking(move || -> ShutdownResult<()> {
-                tree_metadata
-                    .insert(stream_model_key.as_bytes(), buf.freeze().as_ref())
-                    .context("error writing subscription record to disk")
-                    .map_err(ShutdownError::from)?;
-                tree_metadata
-                    .insert(stream_offset_key.as_bytes(), &utils::encode_u64(offset))
-                    .context("error writing subscription offset to disk")
-                    .map_err(ShutdownError::from)?;
-                tree_metadata.flush().context(ERR_DB_FLUSH).map_err(ShutdownError::from)?;
-                Ok(())
-            })
-            .await??;
+
+            let mut batch = sled::Batch::default();
+            batch.insert(stream_model_key.as_bytes(), buf.freeze().as_ref());
+            batch.insert(stream_offset_key.as_bytes(), &utils::encode_u64(offset));
+            self.tree_metadata
+                .apply_batch(batch)
+                .context("error writing subscription record and offset to disk")
+                .map_err(ShutdownError::from)?;
+            self.tree_metadata
+                .flush_async()
+                .await
+                .context(ERR_DB_FLUSH)
+                .map_err(ShutdownError::from)?;
         }
 
         Ok(entry)
@@ -375,7 +378,7 @@ impl StreamSubCtl {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn execute_delivery_pass(&mut self) {
         // Execute a delivery pass.
-        for (name, group) in self.subs.groups.iter_mut() {
+        for (_name, group) in self.subs.groups.iter_mut() {
             // If the gruop has no active channels, then skip it.
             if group.active_channels.is_empty() {
                 continue;
@@ -417,7 +420,7 @@ impl StreamSubCtl {
     }
 
     #[tracing::instrument(level = "trace", skip(self, delivery_res))]
-    async fn try_handle_delivery_response(&mut self, mut delivery_res: DeliveryResponse) -> Result<()> {
+    async fn try_handle_delivery_response(&mut self, delivery_res: DeliveryResponse) -> Result<()> {
         // Get a mutable handle to subscription group to which this response applies.
         let (chan_id, group_name) = (&delivery_res.id, &*delivery_res.group_name);
         let group = self
@@ -436,12 +439,14 @@ impl StreamSubCtl {
                 let _ = group.active_channels.remove(chan_id);
                 err
             })?;
-        let (data_chan, mut body) = res.context("error returned while awaiting subscriber delivery response").map_err(|err| {
-            let _ = group.active_channels.remove(chan_id);
-            err
-        })?;
+        let (data_chan, mut body) = res
+            .context("error returned while awaiting subscriber delivery response")
+            .map_err(|err| {
+                let _ = group.active_channels.remove(chan_id);
+                err
+            })?;
         if let Some(chan_wrapper) = group.active_channels.get_mut(chan_id) {
-            *chan_wrapper = SubChannel::MonitoringLiveness;
+            *chan_wrapper = SubChannelState::MonitoringLiveness;
             self.liveness_checks.insert(
                 *chan_id,
                 LivenessStream {
@@ -498,20 +503,20 @@ impl StreamSubCtl {
             };
 
             // Extract the channel and prep for use.
-            let mut chan = match group.active_channels.remove(&chan_id) {
-                Some(data) => data,
+            let chan_state = match group.active_channels.remove(&chan_id) {
+                Some(chan_state) => chan_state,
                 None => continue, // This will never be hit.
             };
-            let mut chan = match chan {
+            let mut chan = match chan_state {
                 // The selected channel is already out for delivery, and this should never happen
                 // as the group data cache would also be marked as "out for delivery" and this method
                 // would not be invoked until the delivery was resolved.
-                SubChannel::OutForDelivery => {
+                SubChannelState::OutForDelivery => {
                     tracing::error!("invariant violation: subscription channel was not properly set back into idle state");
                     continue;
                 }
                 // The selected channel is currently being monitored for liveness.
-                SubChannel::MonitoringLiveness => match liveness_stream.remove(&chan_id).and_then(|data| data.chan) {
+                SubChannelState::MonitoringLiveness => match liveness_stream.remove(&chan_id).and_then(|data| data.chan) {
                     Some(chan) => chan,
                     None => {
                         tracing::error!("invariant violation: subscription channel was not properly held in liveness monitoring stream");
@@ -528,18 +533,17 @@ impl StreamSubCtl {
             }
 
             // Spawn a task to wait for the subscriber's response & handle timeouts & errors.
-            group.active_channels.insert(chan_id, SubChannel::OutForDelivery);
+            group.active_channels.insert(chan_id, SubChannelState::OutForDelivery);
             let (tx, group_name, id, orig_data) = (tx.clone(), group.group_name.clone(), chan_id, data);
             tokio::spawn(async move {
                 // TODO: add optional timeouts here based on subscription group config.
-                let output = chan.0.data().await.map(|res| res.map_err(anyhow::Error::from).map(|data| (chan, data)));
+                let output = chan
+                    .0
+                    .data()
+                    .await
+                    .map(|res| res.map_err(anyhow::Error::from).map(|data| (chan, data)));
                 let _ = tx
-                    .send(StreamSubCtlMsg::DeliveryResponse(DeliveryResponse {
-                        id,
-                        group_name,
-                        output,
-                        orig_data,
-                    }))
+                    .send(StreamSubCtlMsg::DeliveryResponse(DeliveryResponse { id, group_name, output, orig_data }))
                     .await;
             });
             return;
@@ -549,23 +553,23 @@ impl StreamSubCtl {
     /// Record the ack/nack response from a subscriber delivery.
     #[tracing::instrument(level = "trace", skip(res, group_name, tree_metadata))]
     async fn try_record_delivery_response(res: std::result::Result<u64, String>, group_name: Arc<String>, tree_metadata: Tree) -> ShutdownResult<()> {
-        Database::spawn_blocking(move || -> ShutdownResult<()> {
-            let offset = match res {
-                Ok(offset) => offset,
-                Err(_err) => {
-                    // TODO: in the future, we will record this for observability system.
-                    return Ok(());
-                }
-            };
-            let key = format!("{}{}", PREFIX_STREAM_SUB_OFFSETS, &*group_name);
-            tree_metadata
-                .insert(key.as_bytes(), &utils::encode_u64(offset))
-                .context("error updating subscription offsets on disk")
-                .map_err(ShutdownError::from)?;
-            tree_metadata.flush().context(ERR_DB_FLUSH).map_err(ShutdownError::from)?;
-            Ok(())
-        })
-        .await??;
+        let offset = match res {
+            Ok(offset) => offset,
+            Err(_err) => {
+                // TODO[telemetry]: in the future, we will record this for observability system.
+                return Ok(());
+            }
+        };
+        let key = format!("{}{}", PREFIX_STREAM_SUB_OFFSETS, &*group_name);
+        tree_metadata
+            .insert(key.as_bytes(), &utils::encode_u64(offset))
+            .context("error updating subscription offsets on disk")
+            .map_err(ShutdownError::from)?;
+        tree_metadata
+            .flush_async()
+            .await
+            .context(ERR_DB_FLUSH)
+            .map_err(ShutdownError::from)?;
         Ok(())
     }
 
@@ -579,14 +583,13 @@ impl StreamSubCtl {
                 let stop = utils::encode_u64(next_offset + max_batch_size as u64);
                 let mut data = Vec::with_capacity(max_batch_size as usize);
                 for iter_res in tree.range(start..stop) {
-                    let (key, val) = iter_res.context(ERR_ITER_FAILURE).map_err(ShutdownError::from)?;
-                    let offset = utils::decode_u64(key.as_ref()).map_err(ShutdownError::from)?;
-                    data.push((offset, val));
+                    let (_key, val) = iter_res.context(ERR_ITER_FAILURE).map_err(ShutdownError::from)?;
+                    let event: Event = utils::decode_model(val.as_ref())
+                        .context("error decoding event from storage")
+                        .map_err(ShutdownError::from)?;
+                    data.push(event);
                 }
-                Ok(FetchStreamRecords {
-                    group_name,
-                    data: Arc::new(data),
-                })
+                Ok(FetchStreamRecords { group_name, data: Arc::new(data) })
             })
             .await
             .and_then(|res| res.map_err(ShutdownError::from));
@@ -611,11 +614,13 @@ pub enum StreamSubCtlMsg {
     FetchStreamRecords(ShutdownResult<FetchStreamRecords>),
     /// A response from a subscriber following a delivery of data for processing.
     DeliveryResponse(DeliveryResponse),
+    /// The parent controller is shutting down, so this controller needs to do the same.
+    Shutdown,
 }
 
 pub struct FetchStreamRecords {
     group_name: Arc<String>,
-    data: Arc<Vec<(u64, IVec)>>,
+    data: Arc<Vec<Event>>,
 }
 
 pub struct DeliveryResponse {
@@ -664,7 +669,7 @@ struct SubscriptionGroup {
     /// The last offset to have been processed by this subscription.
     offset: u64,
     /// A mapping of all active subscribers of this group.
-    active_channels: HashMap<Uuid, SubChannel>,
+    active_channels: HashMap<Uuid, SubChannelState>,
     /// The possible states of this group's data delivery cache.
     delivery_cache: SubGroupDataCache,
     /// A bool indicating if data is currently being fetched for this group.
@@ -687,7 +692,7 @@ impl SubscriptionGroup {
 }
 
 /// A type wrapping an H2 data channel which be unavailable while out deliverying data.
-enum SubChannel {
+enum SubChannelState {
     /// The channel is currently out as it is being used to deliver data.
     OutForDelivery,
     /// The channel is currently held in a stream monitoring its liveness.

@@ -1,15 +1,12 @@
 //! Runtime configuration.
 
-// TODO:
-// - prefix config vars with their config categroy.
-// - finish up TLS config.
-// - finish up cluster level config.
-// - finish up replica discovery mechanism.
+// TODO: finish up TLS config.
+
+use std::sync::Arc;
 
 use jsonwebtoken::{DecodingKey, EncodingKey};
-use serde::de::{value::BorrowedBytesDeserializer, DeserializeOwned, Error as DeError};
+use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer};
-// use serde_aux::prelude::*; // Will use later.
 
 /// Runtime configuration data.
 #[derive(Clone, Debug, Deserialize)]
@@ -18,69 +15,37 @@ pub struct Config {
     pub rust_log: String,
     /// The port which client network traffic is to use.
     pub client_port: u16,
+    /// The port which cluster internal network traffic is to use.
+    pub server_port: u16,
 
-    /// The name of this node.
-    pub node_name: String,
-    /// The name of this node's replica set.
-    pub repl_set_name: String,
-    /// The name of the node which is the leader of this replica set.
-    pub leader_name: String,
-    /// The name of the replica set which is responsible for cluster metadata.
-    pub metadata_repl_set_name: String,
+    /// The name of this node's cluster.
+    pub cluster: String,
+    /// The Kubernetes namespace of this cluster.
+    pub namespace: String,
+    /// The name of the pod on which this instance is running.
+    #[serde(deserialize_with = "Config::pod_name")]
+    pub pod_name: Arc<String>,
+
+    /// The duration in seconds for which a lease is considered held.
+    ///
+    /// To ensure stable cluster leadership, a 60 second lease is currently recommended.
+    pub lease_duration_seconds: u32,
+    /// The duration that a lease holder will retry refreshing lease.
+    ///
+    /// To ensure stable cluster leadership, a 10 seconds renew rate is currently recommended.
+    pub lease_renew_seconds: u32,
 
     /// The path to the database on disk.
     #[serde(default = "crate::database::default_data_path")]
     pub storage_data_path: String,
 
-    /// Configuration for the cluster's metadata replica set.
-    #[serde(flatten)]
-    pub metadata_config: MetadataConfig,
-}
-
-/// Runtime configuration specifically for a cluster's metadata replica set.
-#[derive(Clone, Debug, Deserialize)]
-pub struct MetadataConfig {
     /// The JWT encoding key.
-    #[serde(deserialize_with = "MetadataConfig::parse_encoding_key")]
+    #[serde(deserialize_with = "Config::parse_encoding_key")]
     pub jwt_encoding_key: EncodingKey,
     /// The JWT decoding key.
-    #[serde(deserialize_with = "MetadataConfig::parse_decoding_key")]
+    #[serde(deserialize_with = "Config::parse_decoding_key")]
     pub jwt_decoding_key: DecodingKey<'static>,
 }
-
-impl MetadataConfig {
-    /// Parse the decoding key from the config source.
-    fn parse_encoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<EncodingKey, D::Error> {
-        let bytes: String = Deserialize::deserialize(val)?;
-        EncodingKey::from_rsa_pem(bytes.as_bytes()).map_err(|err| DeError::custom(err.to_string()))
-    }
-
-    /// Parse the decoding key from the config source.
-    fn parse_decoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<DecodingKey<'static>, D::Error> {
-        let bytes: String = Deserialize::deserialize(val)?;
-        DecodingKey::from_rsa_pem(bytes.as_bytes())
-            .map_err(|err| DeError::custom(err.to_string()))
-            .map(|val| val.into_static())
-    }
-}
-
-// /// The discovery backend to use.
-// #[serde(flatten)]
-// pub discovery_backend: DiscoveryBackend,
-//
-// /// All available discovery backends currently implemented in this system.
-// #[derive(Clone, Debug, Deserialize)]
-// #[serde(tag = "discovery_backend", rename_all = "UPPERCASE")]
-// pub enum DiscoveryBackend {
-//     /// The DNS discovery backend.
-//     Dns {
-//         /// The base DNS name to use for discoverying peers via DNS.
-//         discovery_dns_name: String,
-//         /// The interval in seconds which the DNS backend will poll for DNS updates.
-//         #[serde(deserialize_with = "deserialize_number_from_string")]
-//         discovery_dns_interval: u16,
-//     },
-// }
 
 // /// Cluster TLS mode.
 // #[derive(Clone, Debug, Deserialize)]
@@ -114,5 +79,26 @@ impl Config {
     /// The cluster's TLS config, if any.
     pub fn tls_config(&self) -> Option<()> {
         None
+    }
+
+    /// Parse the decoding key from the config source.
+    fn parse_encoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<EncodingKey, D::Error> {
+        let b64_bytes: String = Deserialize::deserialize(val)?;
+        let bytes = base64::decode(&b64_bytes).map_err(|err| DeError::custom(err.to_string()))?;
+        EncodingKey::from_rsa_pem(&bytes).map_err(|err| DeError::custom(err.to_string()))
+    }
+
+    /// Parse the decoding key from the config source.
+    fn parse_decoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<DecodingKey<'static>, D::Error> {
+        let b64_bytes: String = Deserialize::deserialize(val)?;
+        let bytes = base64::decode(&b64_bytes).map_err(|err| DeError::custom(err.to_string()))?;
+        DecodingKey::from_rsa_pem(&bytes)
+            .map_err(|err| DeError::custom(err.to_string()))
+            .map(|val| val.into_static())
+    }
+
+    fn pod_name<'de, D: Deserializer<'de>>(val: D) -> Result<Arc<String>, D::Error> {
+        let val: String = Deserialize::deserialize(val)?;
+        Ok(Arc::new(val))
     }
 }

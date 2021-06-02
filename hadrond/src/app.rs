@@ -3,21 +3,22 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{BroadcastStream, SignalStream};
 use tokio_stream::StreamMap;
 
 use crate::config::Config;
 use crate::database::Database;
-use crate::k8s::watch::Controller;
+use crate::k8s::Controller;
 use crate::server::Server;
 
-pub struct AppServer {
+/// The application object for when Hadron is running as a server.
+pub struct App {
     /// The application's runtime config.
-    config: Arc<Config>,
+    _config: Arc<Config>,
     /// The application's database system.
-    db: Database,
+    _db: Database,
 
     /// A channel used for triggering graceful shutdown.
     shutdown_tx: broadcast::Sender<()>,
@@ -29,29 +30,31 @@ pub struct AppServer {
     controller: JoinHandle<Result<()>>,
 }
 
-impl AppServer {
+impl App {
     /// Create a new instance.
     pub async fn new(config: Arc<Config>) -> Result<Self> {
         // App shutdown channel.
-        let (shutdown_tx, shutdown_rx) = broadcast::channel(100);
-        let (events_tx, events_rx) = broadcast::channel(10_000); // 10k before lagging.
+        let (shutdown_tx, shutdown_rx) = broadcast::channel(10);
+        let (events_tx, events_rx) = mpsc::channel(10_000);
 
         // Initialize this node's storage.
         let db = Database::new(config.clone()).await.context("error opening database")?;
 
         // Spawn the network server.
-        let (server, _cache) = Server::new(config.clone(), db.clone(), shutdown_tx.clone(), events_tx.clone(), events_rx)
+        let (server, _cache) = Server::new(config.clone(), db.clone(), shutdown_tx.clone(), events_rx)
             .await
             .context("error creating network server")?;
         let server = server.spawn();
 
         // Initialize the K8s client.
         let client = kube::Client::try_default().await.context("error initializing K8s client")?;
-        let controller = Controller::new(client, shutdown_tx.clone()).spawn();
+        let controller = Controller::new(client, config.clone(), shutdown_tx.clone(), events_tx)
+            .context("error creating k8s controller")?
+            .spawn();
 
         Ok(Self {
-            config,
-            db,
+            _config: config,
+            _db: db,
             shutdown_rx: BroadcastStream::new(shutdown_rx),
             shutdown_tx,
             server,
@@ -81,7 +84,7 @@ impl AppServer {
                     self.shutdown();
                     break;
                 }
-                Some(_) = self.shutdown_rx.next() => break,
+                _ = self.shutdown_rx.next() => break,
             }
         }
 

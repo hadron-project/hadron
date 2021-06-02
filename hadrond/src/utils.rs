@@ -1,14 +1,9 @@
-use std::hash::Hasher;
+#![allow(dead_code)]
 
 use anyhow::{bail, Context, Result};
 use prost::Message;
 
-use crate::error::AppError;
-
-pub const HEADER_OCTET_STREAM: &str = "application/octet-stream";
 pub const HEADER_APP_PROTO: &str = "application/protobuf";
-
-pub const HIERARCHY_TOKEN: &str = ".";
 
 /// Encode a stream entry key using the given prefix & offset.
 pub fn encode_3_byte_prefix(prefix: &[u8; 3], offset: u64) -> [u8; 12] {
@@ -72,28 +67,4 @@ pub fn encode_model<M: Message>(model: &M) -> Result<Vec<u8>> {
 /// Decode an object from the given buffer.
 pub fn decode_model<M: Message + Default>(data: &[u8]) -> Result<M> {
     M::decode(data).context("error decoding object from storage")
-}
-
-/// Generate a hash code ID for the given namespace & name combination.
-///
-/// This generates a hash over `{ns}/{name}`.
-pub fn ns_name_hash_id(ns: &str, name: &str) -> u64 {
-    let mut hasher = seahash::SeaHasher::new();
-    hasher.write(ns.as_bytes());
-    hasher.write_u8(b'/');
-    hasher.write(name.as_bytes());
-    hasher.finish()
-}
-
-/// Validate the hierarchy structure of the given object name.
-pub fn validate_name_hierarchy(name: &str) -> Result<()> {
-    for seg in name.split(HIERARCHY_TOKEN) {
-        if seg.is_empty() {
-            bail!(AppError::InvalidInput(format!(
-                "name hierarchy `{}` is invalid, segments delimited by `.` may not be empty",
-                name,
-            )));
-        }
-    }
-    Ok(())
 }
