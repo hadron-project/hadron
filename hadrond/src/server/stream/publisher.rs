@@ -120,6 +120,7 @@ impl StreamCtl {
                 source: self.source_identifier.clone(),
                 specversion: CLOUD_EVENTS_SPEC_VERSION.into(),
                 r#type: new_event.r#type,
+                key: new_event.key,
                 optattrs: new_event.optattrs,
                 data: new_event.data,
             })

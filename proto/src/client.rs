@@ -37,14 +37,17 @@ pub struct Event {
     /// See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     #[prost(string, tag="4")]
     pub r#type: ::prost::alloc::string::String,
+    /// The key of this event.
+    #[prost(string, tag="5")]
+    pub key: ::prost::alloc::string::String,
     /// Any additional optional attributes or extension attributes of this event.
     ///
     /// See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
     /// and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    #[prost(map="string, string", tag="5")]
+    #[prost(map="string, string", tag="6")]
     pub optattrs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     /// The data payload of this event.
-    #[prost(bytes="vec", tag="6")]
+    #[prost(bytes="vec", tag="7")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 /// A new event record to be published to a stream partition.
@@ -55,25 +58,18 @@ pub struct NewEvent {
     /// See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     #[prost(string, tag="1")]
     pub r#type: ::prost::alloc::string::String,
+    /// The key of this event.
+    #[prost(string, tag="2")]
+    pub key: ::prost::alloc::string::String,
     /// Any additional optional attributes or extension attributes of this event.
     ///
     /// See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
     /// and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    #[prost(map="string, string", tag="2")]
+    #[prost(map="string, string", tag="3")]
     pub optattrs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     /// The data payload of this event.
-    #[prost(bytes="vec", tag="3")]
+    #[prost(bytes="vec", tag="4")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-}
-///////////////////////////////////////////////////////////////////////////////
-// Metadata ///////////////////////////////////////////////////////////////////
-
-/// All known Hadron metadata.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MetadataResponse {
-    /// The name of the cluster which was queried.
-    #[prost(string, tag="1")]
-    pub cluster_name: ::prost::alloc::string::String,
 }
 //////////////////////////////////////////////////////////////////////////////
 // Stream Pub ////////////////////////////////////////////////////////////////
@@ -284,4 +280,109 @@ pub struct PipelineStageOutput {
     /// The base output of the corresponding pipeline stage.
     #[prost(bytes="vec", tag="1")]
     pub output: ::prost::alloc::vec::Vec<u8>,
+}
+///////////////////////////////////////////////////////////////////////////////
+// Metadata ///////////////////////////////////////////////////////////////////
+
+/// All known metadata of the target cluster.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClusterMetadata {
+    /// The name of the cluster which was queried.
+    #[prost(string, tag="1")]
+    pub cluster_name: ::prost::alloc::string::String,
+    /// The Kubernetes service used to address all of the pods of the Hadron cluster.
+    #[prost(string, tag="2")]
+    pub cluster_service: ::prost::alloc::string::String,
+    /// All known pods of the Hadron cluster.
+    #[prost(string, repeated, tag="3")]
+    pub pods: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// A mapping of all known streams, with metadata data on all partitions,
+    /// their leaders and their replicas.
+    #[prost(map="string, message", tag="4")]
+    pub streams: ::std::collections::HashMap<::prost::alloc::string::String, StreamMetadata>,
+    /// A mapping of all known pipelines, with metadata data on all partitions,
+    /// their leaders and their replicas.
+    #[prost(map="string, message", tag="5")]
+    pub pipelines: ::std::collections::HashMap<::prost::alloc::string::String, PipelineMetadata>,
+}
+/// Stream metadata.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamMetadata {
+    /// The name of the stream.
+    #[prost(string, tag="1")]
+    pub name: ::prost::alloc::string::String,
+    /// The partitions of this stream.
+    #[prost(message, repeated, tag="2")]
+    pub partitions: ::prost::alloc::vec::Vec<PartitionMetadata>,
+}
+/// Pipeline metadata.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineMetadata {
+    /// The name of the pipeline.
+    #[prost(string, tag="1")]
+    pub name: ::prost::alloc::string::String,
+    /// The source stream of this pipeline.
+    ///
+    /// This is used by clients to establish pipeline topology, as pipelines mirror their source
+    /// stream's topology.
+    #[prost(string, tag="2")]
+    pub source_stream: ::prost::alloc::string::String,
+}
+/// Metadata of a stream partition.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PartitionMetadata {
+    /// The offset of this partition (actually an unsigned 8-bit integer).
+    #[prost(uint32, tag="1")]
+    pub offset: u32,
+    /// The pod name of the partition leader.
+    #[prost(string, tag="2")]
+    pub leader: ::prost::alloc::string::String,
+    /// The pod names of all replicas of this partition.
+    #[prost(string, repeated, tag="3")]
+    pub replicas: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The schedule state of the partition.
+    #[prost(string, tag="4")]
+    pub schedule_state: ::prost::alloc::string::String,
+    /// The runtime state of the partition.
+    #[prost(string, tag="5")]
+    pub runtime_state: ::prost::alloc::string::String,
+}
+/// A metadata change.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MetadataChange {
+    /// The type of metadata change observed.
+    #[prost(oneof="metadata_change::Change", tags="1, 2, 3, 4, 5, 6, 7")]
+    pub change: ::core::option::Option<metadata_change::Change>,
+}
+/// Nested message and enum types in `MetadataChange`.
+pub mod metadata_change {
+    /// The type of metadata change observed.
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Change {
+        /// Metadata streams were reset on the connected pod, so a new full payload has been sent.
+        #[prost(message, tag="1")]
+        Reset(super::ClusterMetadata),
+        /// A pod has been added.
+        ///
+        /// This corresponds to StatefulSet scaling events. Not temprorary pod state changes.
+        #[prost(string, tag="2")]
+        PodAdded(::prost::alloc::string::String),
+        /// A pod has been removed.
+        ///
+        /// This corresponds to StatefulSet scaling events. Not temprorary pod state changes.
+        #[prost(string, tag="3")]
+        PodRemoved(::prost::alloc::string::String),
+        /// A stream has been updated or added.
+        #[prost(message, tag="4")]
+        StreamUpdated(super::StreamMetadata),
+        /// A stream has been removed.
+        #[prost(string, tag="5")]
+        StreamRemoved(::prost::alloc::string::String),
+        /// A pipeline has been updated or added.
+        #[prost(message, tag="6")]
+        PipelineUpdated(super::PipelineMetadata),
+        /// A pipeline has been removed.
+        #[prost(string, tag="7")]
+        PipelineRemoved(::prost::alloc::string::String),
+    }
 }

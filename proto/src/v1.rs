@@ -18,8 +18,8 @@ pub const URL_STREAM_PUBLISH: &str = "publish";
 /// `/v1/stream/{NAME}/{PARTITION}/subscribe` in request paths.
 pub const URL_STREAM_SUBSCRIBE: &str = "subscribe";
 
-/// The V1 URL metadata prefix; this will appear as `/v1/metadata/...` in request paths.
-pub const ENDPOINT_METADATA_QUERY: &str = "/v1/metadata/query";
+/// The full V1 endpoint for establishing a metadata stream.
+pub const ENDPOINT_METADATA_STREAM: &str = "/v1/metadata/stream";
 
 pub type StreamPubResponseResult = stream_pub_response::Result;
 pub type StreamPubSetupResponseResult = stream_pub_setup_response::Result;
@@ -30,3 +30,5 @@ pub type StreamSubDeliveryResponseResult = stream_sub_delivery_response::Result;
 
 pub type PipelineSubSetupResponseResult = pipeline_sub_setup_response::Result;
 pub type PipelineSubDeliveryResponseResult = pipeline_sub_delivery_response::Result;
+
+pub type MetadataChangeType = metadata_change::Change;

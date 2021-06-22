@@ -33,13 +33,15 @@ message Event {
     //
     // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     string type = 4;
+    // The key of this event.
+    string key = 5;
     // Any additional optional attributes or extension attributes of this event.
     //
     // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
     // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    map<string, string> optattrs = 5;
+    map<string, string> optattrs = 6;
     // The data payload of this event.
-    bytes data = 6;
+    bytes data = 7;
 }
 
 // A new event record to be published to a stream partition.
@@ -48,22 +50,15 @@ message NewEvent {
     //
     // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     string type = 1;
+    // The key of this event.
+    string key = 2;
     // Any additional optional attributes or extension attributes of this event.
     //
     // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
     // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    map<string, string> optattrs = 2;
+    map<string, string> optattrs = 3;
     // The data payload of this event.
-    bytes data = 3;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Metadata ///////////////////////////////////////////////////////////////////
-
-// All known Hadron metadata.
-message MetadataResponse {
-    // The name of the cluster which was queried.
-    string cluster_name = 1;
+    bytes data = 4;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -205,4 +200,81 @@ message PipelineSubDeliveryResponse {
 message PipelineStageOutput {
     // The base output of the corresponding pipeline stage.
     bytes output = 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Metadata ///////////////////////////////////////////////////////////////////
+
+// All known metadata of the target cluster.
+message ClusterMetadata {
+    // The name of the cluster which was queried.
+    string cluster_name = 1;
+    // The Kubernetes service used to address all of the pods of the Hadron cluster.
+    string cluster_service = 2;
+    // All known pods of the Hadron cluster.
+    repeated string pods = 3;
+    // A mapping of all known streams, with metadata data on all partitions,
+    // their leaders and their replicas.
+    map<string, StreamMetadata> streams = 4;
+    // A mapping of all known pipelines, with metadata data on all partitions,
+    // their leaders and their replicas.
+    map<string, PipelineMetadata> pipelines = 5;
+}
+
+// Stream metadata.
+message StreamMetadata {
+    // The name of the stream.
+    string name = 1;
+    // The partitions of this stream.
+    repeated PartitionMetadata partitions = 2;
+}
+
+// Pipeline metadata.
+message PipelineMetadata {
+    // The name of the pipeline.
+    string name = 1;
+    // The source stream of this pipeline.
+    //
+    // This is used by clients to establish pipeline topology, as pipelines mirror their source
+    // stream's topology.
+    string source_stream = 2;
+}
+
+// Metadata of a stream partition.
+message PartitionMetadata {
+    // The offset of this partition (actually an unsigned 8-bit integer).
+    uint32 offset = 1;
+    // The pod name of the partition leader.
+    string leader = 2;
+    // The pod names of all replicas of this partition.
+    repeated string replicas = 3;
+    // The schedule state of the partition.
+    string schedule_state = 4;
+    // The runtime state of the partition.
+    string runtime_state = 5;
+}
+
+// A metadata change.
+message MetadataChange {
+    // The type of metadata change observed.
+    oneof change {
+        // Metadata streams were reset on the connected pod, so a new full payload has been sent.
+        ClusterMetadata reset = 1;
+        // A pod has been added.
+        //
+        // This corresponds to StatefulSet scaling events. Not temprorary pod state changes.
+        string pod_added = 2;
+        // A pod has been removed.
+        //
+        // This corresponds to StatefulSet scaling events. Not temprorary pod state changes.
+        string pod_removed = 3;
+        // A stream has been updated or added.
+        StreamMetadata stream_updated = 4;
+        // A stream has been removed.
+        string stream_removed = 5;
+        // A pipeline has been updated or added.
+        PipelineMetadata pipeline_updated = 6;
+        // A pipeline has been removed.
+        string pipeline_removed = 7;
+    }
 }

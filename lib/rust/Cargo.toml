@@ -24,3 +24,4 @@ tokio = { version = "1", default-features = false, features = [
 tokio-stream = { version = "0.1", default-features = false, features = ["time", "net", "signal", "sync"] }
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-subscriber = "0.2"
+uuid = { version = "0.8.2", features = ["v4"] }

@@ -73,13 +73,13 @@ impl Pipeline {
     ///   value or a single wildcard will match it.
     /// - For all other cases, each pipeline trigger will attempt to match the given event type.
     ///   Wildcards are used for hierarchical matching.
-    pub fn event_type_matches_triggers(&self, event_type: &str) -> bool {
+    pub fn event_type_matches_triggers(triggers: &str, event_type: &str) -> bool {
         // Empty value matches any event type.
-        if self.spec.triggers.is_empty() {
+        if triggers.is_empty() {
             return true;
         }
 
-        self.spec.triggers.split(',').any(|pattern| {
+        triggers.split(',').any(|pattern| {
             // An empty pattern matches any event type, though this is not allowed during VAW validation.
             if pattern.is_empty() {
                 return true;

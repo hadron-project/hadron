@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use k8s_openapi::api::core::v1::Pod;
-use kube::api::{Api, ListParams};
 use kube::Resource;
 use kube_runtime::watcher::Event;
 
@@ -12,80 +11,6 @@ use crate::k8s::scheduler::SchedulerTask;
 use crate::k8s::{Controller, EventResult};
 
 impl Controller {
-    /// Index all data in the k8s cluster.
-    #[tracing::instrument(level = "debug", skip(self))]
-    pub(super) async fn index_k8s_data(&mut self) {
-        tracing::debug!("performing initial indexing of k8s data");
-        let params_labels = self.list_params_cluster_selector_labels();
-        let params_spec = ListParams::default();
-        let pipelines: Api<Pipeline> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        let streams: Api<Stream> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        let tokens: Api<Token> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        let pods: Api<Pod> = Api::namespaced(self.client.clone(), &self.config.namespace);
-
-        loop {
-            // Clear indices & sleep for a bit, as we don't want this loop to be too hot.
-            self.pipelines.clear();
-            self.streams.clear();
-            self.tokens.clear();
-            self.pods.clear();
-            let _ = tokio::time::sleep(Duration::from_secs(10)).await;
-
-            // Fetch initial pipelines list.
-            match pipelines.list(&params_spec).await {
-                Ok(list) => {
-                    for pipeline in list.items {
-                        self.pipeline_applied(pipeline).await;
-                    }
-                }
-                Err(err) => {
-                    tracing::error!(error = ?err, "error fetching initial pipelines list");
-                    continue;
-                }
-            }
-
-            // Fetch initial streams list.
-            match streams.list(&params_spec).await {
-                Ok(list) => {
-                    for stream in list.items {
-                        self.stream_applied(stream).await;
-                    }
-                }
-                Err(err) => {
-                    tracing::error!(error = ?err, "error fetching initial streams list");
-                    continue;
-                }
-            }
-
-            // Fetch initial tokens list.
-            match tokens.list(&params_spec).await {
-                Ok(list) => {
-                    for token in list.items {
-                        self.token_applied(token).await;
-                    }
-                }
-                Err(err) => {
-                    tracing::error!(error = ?err, "error fetching initial token list");
-                    continue;
-                }
-            }
-
-            // Fetch initial pods list.
-            match pods.list(&params_labels).await {
-                Ok(list) => {
-                    for pod in list.items {
-                        self.pod_applied(pod).await;
-                    }
-                }
-                Err(err) => {
-                    tracing::error!(error = ?err, "error fetching initial pods list");
-                    continue;
-                }
-            }
-            break;
-        }
-    }
-
     /// Handle `Stream` watcher event.
     #[tracing::instrument(level = "debug", skip(self, res))]
     pub(super) async fn handle_stream_event(&mut self, res: EventResult<Stream>) {

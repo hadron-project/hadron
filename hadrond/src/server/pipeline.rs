@@ -332,9 +332,8 @@ impl PipelineCtl {
         // Validate contents of setup request.
         if !self.pipeline.spec.stages.iter().any(|stage| stage.name == body.stage_name) {
             bail!(AppError::InvalidInput(format!(
-                "pipeline subscriber stage name '{}' is unknown for pipeline {}/{}",
+                "pipeline subscriber stage name '{}' is unknown for pipeline {}",
                 body.stage_name,
-                self.pipeline.namespace(),
                 self.pipeline.name(),
             )));
         }
@@ -634,7 +633,7 @@ impl PipelineCtl {
                 let root_event: Event = utils::decode_model(root_event_bytes.as_ref()).context("error decoding event from storage")?;
 
                 // Check the event's type to ensure it matches the pipeline's matcher patterns, else skip.
-                if !pipeline.event_type_matches_triggers(&root_event.r#type) {
+                if !Pipeline::event_type_matches_triggers(&pipeline.spec.triggers, &root_event.r#type) {
                     continue;
                 }
 
