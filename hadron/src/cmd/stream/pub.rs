@@ -45,6 +45,8 @@ impl Pub {
             self.data.as_bytes().to_vec()
         };
 
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
         // Submit the request to the cluster.
         let res = client
             .publish(NewEvent {

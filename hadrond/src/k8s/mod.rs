@@ -12,15 +12,17 @@
 mod coordination;
 mod data;
 pub mod events;
+mod metadata;
 mod scheduler;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use bytes::BytesMut;
 use futures::prelude::*;
 use k8s_openapi::api::coordination::v1::{Lease, LeaseSpec};
-use k8s_openapi::api::core::v1::Pod;
+use k8s_openapi::api::core::v1::{Pod, Secret};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{MicroTime, ObjectMeta};
 use kube::api::{Api, ListParams};
 use kube::client::Client;
@@ -28,13 +30,17 @@ use kube_runtime::watcher::{watcher, Error as WatcherError, Event};
 use maplit::btreemap;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
-use tokio_stream::wrappers::{BroadcastStream, UnboundedReceiverStream, WatchStream};
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream, UnboundedReceiverStream, WatchStream};
+use tokio_stream::StreamMap;
+use uuid::Uuid;
 
 use crate::config::Config;
 use crate::crd::{Pipeline, Stream, Token};
-use crate::k8s::coordination::{LeaderElectionConfig, LeaderElector};
+use crate::futures::LivenessStreamMetadata;
+use crate::k8s::coordination::{LeaderElectionConfig, LeaderElector, LeaderState};
 use crate::k8s::events::CrdStateChange;
 use crate::k8s::scheduler::SchedulerTask;
+use crate::server::H2Channel;
 
 type EventResult<T> = std::result::Result<Event<T>, WatcherError>;
 
@@ -55,8 +61,14 @@ pub struct Controller {
     shutdown_rx: BroadcastStream<()>,
     /// A channel for emitting CRD state change events.
     events_tx: mpsc::Sender<CrdStateChange>,
+    /// A channel used for receiving metadata requests from the network server.
+    metadata_requests_rx: ReceiverStream<H2Channel>,
     /// The configuration used to drive the leader election system, moved out after being spawned.
     leader_election_config: Option<LeaderElectionConfig>,
+    /// The name of the lease used by this cluster.
+    lease_name: String,
+    /// The currently known leader state.
+    leader_state: Option<LeaderState>,
 
     /// A channel of scheduler tasks.
     scheduler_tasks_tx: mpsc::UnboundedSender<SchedulerTask>,
@@ -68,6 +80,8 @@ pub struct Controller {
     pipelines: HashMap<Arc<String>, Arc<Pipeline>>,
     /// All known token objects of this cluster.
     tokens: HashMap<Arc<String>, Arc<Token>>,
+    /// All known K8s secrets corresponding to Hadron Tokens of this cluster.
+    secrets: HashMap<Arc<String>, Arc<Secret>>,
     /// All known pods of this cluster.
     ///
     /// We are using a B-tree here as keys stay sorted.
@@ -81,6 +95,11 @@ pub struct Controller {
     /// The layout is such that pod names are hashed for efficiency and to reduce
     /// data cloning/copying.
     pods_scratch: BTreeMap<u64, PodInfo>,
+
+    /// A stream of liveness checks on the active subscriber channels.
+    liveness_checks: StreamMap<Uuid, LivenessStreamMetadata>,
+    /// A general purpose reusable bytes buffer, safe for concurrent use.
+    buf: BytesMut,
 }
 
 /// Info on a Hadron pod along with its cluster assignment info.
@@ -88,6 +107,8 @@ pub struct Controller {
 struct PodInfo {
     /// The corresponding pod data model from K8s.
     pub pod: Option<Pod>,
+    /// The DNS name of the pod for direct connections.
+    pub pod_dns_name: Option<String>,
     /// All streams assigned to this pod for partition leadership.
     pub stream_leaders: BTreeSet<Arc<String>>,
     /// All streams assigned to this pod for partition replication.
@@ -96,10 +117,14 @@ struct PodInfo {
 
 impl Controller {
     /// Create a new instance.
-    pub fn new(client: Client, config: Arc<Config>, shutdown_tx: broadcast::Sender<()>, events_tx: mpsc::Sender<CrdStateChange>) -> Result<Self> {
+    pub fn new(
+        client: Client, config: Arc<Config>, shutdown_tx: broadcast::Sender<()>, events_tx: mpsc::Sender<CrdStateChange>,
+        metadata_requests_rx: mpsc::Receiver<H2Channel>,
+    ) -> Result<Self> {
+        let lease_name = Self::generate_lease_name(&config);
         let elect_conf = LeaderElectionConfig::new(
             &config.namespace,
-            &Self::generate_lease_name(&config),
+            &lease_name,
             config.pod_name.as_ref().clone(),
             chrono::Duration::seconds(config.lease_duration_seconds as i64),
             chrono::Duration::seconds(config.lease_renew_seconds as i64),
@@ -115,12 +140,18 @@ impl Controller {
             scheduler_tasks_tx,
             scheduler_tasks_rx: UnboundedReceiverStream::new(scheduler_tasks_rx),
             events_tx,
+            metadata_requests_rx: ReceiverStream::new(metadata_requests_rx),
             leader_election_config: Some(elect_conf),
+            lease_name,
+            leader_state: None,
             streams: Default::default(),
             pipelines: Default::default(),
             tokens: Default::default(),
+            secrets: Default::default(),
             pods: Default::default(),
             pods_scratch: Default::default(),
+            liveness_checks: Default::default(),
+            buf: BytesMut::with_capacity(2000),
         })
     }
 
@@ -159,22 +190,29 @@ impl Controller {
         let streams_watcher = watcher(streams, params_spec.clone());
         let tokens: Api<Token> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let tokens_watcher = watcher(tokens, params_spec.clone());
+        let secrets: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let secrets_watcher = watcher(secrets, params_labels.clone());
         let pods: Api<Pod> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let pods_watcher = watcher(pods, params_labels);
-        tokio::pin!(pipelines_watcher, streams_watcher, tokens_watcher, pods_watcher);
+        tokio::pin!(pipelines_watcher, streams_watcher, tokens_watcher, secrets_watcher, pods_watcher);
 
         tracing::info!("k8s controller initialized");
         loop {
             tokio::select! {
                 Some(k8s_event_res) = pipelines_watcher.next() => self.handle_pipeline_event(k8s_event_res).await,
                 Some(k8s_event_res) = streams_watcher.next() => self.handle_stream_event(k8s_event_res).await,
+                Some(k8s_event_res) = secrets_watcher.next() => self.handle_secret_event(k8s_event_res).await,
                 Some(k8s_event_res) = tokens_watcher.next() => self.handle_token_event(k8s_event_res).await,
                 Some(k8s_event_res) = pods_watcher.next() => self.handle_pod_event(k8s_event_res).await,
-                Some(new_leader_state) = state_rx.next() => tracing::debug!(state = ?new_leader_state, "new leader state detected"),
+                Some(new_leader_state) = state_rx.next() => {
+                    tracing::debug!(state = ?new_leader_state, "new leader state detected");
+                    self.leader_state = Some(new_leader_state.clone());
+                }
                 Some(scheduler_task) = self.scheduler_tasks_rx.next() => {
                     let state = { state_rx_raw.borrow().clone() }; // Ensure borrow ref doesn't leak read lock.
                     self.handle_scheduler_task(scheduler_task, state).await;
                 }
+                Some(req) = self.metadata_requests_rx.next() => self.handle_metadata_request(req).await,
                 _ = self.shutdown_rx.next() => break,
             }
         }

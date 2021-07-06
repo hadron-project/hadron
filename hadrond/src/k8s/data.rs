@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use k8s_openapi::api::core::v1::Pod;
-use kube::Resource;
+use k8s_openapi::api::core::v1::{Pod, Secret};
+use kube::{Resource, ResourceExt};
 use kube_runtime::watcher::Event;
 
 use crate::crd::{Pipeline, Stream, Token};
@@ -180,6 +180,64 @@ impl Controller {
         }
     }
 
+    /// Handle `Secret` watcher event.
+    #[tracing::instrument(level = "debug", skip(self, res))]
+    pub(super) async fn handle_secret_event(&mut self, res: EventResult<Secret>) {
+        let event = match res {
+            Ok(event) => event,
+            Err(err) => {
+                tracing::error!(error = ?err, "error from Secret k8s watcher");
+                let _ = tokio::time::sleep(Duration::from_secs(10)).await;
+                return;
+            }
+        };
+        match event {
+            Event::Applied(obj) => self.secret_applied(obj).await,
+            Event::Deleted(obj) => self.secret_deleted(obj).await,
+            Event::Restarted(objs) => self.secret_restarted(objs).await,
+        }
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, secret))]
+    async fn secret_applied(&mut self, secret: Secret) {
+        let name_str = match secret.meta().name.as_ref() {
+            Some(name_str) => name_str,
+            None => return, // Not actually possible as K8s requires name.
+        };
+        let name = match self.secrets.get_key_value(name_str) {
+            Some((key, old)) => {
+                if old.as_ref() == &secret {
+                    return;
+                }
+                Arc::clone(key) // No additional alloc.
+            }
+            None => Arc::new(name_str.clone()),
+        };
+        let secret = Arc::new(secret);
+        self.secrets.insert(name.clone(), secret);
+        let _ = self.scheduler_tasks_tx.send(SchedulerTask::SecretUpdated(name));
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, secret))]
+    async fn secret_deleted(&mut self, secret: Secret) {
+        let name_str = match secret.meta().name.as_ref() {
+            Some(name_str) => name_str,
+            None => return, // Not actually possible as K8s requires name.
+        };
+        let (name, secret) = match self.secrets.remove_entry(name_str) {
+            Some((name, secret)) => (name, secret),
+            None => return,
+        };
+        let _ = self.scheduler_tasks_tx.send(SchedulerTask::SecretDeleted(name, secret));
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, secrets))]
+    async fn secret_restarted(&mut self, secrets: Vec<Secret>) {
+        for secret in secrets {
+            self.secret_applied(secret).await;
+        }
+    }
+
     /// Handle `Token` watcher event.
     #[tracing::instrument(level = "debug", skip(self, res))]
     pub(super) async fn handle_token_event(&mut self, res: EventResult<Token>) {
@@ -279,7 +337,13 @@ impl Controller {
             Some((key, _)) => Arc::clone(key), // No additional alloc.
             None => Arc::new(name_str.clone()),
         };
-        self.pods.entry(name.clone()).or_insert_with(Default::default).pod = Some(pod);
+        let mut pod_info = self.pods.entry(name.clone()).or_insert_with(Default::default);
+        if pod_info.pod_dns_name.is_none() {
+            if let Some(subdomain) = pod.spec.as_ref().and_then(|spec| spec.subdomain.as_ref()) {
+                pod_info.pod_dns_name = Some(format!("{}.{}.{}", pod.name(), subdomain, &self.config.namespace));
+            }
+        }
+        pod_info.pod = Some(pod);
         let _ = self.scheduler_tasks_tx.send(SchedulerTask::PodUpdated(name));
     }
 

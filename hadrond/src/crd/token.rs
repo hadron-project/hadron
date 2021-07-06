@@ -12,6 +12,10 @@ use crate::error::AppError;
 /// CRD spec for the Token resource.
 ///
 /// Tokens are used to establish authentication & authorization controls within a Hadron cluster.
+///
+/// When Hadron detects a new Token CR, it will generate a new Kubernetes secret bearing the same
+/// name as the respective Token CR. The generated secret will contain a JWT signed by the Hadron
+/// cluster's private key.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, CustomResource, JsonSchema)]
 #[kube(
     struct = "Token",
@@ -24,7 +28,8 @@ use crate::error::AppError;
     apiextensions = "v1",
     shortname = "token",
     printcolumn = r#"{"name":"Cluster","type":"string","jsonPath":".spec.cluster"}"#,
-    printcolumn = r#"{"name":"Secret","type":"string","jsonPath":".status.secretName"}"#
+    printcolumn = r#"{"name":"All","type":"string","jsonPath":".spec.all"}"#,
+    printcolumn = r#"{"name":"Token ID","type":"string","jsonPath":".status.token_id"}"#
 )]
 pub struct TokenSpec {
     /// The cluster to which this token belongs.
@@ -32,19 +37,17 @@ pub struct TokenSpec {
     /// Grant full access to all resources of the cluster.
     ///
     /// If this value is true, then all other values are ignored.
+    #[serde(default)]
     pub all: bool,
     /// Permissions granted on ephemeral messaging exchanges.
-    ///
-    /// All grants are structured as `{name}={access}` and are comma-separated for multiple grants.
-    pub exchanges: PubSubAccess,
+    #[serde(default)]
+    pub exchanges: Option<PubSubAccess>,
     /// Permissions granted on RPC endpoints.
-    ///
-    /// All grants are structured as `{name}={access}` and are comma-separated for multiple grants.
-    pub endpoints: PubSubAccess,
+    #[serde(default)]
+    pub endpoints: Option<PubSubAccess>,
     /// Permissions granted on streams.
-    ///
-    /// All grants are structured as `{name}={access}` and are comma-separated for multiple grants.
-    pub streams: PubSubAccess,
+    #[serde(default)]
+    pub streams: Option<PubSubAccess>,
 }
 
 /// A pub/sub access spec.
@@ -60,8 +63,6 @@ pub struct PubSubAccess {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenStatus {
-    /// The name of the corresponding secret once created.
-    pub secret_name: String,
     /// The ID of the created token.
     pub token_id: String,
 }
@@ -72,7 +73,14 @@ impl Token {
         if self.spec.all {
             return Ok(());
         }
-        ensure!(self.spec.streams.r#pub.iter().by_ref().any(|name| name == stream), AppError::Unauthorized);
+        ensure!(
+            self.spec
+                .streams
+                .as_ref()
+                .map(|streams| streams.r#pub.iter().by_ref().any(|name| name == stream))
+                .unwrap_or(false),
+            AppError::Unauthorized
+        );
         Ok(())
     }
 
@@ -81,7 +89,14 @@ impl Token {
         if self.spec.all {
             return Ok(());
         }
-        ensure!(self.spec.streams.sub.iter().by_ref().any(|name| name == stream), AppError::Unauthorized);
+        ensure!(
+            self.spec
+                .streams
+                .as_ref()
+                .map(|streams| streams.sub.iter().by_ref().any(|name| name == stream))
+                .unwrap_or(false),
+            AppError::Unauthorized
+        );
         Ok(())
     }
 }

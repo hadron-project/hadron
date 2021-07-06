@@ -1,5 +1,5 @@
 use anyhow::{bail, ensure, Result};
-use jsonwebtoken::{Algorithm, Validation};
+use jsonwebtoken::{Algorithm, Header, Validation};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
@@ -38,10 +38,7 @@ impl TokenCredentials {
             Some(token) if !token.is_empty() => token.to_string(),
             _ => bail!(AppError::InvalidCredentials("no token detected in header".into())),
         };
-        let validation = Validation::new(Algorithm::RS512);
-        let claims: TokenClaims = jsonwebtoken::decode(token.as_ref(), &config.jwt_decoding_key, &validation)
-            .map_err(|err| AppError::InvalidCredentials(err.to_string()))?
-            .claims;
+        let claims = TokenClaims::decode(&token, &config).map_err(|err| AppError::InvalidCredentials(err.to_string()))?;
         Ok(TokenCredentials { claims, header })
     }
 }
@@ -53,4 +50,26 @@ pub struct TokenClaims {
     pub id: String,
     /// The name of the cluster which this token applies to.
     pub cluster: String,
+}
+
+impl TokenClaims {
+    /// Create a new instance.
+    pub fn new(cluster: &str) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            cluster: cluster.into(),
+        }
+    }
+
+    /// Encode this claims body as a JWT.
+    pub fn encode(&self, config: &Config) -> jsonwebtoken::errors::Result<String> {
+        let header = Header::new(Algorithm::RS512);
+        jsonwebtoken::encode(&header, &self, &config.jwt_encoding_key)
+    }
+
+    /// Decode the given string as a JWT with a `TokenClaims` body.
+    pub fn decode(token: impl AsRef<str>, config: &Config) -> jsonwebtoken::errors::Result<Self> {
+        let validation = Validation::new(Algorithm::RS512);
+        jsonwebtoken::decode(token.as_ref(), &config.jwt_decoding_key, &validation).map(|body| body.claims)
+    }
 }

@@ -5,6 +5,7 @@ metadata:
   namespace: default
 spec:
   cluster: hadron
+  # 3 partitions.
   partitions: 3
   # 1 leader node & 2 replicas.
   replicas: 2
@@ -36,3 +37,37 @@ spec:
         - setup-monitoring
         - setup-billing
         - email-customer
+
+---
+apiVersion: hadron.rs/v1
+kind: Token
+metadata:
+  name: hadron-full-access
+  namespace: default
+spec:
+  cluster: hadron
+  all: true
+
+---
+apiVersion: hadron.rs/v1
+kind: Token
+metadata:
+  name: hadron-read-only
+  namespace: default
+spec:
+  cluster: hadron
+  streams:
+    pub: []
+    sub: ["events"]
+
+---
+apiVersion: hadron.rs/v1
+kind: Token
+metadata:
+  name: hadron-read-write
+  namespace: default
+spec:
+  cluster: hadron
+  streams:
+    pub: ["events"]
+    sub: ["events"]

@@ -16,6 +16,7 @@ bcrypt = "0.9"
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 dashmap = "4"
+derive_more = { version = "0.99", default-features = false, features = ["display"] }
 envy = "0.4"
 futures = "0.3"
 h2 = { version = "0.3", default-features = false, features = ["stream"] }
@@ -26,6 +27,7 @@ kube = { version = "0.56", default-features = false, features = ["admission", "d
 kube-runtime = { version = "0.56", default-features = false }
 lazy_static = "1"
 maplit = "1"
+matchit = "0.4.2"
 prost = "0.7"
 proto = { version = "0.1", path = "../proto" }
 rand = "0.8"

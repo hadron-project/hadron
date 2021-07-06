@@ -22,7 +22,7 @@ metadata:
   {{- end}}
 spec:
   serviceName: {{.Values.cluster}}-{{.Values.zone}}
-  replicas: {{.Values.statefulSet.replicas}}
+  replicas: {{.Values.statefulSet.replicas | int }}
   updateStrategy:
     type: OnDelete
     rollingUpdate: null

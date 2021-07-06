@@ -82,7 +82,7 @@ pub struct Partition {
 }
 
 /// Scheduling state of a partition.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[derive(Clone, Debug, derive_more::Display, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub enum ScheduleState {
     /// A leader has been assigned and the last known target
     /// replica count has been matched.
@@ -96,7 +96,7 @@ pub enum ScheduleState {
 }
 
 /// Runtime state of a partition.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[derive(Clone, Debug, derive_more::Display, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub enum RuntimeState {
     /// All partitions pods are running and healthy.
     Stable,

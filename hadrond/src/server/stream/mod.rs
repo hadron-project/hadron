@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use bytes::BytesMut;
 use futures::stream::{FuturesUnordered, StreamExt};
 use prost::Message;
-use proto::v1::{StreamPubSetupResponse, StreamPubSetupResponseResult, URL_STREAM_PUBLISH, URL_STREAM_SUBSCRIBE};
+use proto::v1::{StreamPubSetupResponse, StreamPubSetupResponseResult};
 use sled::Tree;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
@@ -17,7 +17,7 @@ use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use crate::config::Config;
 use crate::crd::{RequiredMetadata, Stream};
 use crate::database::Database;
-use crate::error::{AppError, ERR_ITER_FAILURE};
+use crate::error::ERR_ITER_FAILURE;
 use crate::models::stream::Subscription;
 use crate::server::stream::subscriber::StreamSubCtlMsg;
 use crate::server::{send_error, H2Channel, MetadataCache};
@@ -172,7 +172,8 @@ impl StreamCtl {
             }
         };
         match msg {
-            StreamCtlMsg::Request(req) => self.handle_request(req).await,
+            StreamCtlMsg::RequestPublish(req) => self.handle_request_publish(req).await,
+            StreamCtlMsg::RequestSubscribe(req) => self.handle_request_subscribe(req).await,
             StreamCtlMsg::StreamUpdated(stream) => self.handle_stream_updated(stream).await,
             StreamCtlMsg::StreamDeleted(stream) => self.handle_stream_deleted(stream).await,
         }
@@ -203,30 +204,26 @@ impl StreamCtl {
         let _ = self.subs_tx.send(StreamSubCtlMsg::Shutdown).await;
     }
 
-    /// Handle a request which has been sent to this controller.
+    /// Handle a request to setup a publisher channel.
     #[tracing::instrument(level = "trace", skip(self, req))]
-    async fn handle_request(&mut self, mut req: H2Channel) {
-        let path = req.0.uri().path().split('/').last().unwrap_or("");
-        match path {
-            URL_STREAM_PUBLISH => {
-                let res_chan = match self.validate_publisher_channel(&mut req).await {
-                    Ok(res_chan) => res_chan,
-                    Err(err) => {
-                        send_error(&mut req, self.buf.split(), err, |e| StreamPubSetupResponse {
-                            result: Some(StreamPubSetupResponseResult::Err(e)),
-                        });
-                        return;
-                    }
-                };
-                self.publishers
-                    .push(publisher::PublisherFut::new((req.0.into_body(), res_chan)));
+    async fn handle_request_publish(&mut self, mut req: H2Channel) {
+        let res_chan = match self.validate_publisher_channel(&mut req).await {
+            Ok(res_chan) => res_chan,
+            Err(err) => {
+                send_error(&mut req, self.buf.split(), err, |e| StreamPubSetupResponse {
+                    result: Some(StreamPubSetupResponseResult::Err(e)),
+                });
+                return;
             }
-            URL_STREAM_SUBSCRIBE => {
-                // Send request over to the subscriber controller.
-                let _ = self.subs_tx.send(StreamSubCtlMsg::Request(req)).await;
-            }
-            _ => send_error(&mut req, self.buf.split(), AppError::ResourceNotFound.into(), std::convert::identity),
         };
+        self.publishers
+            .push(publisher::PublisherFut::new((req.0.into_body(), res_chan)));
+    }
+
+    /// Handle a request to setup a subscriber channel.
+    #[tracing::instrument(level = "trace", skip(self, req))]
+    async fn handle_request_subscribe(&mut self, req: H2Channel) {
+        let _ = self.subs_tx.send(StreamSubCtlMsg::Request(req)).await;
     }
 }
 
@@ -280,8 +277,10 @@ async fn recover_stream_state(stream_tree: &Tree, metadata_tree: &Tree) -> Resul
 
 /// A message bound for a stream controller.
 pub enum StreamCtlMsg {
-    /// A client request being routed to the controller.
-    Request(H2Channel),
+    /// A client request to setup a publisher channel.
+    RequestPublish(H2Channel),
+    /// A client request to setup a subscriber channel.
+    RequestSubscribe(H2Channel),
     /// An update to the controller's stream object.
     StreamUpdated(Arc<Stream>),
     /// An update indicating that this stream has been deleted.

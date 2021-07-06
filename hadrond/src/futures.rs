@@ -46,3 +46,43 @@ impl Stream for LivenessStream {
         }
     }
 }
+
+/// A stream type used for monitoring the liveness of an H2 data channel for metadata streams.
+///
+/// When this stream yields an item, this indicates that the channel has closed. This stream type
+/// differs from the `LivenessStream` in that it does not have an associated group.
+pub struct LivenessStreamMetadata {
+    pub chan: Option<H2DataChannel>,
+    pub chan_id: Uuid,
+}
+
+impl Stream for LivenessStreamMetadata {
+    type Item = (Uuid, H2DataChannel);
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut chan = match self.chan.take() {
+            Some(chan) => chan,
+            None => return Poll::Ready(None), // This should never be hit.
+        };
+        match chan.0.poll_data(cx) {
+            Poll::Pending => {
+                self.chan = Some(chan);
+                Poll::Pending
+            }
+            Poll::Ready(opt) => match opt {
+                Some(res) => match res {
+                    Ok(_data) => {
+                        tracing::warn!(channel = ?self.chan_id, "protocol error, unexpected data payload received from subscriber");
+                        self.chan = Some(chan);
+                        Poll::Pending
+                    }
+                    Err(err) => {
+                        tracing::debug!(error = ?err, channel = ?self.chan_id, "data channel closed");
+                        Poll::Ready(Some((self.chan_id, chan)))
+                    }
+                },
+                None => Poll::Ready(Some((self.chan_id, chan))),
+            },
+        }
+    }
+}

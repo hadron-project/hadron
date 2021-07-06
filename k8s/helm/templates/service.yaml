@@ -31,3 +31,34 @@ spec:
       port: {{.Values.service.port}}
       protocol: TCP
       targetPort: {{.Values.statefulSet.server.clientPort}}
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{.Values.cluster}}
+  namespace: {{.Values.namespace | default .Release.Namespace}}
+  {{- if .Values.service.annotations}}
+  annotations:
+{{toYaml .Values.service.annotations | indent 4}}
+  {{- end}}
+  labels:
+    hadron.rs/cluster: {{.Values.cluster}}
+    app: hadron
+    app.kubernetes.io/name: hadron
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    {{- if .Values.service.labels}}
+{{toYaml .Values.service.labels | indent 4}}
+    {{- end}}
+spec:
+  type: ClusterIP
+  selector:
+    app: hadron
+    hadron.rs/cluster: {{.Values.cluster}}
+  ports:
+    - name: http
+      port: {{.Values.service.port}}
+      protocol: TCP
+      targetPort: {{.Values.statefulSet.server.clientPort}}

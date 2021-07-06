@@ -205,20 +205,26 @@ message PipelineStageOutput {
 ///////////////////////////////////////////////////////////////////////////////
 // Metadata ///////////////////////////////////////////////////////////////////
 
+// A response to a metadata subscription setup request.
+message MetadataSubSetupResponse {
+    oneof result {
+        ClusterMetadata ok = 1;
+        Error err = 2;
+    }
+}
+
 // All known metadata of the target cluster.
 message ClusterMetadata {
     // The name of the cluster which was queried.
     string cluster_name = 1;
-    // The Kubernetes service used to address all of the pods of the Hadron cluster.
-    string cluster_service = 2;
     // All known pods of the Hadron cluster.
-    repeated string pods = 3;
+    repeated string pods = 2;
     // A mapping of all known streams, with metadata data on all partitions,
     // their leaders and their replicas.
-    map<string, StreamMetadata> streams = 4;
+    map<string, StreamMetadata> streams = 3;
     // A mapping of all known pipelines, with metadata data on all partitions,
     // their leaders and their replicas.
-    map<string, PipelineMetadata> pipelines = 5;
+    map<string, PipelineMetadata> pipelines = 4;
 }
 
 // Stream metadata.

@@ -121,7 +121,7 @@ impl StreamSubCtl {
         }
 
         // Begin shutdown routine.
-        tracing::debug!("stream subscriber controller {}/{} has shutdown", self.stream.name(), self.partition,);
+        tracing::debug!("stream subscriber controller {}/{} has shutdown", self.stream.name(), self.partition);
         Ok(())
     }
 

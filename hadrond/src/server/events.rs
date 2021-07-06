@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 
 use crate::crd::{Pipeline, RequiredMetadata, Stream};
 use crate::k8s::events::CrdStateChange;
-pub use crate::server::metadata::MetadataCache;
+pub use crate::server::cache::MetadataCache;
 use crate::server::pipeline::{PipelineCtl, PipelineCtlMsg};
 use crate::server::pipeline_replica::PipelineReplicaCtlMsg;
 use crate::server::stream::{StreamCtl, StreamCtlMsg};

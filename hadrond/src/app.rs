@@ -36,19 +36,22 @@ impl App {
         // App shutdown channel.
         let (shutdown_tx, shutdown_rx) = broadcast::channel(10);
         let (events_tx, events_rx) = mpsc::channel(10_000);
+        let (metadata_requests_tx, metadata_requests_rx) = mpsc::channel(1000);
 
         // Initialize this node's storage.
         let db = Database::new(config.clone()).await.context("error opening database")?;
 
         // Spawn the network server.
-        let (server, _cache) = Server::new(config.clone(), db.clone(), shutdown_tx.clone(), events_rx)
+        let (server, _cache) = Server::new(config.clone(), db.clone(), shutdown_tx.clone(), events_rx, metadata_requests_tx)
             .await
             .context("error creating network server")?;
         let server = server.spawn();
 
         // Initialize the K8s client.
-        let client = kube::Client::try_default().await.context("error initializing K8s client")?;
-        let controller = Controller::new(client, config.clone(), shutdown_tx.clone(), events_tx)
+        let client = kube::Client::try_default()
+            .await
+            .context("error initializing K8s client")?;
+        let controller = Controller::new(client, config.clone(), shutdown_tx.clone(), events_tx, metadata_requests_rx)
             .context("error creating k8s controller")?
             .spawn();
 

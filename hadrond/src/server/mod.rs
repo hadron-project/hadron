@@ -1,7 +1,7 @@
 //! Network server.
 
+mod cache;
 mod events;
-mod metadata;
 mod pipeline;
 mod pipeline_replica;
 mod stream;
@@ -16,6 +16,7 @@ use bytes::{Bytes, BytesMut};
 use futures::stream::StreamExt;
 use http::Method;
 use prost::Message;
+use proto::v1::ENDPOINT_METADATA_SUBSCRIBE;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
@@ -27,7 +28,7 @@ use crate::crd::{Pipeline, Stream};
 use crate::database::Database;
 use crate::error::AppError;
 use crate::k8s::events::CrdStateChange;
-pub use crate::server::metadata::MetadataCache;
+pub use crate::server::cache::MetadataCache;
 use crate::server::pipeline::PipelineCtlMsg;
 use crate::server::pipeline_replica::PipelineReplicaCtlMsg;
 use crate::server::stream::StreamCtlMsg;
@@ -35,8 +36,8 @@ use crate::server::stream_replica::StreamReplicaCtlMsg;
 use crate::utils;
 
 /// An H2 channel (stream) created from an active HTTP2 connection.
-pub type H2Channel = (http::Request<h2::RecvStream>, h2::server::SendResponse<bytes::Bytes>);
-/// An H2 channel where both ends are streaming bidirectional data.
+pub type H2Channel = (http::Request<h2::RecvStream>, h2::server::SendResponse<Bytes>);
+/// An H2 channel (stream) where both ends are streaming bidirectional data.
 pub type H2DataChannel = (h2::RecvStream, h2::SendStream<Bytes>);
 
 /// Network server used to handle client requests.
@@ -72,9 +73,13 @@ pub struct Server {
     /// A channel used for triggering graceful shutdown.
     shutdown_rx: BroadcastStream<()>,
 
-    /// A MPMC channel used for system events.
+    /// A channel used for system events.
     events_rx: mpsc::Receiver<CrdStateChange>,
+    /// A channel used for sending metadata requests to the metadata controller.
+    metadata_requests_tx: mpsc::Sender<H2Channel>,
 
+    /// The router used to match inbound requests.
+    router: matchit::Node<RouterBackend>,
     /// The TCP listener used by this server.
     listener: TcpListener,
     /// The channel used to handle H2 channels as they arrive.
@@ -90,6 +95,7 @@ impl Server {
     /// Create a new instance.
     pub async fn new(
         config: Arc<Config>, db: Database, shutdown_tx: broadcast::Sender<()>, events_rx: mpsc::Receiver<CrdStateChange>,
+        metadata_requests_tx: mpsc::Sender<H2Channel>,
     ) -> Result<(Self, Arc<MetadataCache>)> {
         // Build TCP listener.
         let addr = format!("0.0.0.0:{}", config.client_port);
@@ -112,6 +118,8 @@ impl Server {
                 shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
                 shutdown_tx,
                 events_rx,
+                metadata_requests_tx,
+                router: build_routes()?,
                 listener,
                 channels_tx,
                 channels_rx: ReceiverStream::new(channels_rx),
@@ -192,41 +200,57 @@ impl Server {
     /// Handle a new H2 channel created from an H2 connection.
     #[tracing::instrument(level = "trace", skip(self, req))]
     async fn route_request(&mut self, mut req: H2Channel) {
-        // Perform top-level routing based on URI path.
-        let mut path = req.0.uri().path().split('/');
-        let _ = path.next(); // First segment will always be "".
-        let res: Result<()> = match path.next() {
-            // Handle V1 requests.
-            Some(proto::v1::URL_V1) => match path.next() {
-                // Requests bound for a stream controller.
-                Some(proto::v1::URL_STREAM) => match (path.next(), path.next()) {
-                    (Some(name), Some(partition)) => match self.get_v1_stream_handle(name, partition) {
-                        Ok(handle) => {
-                            let _ = handle.tx.send(StreamCtlMsg::Request(req)).await;
-                            return;
-                        }
-                        Err(err) => Err(err),
-                    },
-                    _ => Err(AppError::ResourceNotFound.into()),
-                },
-                // Requests bound for a pipeline controller.
-                Some(proto::v1::URL_PIPELINE) => match (path.next(), path.next()) {
-                    (Some(name), Some(partition)) => match self.get_v1_pipeline_handle(name, partition) {
-                        Ok(handle) => {
-                            let _ = handle.tx.send(PipelineCtlMsg::Request(req)).await;
-                            return;
-                        }
-                        Err(err) => Err(err),
-                    },
-                    _ => Err(AppError::ResourceNotFound.into()),
-                },
-                _ => Err(AppError::ResourceNotFound.into()),
-            },
-            _ => Err(AppError::ResourceNotFound.into()),
+        // Check for a router match on the given request.
+        let matches = match self.router.at(req.0.uri().path()) {
+            Ok(matches) => matches,
+            Err(_) => {
+                send_error(&mut req, self.buf.split(), AppError::ResourceNotFound.into(), std::convert::identity);
+                return;
+            }
         };
-        if let Err(err) = res {
-            send_error(&mut req, self.buf.split(), err, std::convert::identity);
-        }
+
+        // Handle backend target & unpack params.
+        let params = matches.params;
+        let err: anyhow::Error = match matches.value {
+            RouterBackend::StreamPublish => {
+                let name = params.get("name").unwrap_or_default();
+                let partition = params.get("partition").unwrap_or_default();
+                match self.get_v1_stream_handle(name, partition) {
+                    Ok(handle) => {
+                        let _res = handle.tx.send(StreamCtlMsg::RequestPublish(req)).await;
+                        return;
+                    }
+                    Err(err) => err,
+                }
+            }
+            RouterBackend::StreamSubscribe => {
+                let name = params.get("name").unwrap_or_default();
+                let partition = params.get("partition").unwrap_or_default();
+                match self.get_v1_stream_handle(name, partition) {
+                    Ok(handle) => {
+                        let _res = handle.tx.send(StreamCtlMsg::RequestSubscribe(req)).await;
+                        return;
+                    }
+                    Err(err) => err,
+                }
+            }
+            RouterBackend::PipelineSubscribe => {
+                let name = params.get("name").unwrap_or_default();
+                let partition = params.get("partition").unwrap_or_default();
+                match self.get_v1_pipeline_handle(name, partition) {
+                    Ok(handle) => {
+                        let _res = handle.tx.send(PipelineCtlMsg::Request(req)).await;
+                        return;
+                    }
+                    Err(err) => err,
+                }
+            }
+            RouterBackend::MetadataStream => {
+                let _res = self.metadata_requests_tx.send(req).await;
+                return;
+            }
+        };
+        send_error(&mut req, self.buf.split(), err, std::convert::identity);
     }
 
     /// Get a reference to the target stream handle for the given request info.
@@ -254,9 +278,30 @@ impl Server {
     }
 }
 
+/// All router backends used by the server.
+#[derive(Clone, Debug)]
+enum RouterBackend {
+    StreamPublish,
+    StreamSubscribe,
+    PipelineSubscribe,
+    MetadataStream,
+}
+
+/// Build a router for matching inbound requests.
+fn build_routes() -> Result<matchit::Node<RouterBackend>> {
+    let mut router = matchit::Node::new();
+    router
+        .insert("/v1/stream/:name/:partition/publish", RouterBackend::StreamPublish)
+        .and_then(|_| router.insert("/v1/stream/:name/:partition/subscribe", RouterBackend::StreamSubscribe))
+        .and_then(|_| router.insert("/v1/pipeline/:name/:partition/subscribe", RouterBackend::PipelineSubscribe))
+        .and_then(|_| router.insert(ENDPOINT_METADATA_SUBSCRIBE, RouterBackend::MetadataStream))
+        .context("error building router")?;
+    Ok(router)
+}
+
 /// Handle the given error, generating an appropriate response based on its type.
 #[tracing::instrument(level = "trace", skip(req, buf, err, wrapper))]
-fn send_error<F, M>(req: &mut H2Channel, buf: BytesMut, err: anyhow::Error, wrapper: F)
+pub(crate) fn send_error<F, M>(req: &mut H2Channel, buf: BytesMut, err: anyhow::Error, wrapper: F)
 where
     F: Fn(proto::v1::Error) -> M,
     M: Message,
@@ -288,7 +333,7 @@ where
 /// If a body is given, it will be serialized into the given bytes buf. If no body is given, then
 /// a header-only response will be returned with no body.
 #[tracing::instrument(level = "trace", skip(req, buf, headers_res, body))]
-fn send_response<M: Message>(req: &mut H2Channel, mut buf: BytesMut, headers_res: http::Response<()>, body: Option<M>) {
+pub(crate) fn send_response<M: Message>(req: &mut H2Channel, mut buf: BytesMut, headers_res: http::Response<()>, body: Option<M>) {
     // If we have a body to serialize, then do so.
     if let Some(body) = &body {
         if let Err(err) = body.encode(&mut buf) {
@@ -314,7 +359,7 @@ fn send_response<M: Message>(req: &mut H2Channel, mut buf: BytesMut, headers_res
 
 /// Extract the given request's auth token, else fail.
 #[tracing::instrument(level = "trace", skip(req))]
-fn must_get_token<T>(req: &http::Request<T>, config: &Config) -> Result<auth::TokenCredentials> {
+pub(crate) fn must_get_token<T>(req: &http::Request<T>, config: &Config) -> Result<auth::TokenCredentials> {
     // Extract the authorization header.
     let header_val = req
         .headers()
@@ -327,7 +372,7 @@ fn must_get_token<T>(req: &http::Request<T>, config: &Config) -> Result<auth::To
 
 /// Extract the given request's basic auth, else fail.
 #[tracing::instrument(level = "trace", skip(req))]
-fn must_get_user<'a, T>(req: &'a http::Request<T>) -> Result<auth::UserCredentials> {
+pub(crate) fn must_get_user<'a, T>(req: &'a http::Request<T>) -> Result<auth::UserCredentials> {
     // Extract the authorization header.
     let header_val = req
         .headers()
@@ -340,7 +385,7 @@ fn must_get_user<'a, T>(req: &'a http::Request<T>) -> Result<auth::UserCredentia
 
 /// Require that the given request has the given method, else error
 #[tracing::instrument(level = "trace", skip(req))]
-fn require_method<T>(req: &http::Request<T>, method: Method) -> Result<()> {
+pub(crate) fn require_method<T>(req: &http::Request<T>, method: Method) -> Result<()> {
     #[allow(unused_variables)] // A linting bug in `matches!` it would seem.
     if matches!(req.method(), method) {
         Ok(())

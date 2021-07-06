@@ -48,10 +48,14 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
+use k8s_openapi::api::coordination::v1::Lease;
+use k8s_openapi::api::core::v1::Secret;
 use kube::api::{Api, Patch, PatchParams};
+use kube::Resource;
 use tokio::time::timeout;
 
+use crate::auth::TokenClaims;
 use crate::crd::RequiredMetadata;
 use crate::crd::{Partition, Pipeline, RuntimeState, ScheduleState, Stream, Token};
 use crate::k8s::coordination::LeaderState;
@@ -59,6 +63,10 @@ use crate::k8s::{Controller, PodInfo};
 
 /// The pod `Running` lifecycle phase.
 const POD_RUNNING: &str = "Running";
+/// The secret key used for storing a generated JWT.
+const SECRET_KEY_TOKEN: &str = "token";
+/// The default timeout to use for API calls.
+const API_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A scheduling task to be performed.
 #[derive(Debug)]
@@ -72,6 +80,8 @@ pub(super) enum SchedulerTask {
     StreamDeleted(Arc<String>, Arc<Stream>),
     TokenUpdated(Arc<String>),
     TokenDeleted(Arc<String>, Arc<Token>),
+    SecretUpdated(Arc<String>),
+    SecretDeleted(Arc<String>, Arc<Secret>),
 }
 
 impl Controller {
@@ -88,6 +98,8 @@ impl Controller {
             SchedulerTask::TokenDeleted(name, token) => self.scheduler_token_deleted(name, token).await,
             SchedulerTask::PodUpdated(name) => self.scheduler_pod_updated(name).await,
             SchedulerTask::PodDeleted(name, info) => self.scheduler_pod_deleted(name, info).await,
+            SchedulerTask::SecretUpdated(name) => self.scheduler_secret_updated(name).await,
+            SchedulerTask::SecretDeleted(name, secret) => self.scheduler_secret_deleted(name, secret).await,
         }
     }
 
@@ -111,7 +123,6 @@ impl Controller {
     #[tracing::instrument(level = "debug", skip(self, _name, _stream))]
     async fn scheduler_stream_deleted(&mut self, _name: Arc<String>, _stream: Arc<Stream>) {
         tracing::debug!("handling scheduler task");
-        // TODO[future]: update/delete generated services.
     }
 
     #[tracing::instrument(level = "debug", skip(self, _name))]
@@ -124,14 +135,37 @@ impl Controller {
         tracing::debug!("handling scheduler task");
     }
 
-    #[tracing::instrument(level = "debug", skip(self, _name))]
-    async fn scheduler_token_updated(&mut self, _name: Arc<String>) {
-        tracing::debug!("handling scheduler task");
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn scheduler_token_updated(&mut self, name: Arc<String>) {
+        if self.secrets.get(&name).is_none() {
+            if let Err(err) = self.ensure_secret(name.clone()).await {
+                tracing::error!(error = ?err, "error while ensuring backing token secret");
+                let tx = self.scheduler_tasks_tx.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    let _ = tx.send(SchedulerTask::TokenUpdated(name));
+                });
+            }
+        }
     }
 
     #[tracing::instrument(level = "debug", skip(self, _name, _token))]
     async fn scheduler_token_deleted(&mut self, _name: Arc<String>, _token: Arc<Token>) {
         tracing::debug!("handling scheduler task");
+        // TODO: delete corresponding secret.
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, _name))]
+    async fn scheduler_secret_updated(&mut self, _name: Arc<String>) {
+        tracing::debug!("handling scheduler task");
+        // TODO: ensure the secret has the needed key & is a valid Hadron secret, else re-mint.
+        // TODO: if token does not exist, then delete the secret.
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, _name, _secret))]
+    async fn scheduler_secret_deleted(&mut self, _name: Arc<String>, _secret: Arc<Secret>) {
+        tracing::debug!("handling scheduler task");
+        // TODO: recrete the secret if the token still exists.
     }
 
     /// Perform scheduling reconciliation for an updated pod.
@@ -408,6 +442,86 @@ impl Controller {
     }
 }
 
+/// K8s API interaction.
+impl Controller {
+    /// Ensure the given secret exists.
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn ensure_secret(&mut self, name: Arc<String>) -> Result<Secret> {
+        // Attempt to fetch the target secret.
+        let api: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let secret_opt = timeout(API_TIMEOUT, api.get(name.as_str()))
+            .await
+            .context("timeout while fetching secret")?
+            .map(Some)
+            .or_else(|err| match err {
+                // If the object was not found, then treat it as an Option::None.
+                kube::Error::Api(err) if err.code == http::StatusCode::NOT_FOUND => Ok(None),
+                _ => Err(err),
+            })
+            .context("error fetching secret")?;
+        if let Some(secret) = secret_opt {
+            return Ok(secret);
+        }
+
+        // Secret does not exist. Mint a new JWT & create the backing secret.
+        let claims = TokenClaims::new(&self.config.cluster);
+        let jwt = claims.encode(&self.config).context("error encoding claims as JWT")?;
+        let mut secret = Secret::default();
+        secret
+            .string_data
+            .get_or_insert_with(Default::default)
+            .insert(SECRET_KEY_TOKEN.into(), jwt);
+        secret.meta_mut().name = Some(name.as_ref().clone());
+        secret.meta_mut().namespace = Some(self.config.namespace.clone());
+        let labels = secret.meta_mut().labels.get_or_insert_with(Default::default);
+        labels.insert("hadron.rs/cluster".into(), self.config.cluster.clone());
+        labels.insert("app".into(), "hadron".into());
+        let params = kube::api::PostParams::default();
+        timeout(API_TIMEOUT, api.create(&params, &secret))
+            .await
+            .context("timeout while creating backing secret for token")?
+            .context("error creating backing secret for token")
+    }
+
+    /// Ensure we have ownership of the lease, else return an error.
+    #[tracing::instrument(level = "debug", skip(self))]
+    async fn fence(&mut self) -> Result<()> {
+        let api: Api<Lease> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let lease = timeout(API_TIMEOUT, api.get(&self.lease_name))
+            .await
+            .context("timeout while fetching lease")?
+            .context("error updating lease")?;
+        let is_lease_holder = lease
+            .spec
+            .as_ref()
+            .and_then(|spec| {
+                spec.holder_identity
+                    .as_deref()
+                    .map(|holder_id| holder_id == self.config.pod_name.as_str())
+            })
+            .unwrap_or(false);
+        if !is_lease_holder {
+            bail!("lease is no longer held by this pod");
+        }
+        Ok(())
+    }
+
+    /// Patch the given stream in K8s using Server-Side Apply.
+    #[tracing::instrument(level = "debug", skip(self, stream))]
+    async fn patch_stream_cr(&mut self, mut stream: Stream) -> Result<Stream> {
+        self.fence().await?; // Ensure we still hold the lease.
+        let api: Api<Stream> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let mut params = PatchParams::apply(&self.config.pod_name);
+        params.force = true; // This will still be blocked by the server if we do not have the most up-to-date object info.
+        stream.metadata.managed_fields = None;
+        let stream = timeout(API_TIMEOUT, api.patch_status(stream.name(), &params, &Patch::Apply(&stream)))
+            .await
+            .context("timeout while updating stream")?
+            .context("error updating stream")?;
+        Ok(stream)
+    }
+}
+
 /// Scheduler utility methods.
 impl Controller {
     /// Assign a new partition for the given stream.
@@ -494,20 +608,6 @@ impl Controller {
                 }
             })
             .map(|(_, name, _pod)| name.as_ref())
-    }
-
-    /// Patch the given stream in K8s using Server-Side Apply.
-    #[tracing::instrument(level = "debug", skip(self, stream))]
-    async fn patch_stream_cr(&mut self, mut stream: Stream) -> Result<Stream> {
-        let api: Api<Stream> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        let mut params = PatchParams::apply(&self.config.pod_name);
-        params.force = true; // This will still be blocked by the server if we do not have the most up-to-date object info.
-        stream.metadata.managed_fields = None;
-        let stream = timeout(Duration::from_secs(5), api.patch_status(stream.name(), &params, &Patch::Apply(&stream)))
-            .await
-            .context("timeout while updating lease")?
-            .context("error updating lease")?;
-        Ok(stream)
     }
 
     /// Hash the given str.

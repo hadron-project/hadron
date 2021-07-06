@@ -284,25 +284,38 @@ pub struct PipelineStageOutput {
 ///////////////////////////////////////////////////////////////////////////////
 // Metadata ///////////////////////////////////////////////////////////////////
 
+/// A response to a metadata subscription setup request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MetadataSubSetupResponse {
+    #[prost(oneof="metadata_sub_setup_response::Result", tags="1, 2")]
+    pub result: ::core::option::Option<metadata_sub_setup_response::Result>,
+}
+/// Nested message and enum types in `MetadataSubSetupResponse`.
+pub mod metadata_sub_setup_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag="1")]
+        Ok(super::ClusterMetadata),
+        #[prost(message, tag="2")]
+        Err(super::Error),
+    }
+}
 /// All known metadata of the target cluster.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClusterMetadata {
     /// The name of the cluster which was queried.
     #[prost(string, tag="1")]
     pub cluster_name: ::prost::alloc::string::String,
-    /// The Kubernetes service used to address all of the pods of the Hadron cluster.
-    #[prost(string, tag="2")]
-    pub cluster_service: ::prost::alloc::string::String,
     /// All known pods of the Hadron cluster.
-    #[prost(string, repeated, tag="3")]
+    #[prost(string, repeated, tag="2")]
     pub pods: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// A mapping of all known streams, with metadata data on all partitions,
     /// their leaders and their replicas.
-    #[prost(map="string, message", tag="4")]
+    #[prost(map="string, message", tag="3")]
     pub streams: ::std::collections::HashMap<::prost::alloc::string::String, StreamMetadata>,
     /// A mapping of all known pipelines, with metadata data on all partitions,
     /// their leaders and their replicas.
-    #[prost(map="string, message", tag="5")]
+    #[prost(map="string, message", tag="4")]
     pub pipelines: ::std::collections::HashMap<::prost::alloc::string::String, PipelineMetadata>,
 }
 /// Stream metadata.
