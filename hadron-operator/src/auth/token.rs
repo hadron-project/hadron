@@ -1,7 +1,6 @@
 use anyhow::{bail, ensure, Result};
 use jsonwebtoken::{Algorithm, Header, Validation};
 use serde::{Deserialize, Serialize};
-use tonic::metadata::AsciiMetadataValue;
 
 use crate::config::Config;
 use crate::error::AppError;
@@ -17,12 +16,12 @@ pub struct TokenCredentials {
     /// The ID of the token presented.
     pub claims: TokenClaims,
     /// The original token header value of these credentials.
-    pub header: AsciiMetadataValue,
+    pub header: http::HeaderValue,
 }
 
 impl TokenCredentials {
     /// Extract a token from the given header value bytes.
-    pub fn from_auth_header(header: AsciiMetadataValue, config: &Config) -> Result<Self> {
+    pub fn from_auth_header(header: http::HeaderValue, config: &Config) -> Result<Self> {
         let header_str = header
             .to_str()
             .map_err(|_| AppError::InvalidCredentials("must be a valid string value".into()))?;
@@ -49,12 +48,17 @@ impl TokenCredentials {
 pub struct TokenClaims {
     /// The ID of this token.
     pub id: String,
+    /// The name of the cluster which this token applies to.
+    pub cluster: String,
 }
 
 impl TokenClaims {
     /// Create a new instance.
     pub fn new(cluster: &str) -> Self {
-        Self { id: uuid::Uuid::new_v4().to_string() }
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            cluster: cluster.into(),
+        }
     }
 
     /// Encode this claims body as a JWT.

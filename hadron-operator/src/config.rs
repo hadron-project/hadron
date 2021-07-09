@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer};
@@ -19,22 +18,22 @@ pub struct Config {
     /// The port which cluster internal network traffic is to use.
     pub server_port: u16,
 
-    /// The CloudEvents root `source` of all events of this cluster.
-    ///
-    /// This value is used as the prefix of the `source` field of all events published to
-    /// this stream, formatted as `{cluster_name}/{stream}/{partition}`.
-    pub cluster_name: String,
+    /// The name of this node's cluster.
+    pub cluster: String,
     /// The Kubernetes namespace of this cluster.
     pub namespace: String,
-    /// The name of this controller's stream.
-    pub stream: String,
-    /// The name of the statefulset to which this pod belongs.
-    pub statefulset: String,
     /// The name of the pod on which this instance is running.
-    pub pod_name: String,
-    /// The partition of this pod.
-    #[serde(skip, default)]
-    pub partition: u32,
+    #[serde(deserialize_with = "Config::pod_name")]
+    pub pod_name: Arc<String>,
+
+    /// The duration in seconds for which a lease is considered held.
+    ///
+    /// To ensure stable cluster leadership, a 60 second lease is currently recommended.
+    pub lease_duration_seconds: u32,
+    /// The duration that a lease holder will retry refreshing lease.
+    ///
+    /// To ensure stable cluster leadership, a 10 seconds renew rate is currently recommended.
+    pub lease_renew_seconds: u32,
 
     /// The path to the database on disk.
     #[serde(default = "crate::database::default_data_path")]
@@ -65,15 +64,16 @@ impl Config {
     /// config from that. In the future, this may take into account an optional config file as
     /// well.
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Result<Self> {
-        let mut config: Config = envy::from_env().context("error building config from env")?;
-        config.partition = config
-            .pod_name
-            .split('-')
-            .last()
-            .and_then(|offset_str| offset_str.parse().ok())
-            .context("invalid pod name, expected offset suffix at the end of the name")?;
-        Ok(config)
+    pub fn new() -> Self {
+        let config: Config = match envy::from_env() {
+            Err(err) => {
+                tracing::error!(error = %err,  "error building config from env");
+                std::thread::sleep(std::time::Duration::from_secs(5)); // Just give a little time to see the error before bailing.
+                std::process::exit(1);
+            }
+            Ok(config) => config,
+        };
+        config
     }
 
     /// The cluster's TLS config, if any.
@@ -95,5 +95,10 @@ impl Config {
         DecodingKey::from_rsa_pem(&bytes)
             .map_err(|err| DeError::custom(err.to_string()))
             .map(|val| val.into_static())
+    }
+
+    fn pod_name<'de, D: Deserializer<'de>>(val: D) -> Result<Arc<String>, D::Error> {
+        let val: String = Deserialize::deserialize(val)?;
+        Ok(Arc::new(val))
     }
 }

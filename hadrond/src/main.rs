@@ -1,4 +1,17 @@
-//! The Hadron server.
+//! The Hadron stream controller.
+
+mod app;
+mod auth;
+mod config;
+mod crd;
+mod database;
+mod error;
+mod futures;
+mod grpc;
+mod models;
+mod pipeline;
+mod stream;
+mod utils;
 
 use std::io::Write;
 use std::sync::Arc;
@@ -6,7 +19,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tracing_subscriber::prelude::*;
 
-use hadrond::{App, Config};
+use crate::app::App;
+use crate::config::Config;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,12 +39,13 @@ async fn main() -> Result<()> {
         .try_init()
         .context("error initializing logging/tracing system")?;
 
-    let cfg = Arc::new(Config::new());
+    let cfg = Arc::new(Config::new()?);
     tracing::info!(
         client_port = %cfg.client_port,
+        stream = %cfg.stream,
         namespace = %cfg.namespace,
-        cluster = %cfg.cluster,
         pod_name = %cfg.pod_name,
+        partition = %cfg.partition,
         storage_data_path = %cfg.storage_data_path,
         "starting hadron server",
     );

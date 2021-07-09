@@ -1,9 +1,7 @@
 #![allow(dead_code)]
 
 use anyhow::{bail, ensure, Result};
-use tonic::metadata::AsciiMetadataValue;
 
-use crate::config::Config;
 use crate::error::AppError;
 
 /// The authorization header basic prefix — for user creds.
@@ -13,7 +11,7 @@ pub struct UserCredentials(String);
 
 impl UserCredentials {
     /// Extract a user name & PW hash from the given header.
-    pub fn from_auth_header(header: AsciiMetadataValue, config: &Config) -> Result<Self> {
+    pub fn from_auth_header(header: &http::HeaderValue) -> Result<Self> {
         let header_str = header
             .to_str()
             .map_err(|_| AppError::InvalidCredentials("must be a valid string value".into()))?;

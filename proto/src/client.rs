@@ -37,9 +37,13 @@ pub struct Event {
     /// See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     #[prost(string, tag="4")]
     pub r#type: ::prost::alloc::string::String,
-    /// The key of this event.
+    /// The subject of the event in the context of the event producer.
+    ///
+    /// This is used by Hadron in much the same way that Kafka uses the event `key`.
+    ///
+    /// See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
     #[prost(string, tag="5")]
-    pub key: ::prost::alloc::string::String,
+    pub subject: ::prost::alloc::string::String,
     /// Any additional optional attributes or extension attributes of this event.
     ///
     /// See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
@@ -58,17 +62,26 @@ pub struct NewEvent {
     /// See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     #[prost(string, tag="1")]
     pub r#type: ::prost::alloc::string::String,
-    /// The key of this event.
+    /// The source of this event.
+    ///
+    /// See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
     #[prost(string, tag="2")]
-    pub key: ::prost::alloc::string::String,
+    pub source: ::prost::alloc::string::String,
+    /// The subject of the event in the context of the event producer.
+    ///
+    /// This is used by Hadron in much the same way that Kafka uses the event `key`.
+    ///
+    /// See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
+    #[prost(string, tag="3")]
+    pub subject: ::prost::alloc::string::String,
     /// Any additional optional attributes or extension attributes of this event.
     ///
     /// See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
     /// and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    #[prost(map="string, string", tag="3")]
+    #[prost(map="string, string", tag="4")]
     pub optattrs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     /// The data payload of this event.
-    #[prost(bytes="vec", tag="4")]
+    #[prost(bytes="vec", tag="5")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 //////////////////////////////////////////////////////////////////////////////

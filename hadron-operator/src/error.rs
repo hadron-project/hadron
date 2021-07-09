@@ -1,7 +1,6 @@
 //! Hadron error abstractions.
 
 use thiserror::Error;
-use tonic::Status;
 
 // Error messages.
 pub const ERR_ITER_FAILURE: &str = "error returned during key/value iteration from database";
@@ -26,30 +25,30 @@ pub enum AppError {
     /// The given input was invalid.
     #[error("validation error: {0}")]
     InvalidInput(String),
+    /// The request method is not allowed.
+    #[error("the request method is not allowed")]
+    MethodNotAllowed,
     /// The resource specified in the path is not found.
     #[error("the resource specified in the path is not found")]
     ResourceNotFound,
     /// The server has hit an internal error, but will remain online.
     #[error("internal server error")]
-    Ise(anyhow::Error),
+    Ise(#[from] anyhow::Error),
 }
 
 impl AppError {
     /// Get the HTTP status code and message for this error.
-    pub fn into_status(&self) -> Status {
-        match self {
-            AppError::Unauthorized => Status::unauthenticated(self.to_string()),
-            AppError::UnknownToken | AppError::UnknownUser => Status::permission_denied(self.to_string()),
-            AppError::InvalidCredentials(_) => Status::permission_denied(self.to_string()),
-            AppError::InvalidInput(_) => Status::invalid_argument(self.to_string()),
-            AppError::ResourceNotFound => Status::not_found(self.to_string()),
-            AppError::Ise(_) => Status::internal(self.to_string()),
-        }
-    }
-
-    /// Translate the given error as an app error and map into a gRPC status object.
-    pub fn grpc(err: anyhow::Error) -> Status {
-        err.downcast::<Self>().unwrap_or_else(|err| Self::Ise(err)).into_status()
+    pub fn status_and_message(&self) -> (http::StatusCode, String) {
+        let status = match self {
+            AppError::Unauthorized => http::StatusCode::FORBIDDEN,
+            AppError::UnknownToken | AppError::UnknownUser => http::StatusCode::UNAUTHORIZED,
+            AppError::InvalidCredentials(_) => http::StatusCode::UNAUTHORIZED,
+            AppError::InvalidInput(_) => http::StatusCode::BAD_REQUEST,
+            AppError::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
+            AppError::ResourceNotFound => http::StatusCode::NOT_FOUND,
+            AppError::Ise(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        (status, self.to_string())
     }
 }
 
@@ -60,6 +59,3 @@ pub struct ShutdownError(#[from] pub anyhow::Error);
 
 /// A result type where the error is a `ShutdownError`.
 pub type ShutdownResult<T> = ::std::result::Result<T, ShutdownError>;
-
-/// A result type used with the gRPC system.
-pub type RpcResult<T> = ::std::result::Result<T, tonic::Status>;

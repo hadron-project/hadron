@@ -11,20 +11,16 @@ use crate::error::{ShutdownError, ShutdownResult};
 
 pub type Tree = sled::Tree;
 
-/// Error message indicating an unsafe node name change was detected.
-const NODE_NAME_MISMATCH_ERR: &str = r#"UNSAFE CONFIG CHANGE ERROR! It is not safe to change the node name \
-of a node which already has state."#;
-
 /// The default path to use for data storage.
-pub const DEFAULT_DATA_PATH: &str = "/usr/local/hadron/data";
-/// The dir used to back the database.
-const DATABASE_DIR: &str = "db"; // <dataDir>/db
-/// The name of the file used to hold the node's ID.
-const NODE_ID_FILE_NAME: &str = "node_id"; // <dataDir>/node_id
-/// The DB tree prefix used for streams.
-const TREE_STREAM_PREFIX: &str = "streams";
+pub const DEFAULT_DATA_PATH: &str = "/usr/local/hadron/db";
+/// The DB tree prefix used for the partition stream.
+const TREE_STREAM: &str = "stream";
+/// The DB tree prefix used for the partition stream's metadata.
+const TREE_STREAM_METADATA: &str = "stream_metadata";
 /// The DB tree prefix used for pipelines.
 const TREE_PIPELINE_PREFIX: &str = "pipelines";
+/// The DB tree prefix used for pipeline metadata.
+const TREE_PIPELINE_METADATA: &str = "pipelines_metadata";
 
 /// The default path to use for data storage.
 pub fn default_data_path() -> String {
@@ -39,7 +35,8 @@ pub struct Database {
 
 struct DatabaseInner {
     /// System runtime config.
-    _config: Arc<Config>,
+    #[allow(dead_code)]
+    config: Arc<Config>,
     /// The underlying DB handle.
     db: Db,
 }
@@ -48,35 +45,14 @@ impl Database {
     /// Open the database for usage.
     pub async fn new(config: Arc<Config>) -> Result<Self> {
         // Determine the database path, and ensure it exists.
-        let dbpath = PathBuf::from(&config.storage_data_path).join(DATABASE_DIR);
+        let dbpath = PathBuf::from(&config.storage_data_path).join(config.pod_name.as_str());
         tokio::fs::create_dir_all(&dbpath)
             .await
             .context("error creating dir for hadron core database")?;
 
-        // Ensure node ID file exists. If the node is not pristine,
-        // then compare values & ensure match.
-        let idfile = PathBuf::from(&config.storage_data_path).join(NODE_ID_FILE_NAME);
-        match tokio::fs::read_to_string(&idfile).await {
-            Ok(data) => {
-                if data.as_str() != config.pod_name.as_str() {
-                    anyhow::bail!(NODE_NAME_MISMATCH_ERR);
-                }
-            }
-            Err(err) => {
-                if matches!(err.kind(), std::io::ErrorKind::NotFound) {
-                    // Create the file.
-                    tokio::fs::write(&idfile, config.pod_name.as_bytes())
-                        .await
-                        .context("error writing contents of node ID file")?;
-                } else {
-                    Err(err).context("error reading contents of node ID file")?;
-                }
-            }
-        }
-
         Self::spawn_blocking(move || -> Result<Self> {
             let db = SledConfig::new().path(dbpath).mode(sled::Mode::HighThroughput).open()?;
-            let inner = Arc::new(DatabaseInner { _config: config, db });
+            let inner = Arc::new(DatabaseInner { config, db });
             Ok(Self { inner })
         })
         .await?
@@ -96,43 +72,26 @@ impl Database {
     }
 
     /// Get a handle to the DB tree for a stream partition.
-    pub async fn get_stream_tree(&self, name: &str, partition: u8) -> ShutdownResult<Tree> {
-        let name = format!(
-            "{prefix}/{name}/{partition}",
-            prefix = TREE_STREAM_PREFIX,
-            name = name,
-            partition = partition,
-        );
-        let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
+    pub async fn get_stream_tree(&self) -> ShutdownResult<Tree> {
+        let (db, ivname) = (self.inner.db.clone(), IVec::from(TREE_STREAM));
         let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
             .await
-            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", &name, err))))?;
+            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", TREE_STREAM, err))))?;
         Ok(tree)
     }
 
     /// Get a handle to the DB tree for a stream partition's metadata.
-    pub async fn get_stream_tree_metadata(&self, name: &str, partition: u8) -> ShutdownResult<Tree> {
-        let name = format!(
-            "{prefix}/{name}/{partition}/metadata",
-            prefix = TREE_STREAM_PREFIX,
-            name = name,
-            partition = partition,
-        );
-        let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
+    pub async fn get_stream_tree_metadata(&self) -> ShutdownResult<Tree> {
+        let (db, ivname) = (self.inner.db.clone(), IVec::from(TREE_STREAM_METADATA));
         let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
             .await
-            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", &name, err))))?;
+            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", TREE_STREAM_METADATA, err))))?;
         Ok(tree)
     }
 
     /// Get a handle to the DB tree for a pipeline partition.
-    pub async fn get_pipeline_tree(&self, name: &str, partition: u8) -> ShutdownResult<Tree> {
-        let name = format!(
-            "{prefix}/{name}/{partition}",
-            prefix = TREE_PIPELINE_PREFIX,
-            name = name,
-            partition = partition,
-        );
+    pub async fn get_pipeline_tree(&self, name: &str) -> ShutdownResult<Tree> {
+        let name = format!("{}/{}", TREE_PIPELINE_PREFIX, name);
         let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
         let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
             .await
@@ -141,13 +100,8 @@ impl Database {
     }
 
     /// Get a handle to the DB tree for a pipeline partition's metadata.
-    pub async fn get_pipeline_tree_metadata(&self, name: &str, partition: u8) -> ShutdownResult<Tree> {
-        let name = format!(
-            "{prefix}/{name}/{partition}/metadata",
-            prefix = TREE_PIPELINE_PREFIX,
-            name = name,
-            partition = partition,
-        );
+    pub async fn get_pipeline_tree_metadata(&self, name: &str) -> ShutdownResult<Tree> {
+        let name = format!("{}/{}", TREE_PIPELINE_METADATA, name);
         let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
         let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
             .await

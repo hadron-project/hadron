@@ -20,7 +20,8 @@ Streams
 - Streams can be configured with optional s3 stanza for async streaming backups of partitions.
 
 Stream Bin Interfaces
-- The stream bin is DEAD SIMPLE and is composed of 3 gRPC interfaces.
+- The stream bin is DEAD SIMPLE and is composed of 4 gRPC interfaces.
+- The metadata interface, which streams out the partition connection info.
 - The stream pub interface, for publishing data to the implicit stream of the partition.
 - The stream sub interface, for transactionally consuming data from the implicit stream of the partition.
 - The pipeline sub interface, for transactionally consuming pipeline stages. This is generic, and the request will specify the pipeline & stage to consume. If it doesn't exist for the stream, then 404.

@@ -56,7 +56,13 @@ pub struct PipelineStage {
 
 /// CRD status object.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
-pub struct PipelineStatus {}
+pub struct PipelineStatus {
+    /// The serial epoch of this partition assignment configuration.
+    ///
+    /// Pipelines do not have their own partition assignment info, but instead they always match
+    /// their source stream's configuration.
+    pub epoch: u64,
+}
 
 impl Pipeline {
     /// Check if the given event type matches any of this pipeline's triggers.

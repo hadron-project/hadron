@@ -33,8 +33,12 @@ message Event {
     //
     // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     string type = 4;
-    // The key of this event.
-    string key = 5;
+    // The subject of the event in the context of the event producer.
+    //
+    // This is used by Hadron in much the same way that Kafka uses the event `key`.
+    //
+    // See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
+    string subject = 5;
     // Any additional optional attributes or extension attributes of this event.
     //
     // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
@@ -50,15 +54,23 @@ message NewEvent {
     //
     // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     string type = 1;
-    // The key of this event.
-    string key = 2;
+    // The source of this event.
+    //
+    // See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
+    string source = 2;
+    // The subject of the event in the context of the event producer.
+    //
+    // This is used by Hadron in much the same way that Kafka uses the event `key`.
+    //
+    // See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
+    string subject = 3;
     // Any additional optional attributes or extension attributes of this event.
     //
     // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
     // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    map<string, string> optattrs = 3;
+    map<string, string> optattrs = 4;
     // The data payload of this event.
-    bytes data = 4;
+    bytes data = 5;
 }
 
 //////////////////////////////////////////////////////////////////////////////
