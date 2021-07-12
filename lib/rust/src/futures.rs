@@ -7,23 +7,23 @@ use std::task::{Context, Poll};
 use bytes::Bytes;
 use futures::Future;
 
-use crate::common::H2DataChannel;
+use crate::common::H2Stream;
 
 /// An H2 channel wrapper which resolves data frames along with the H2 channel.
 pub struct SubscriberFut {
     node: Arc<String>,
-    chan: Option<H2DataChannel>,
+    chan: Option<H2Stream>,
 }
 
 impl SubscriberFut {
     /// Create a new instance.
-    pub fn new(node: Arc<String>, chan: H2DataChannel) -> Self {
+    pub fn new(node: Arc<String>, chan: H2Stream) -> Self {
         Self { node, chan: Some(chan) }
     }
 }
 
 impl Future for SubscriberFut {
-    type Output = (Arc<String>, Option<(H2DataChannel, Bytes)>);
+    type Output = (Arc<String>, Option<(H2Stream, Bytes)>);
 
     /// Poll the underlying H2 channel for the next data frame.
     ///

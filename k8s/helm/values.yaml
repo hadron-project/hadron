@@ -1,22 +1,19 @@
+## The name of the Hadron cluster to create.
+cluster: hadron
+## The availability zone which the Hadron cluster is being created in.
+zone: az0
+
 ## The service which will be used by clients for communicating with the Hadron cluster.
 service:
-  name: hadron
   annotations: {}
+  labels: {}
   port: 7000
-  targetPort: 7000
-
-## The service which the Hadron cluster itself uses for internal communication.
-serviceInternal:
-  name: hadron-internal
-  annotations: {}
-  port: 7001
-  targetPort: 7001
 
 statefulSet:
-  name: hadron
+  replicas: 3
 
-  serviceName: hadron
-  replicas: 5
+  annotations: {}
+  labels: {}
 
   image:
     fullName: docker.io/hadron-project/hadron:latest
@@ -24,6 +21,7 @@ statefulSet:
 
   pod:
     annotations: {}
+    labels: {}
 
   ## Server Config
   server:
@@ -34,20 +32,24 @@ statefulSet:
     ## The port which cluster internal network traffic is to use.
     serverPort: 7001
 
-  ## Raft Config
-  raft:
-    ## The rate at which the Raft leader will send heartbeats in milliseconds.
-    heartbeatIntervalMillis: 400
-    ## The maximum amount of time for a Raft node to wait before triggering an election.
-    electionTimeoutMax: 1800
-    ## The minimum amount of time for a Raft node to wait before triggering an election.
-    electionTimeoutMin: 900
-
+  ## K8s Leadership Config
+  lease:
+    ## The duration in seconds for which a lease is considered held.
+    durationSeconds: 60
+    ## The duration that a lease holder will retry refreshing lease.
+    renewSeconds: 10
 
   ## Storage Config
   storage:
     ## The path where the persistent volume for data storage will be mounted.
     dbPath: /usr/local/hadron/data
+
+  ## JWT Config
+  jwt:
+    ## The value to use for referencing the JWT encoding key. Will be inlined as YAML.
+    encodingKey: {}
+    ## The value to use for referencing the JWT decoding key. Will be inlined as YAML.
+    decodingKey: {}
 
   ## Volume Config
   volume:
@@ -60,20 +62,3 @@ statefulSet:
     storageClassName: "standard"
     ## The access modes for the persistent volume for data storage.
     accessModes: [ "ReadWriteOnce" ]
-
-  ## Cluster Config
-  clustering:
-    ## The number of seconds to delay before issuing an initial cluster formation command.
-    ## TODO: set this value lower once dynamic cluster membership is done.
-    formationDelaySeconds: 60
-    ## The discovery backend to use.
-    discoveryBackend: DNS
-    ## The DNS name to use for service discovery.
-    dnsName: "*.hadron-internal.default.svc.cluster.local."
-    ## The interval in seconds which the DNS backend will poll for DNS updates.
-    dnsInterval: 5
-
-  ## Client Config
-  client:
-    ## The threshold in seconds of not receiving a heartbeat from a client, after which it is reckoned to be dead.
-    livenessThreshold: 10

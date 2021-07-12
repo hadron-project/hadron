@@ -15,130 +15,62 @@ message Error {
     string message = 1;
 }
 
-// A stream record with its associated offset and data.
-message Record {
-    // The offset of this record.
-    uint64 offset = 1;
-    // The data payload of this record.
-    bytes data = 2;
-}
-
-// Details on a Hadron replica set.
-message ReplicaSet {
-    // The name of the replica set.
+// An event record formatted according to the CloudEvents specification.
+message Event {
+    // The ID of this event, which is always the offset of this event on its stream partition.
     //
-    // This is immutable and is always used to identify partition assignment.
-    string name = 1;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Metadata ///////////////////////////////////////////////////////////////////
-
-// All known Hadron metadata.
-message MetadataResponse {
-    // The name of the cluster which was queried.
-    string cluster_name = 1;
-    // Details on the replica set which was queried.
-    string replica_set = 2;
-    // All known replica sets in the cluster.
-    repeated ReplicaSet all_replica_sets = 3;
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// Auth //////////////////////////////////////////////////////////////////////
-
-// An enumeration of possible pub/sub access levels.
-enum PubSubAccess {
-    Pub = 0;
-    Sub = 1;
-    All = 2;
-}
-
-// A request to create a token.
-//
-// The API is as follows:
-// - If the token is to be granted `all` access, then no other fields will be considered.
-// - If the token is to be granted `metrics` access, then no other fields will be consdiered.
-// - If neither of the above are true, then a token will be created with the given set
-// of namespace grants.
-message CreateTokenRequest {
-    // Grant permissions on all resources in the system.
-    bool all = 1;
-    // Grant permissions on only the cluster metrics system.
-    bool metrics = 2;
-    // Grant permissions on namespace scoped resources.
-    repeated NamespaceGrant namespaced = 3;
-}
-
-// A response to a token creation request.
-message CreateTokenResponse {
-    oneof result {
-        string ok = 1;
-        Error err = 2;
-    }
-}
-
-// A permissions grant on a set of resources of a specific namespace.
-message NamespaceGrant {
-    // The namespace to which this grant applies.
-    string namespace = 1;
-    // Grant full access to all resources of the namespace.
-    bool all = 2;
-    // Permissions granted on ephemeral messaging exchanges.
-    repeated NameMatcher exchanges = 3;
-    // Permissions granted on RPC endpoints.
-    repeated NameMatcher endpoints = 4;
-    // Permissions granted on streams.
-    repeated NameMatcher streams = 5;
-    // Permissions to modify the schema of the namespace.
+    // See [`id`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#id).
+    uint64 id = 1;
+    // The source of this event, formatted as `/{cluster}/{stream}/{partition}/`.
     //
-    // A token with schema permissions is allowed to create, update & delete streams, pipelines
-    // and other core resources in the associated namespace.
-    bool schema = 6;
-}
-
-// A name matcher along with the associated access level for a successful match.
-message NameMatcher {
-    string matcher = 1;
-    PubSubAccess access = 2;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Schema /////////////////////////////////////////////////////////////////////
-
-// A request to update the schema of the Hadron cluster.
-message SchemaUpdateRequest {
-    oneof type {
-        // A managed schema update request.
-        SchemaUpdateManaged managed = 1;
-        // A one-off schema update request.
-        SchemaUpdateOneOff oneoff = 2;
-    }
-}
-
-// A response from an earlier `SchemaUpdateRequest`.
-message SchemaUpdateResponse {
-    // A bool indicating if the request was a no-op, which would only apply to
-    // managed schema updates.
-    bool was_noop = 1;
-}
-
-// A managed schema update request.
-message SchemaUpdateManaged {
-    // A set of Hadron schema documents to apply to the system.
-    string schema = 1;
-    // The branch name of this set of schema updates.
-    string branch = 2;
-    // The timestamp of this set of schema updates.
+    // See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
+    string source = 2;
+    // The CloudEvents specification version which the event uses.
     //
-    // This should be an epoch timestamp with millisecond precision.
-    int64 timestamp = 3;
+    // See [`specversion`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#specversion).
+    string specversion = 3;
+    // The type identifier of this event.
+    //
+    // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
+    string type = 4;
+    // The subject of the event in the context of the event producer.
+    //
+    // This is used by Hadron in much the same way that Kafka uses the event `key`.
+    //
+    // See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
+    string subject = 5;
+    // Any additional optional attributes or extension attributes of this event.
+    //
+    // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
+    // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
+    map<string, string> optattrs = 6;
+    // The data payload of this event.
+    bytes data = 7;
 }
 
-// A one-off schema update request.
-message SchemaUpdateOneOff {
-    // A set of Hadron schema documents to apply to the system.
-    string schema = 1;
+// A new event record to be published to a stream partition.
+message NewEvent {
+    // The type identifier of this event.
+    //
+    // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
+    string type = 1;
+    // The source of this event.
+    //
+    // See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
+    string source = 2;
+    // The subject of the event in the context of the event producer.
+    //
+    // This is used by Hadron in much the same way that Kafka uses the event `key`.
+    //
+    // See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
+    string subject = 3;
+    // Any additional optional attributes or extension attributes of this event.
+    //
+    // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
+    // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
+    map<string, string> optattrs = 4;
+    // The data payload of this event.
+    bytes data = 5;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -161,7 +93,7 @@ message StreamPubSetupResponse {
 // A request to publish data to a stream.
 message StreamPubRequest {
     // The batch of entries to publish.
-    repeated bytes batch = 1;
+    repeated NewEvent batch = 1;
 }
 
 // A response from publishing data to a stream.
@@ -213,7 +145,7 @@ message StreamSubSetupResponse {
 // A payload of stream entries delivered to a subscriber by the server.
 message StreamSubDelivery {
     // A batch of records for subscriber processing.
-    repeated Record batch = 1;
+    repeated Event batch = 1;
     // The last offset included in this batch.
     uint64 last_included_offset = 2;
 }
@@ -221,7 +153,7 @@ message StreamSubDelivery {
 // A subscriber response to a subscription delivery, either `ack`ing or `nack`ing the delivery.
 message StreamSubDeliveryResponse {
     oneof result {
-        // All records delivered on the last payload have been processed.
+        // All events delivered on the last payload have been processed.
         Empty ack = 1;
         // An error has taken place during subscriber processing, and the delivered batch was not
         // successfully processed.
@@ -259,7 +191,7 @@ message PipelineSubDelivery {
     // Every key will be the name of the corresponding pipeline stage output which has been declared
     // as an input dependency for this stage, or the `root_event` if declared as a dependency for
     // this stage.
-    map<string,bytes> inputs = 3;
+    map<string, bytes> inputs = 3;
 }
 
 // A subscriber response to a subscription delivery, either `ack`ing or `nack`ing the delivery.
@@ -280,4 +212,87 @@ message PipelineSubDeliveryResponse {
 message PipelineStageOutput {
     // The base output of the corresponding pipeline stage.
     bytes output = 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Metadata ///////////////////////////////////////////////////////////////////
+
+// A response to a metadata subscription setup request.
+message MetadataSubSetupResponse {
+    oneof result {
+        ClusterMetadata ok = 1;
+        Error err = 2;
+    }
+}
+
+// All known metadata of the target cluster.
+message ClusterMetadata {
+    // The name of the cluster which was queried.
+    string cluster_name = 1;
+    // All known pods of the Hadron cluster.
+    repeated string pods = 2;
+    // A mapping of all known streams, with metadata data on all partitions,
+    // their leaders and their replicas.
+    map<string, StreamMetadata> streams = 3;
+    // A mapping of all known pipelines, with metadata data on all partitions,
+    // their leaders and their replicas.
+    map<string, PipelineMetadata> pipelines = 4;
+}
+
+// Stream metadata.
+message StreamMetadata {
+    // The name of the stream.
+    string name = 1;
+    // The partitions of this stream.
+    repeated PartitionMetadata partitions = 2;
+}
+
+// Pipeline metadata.
+message PipelineMetadata {
+    // The name of the pipeline.
+    string name = 1;
+    // The source stream of this pipeline.
+    //
+    // This is used by clients to establish pipeline topology, as pipelines mirror their source
+    // stream's topology.
+    string source_stream = 2;
+}
+
+// Metadata of a stream partition.
+message PartitionMetadata {
+    // The offset of this partition (actually an unsigned 8-bit integer).
+    uint32 offset = 1;
+    // The pod name of the partition leader.
+    string leader = 2;
+    // The pod names of all replicas of this partition.
+    repeated string replicas = 3;
+    // The schedule state of the partition.
+    string schedule_state = 4;
+    // The runtime state of the partition.
+    string runtime_state = 5;
+}
+
+// A metadata change.
+message MetadataChange {
+    // The type of metadata change observed.
+    oneof change {
+        // Metadata streams were reset on the connected pod, so a new full payload has been sent.
+        ClusterMetadata reset = 1;
+        // A pod has been added.
+        //
+        // This corresponds to StatefulSet scaling events. Not temprorary pod state changes.
+        string pod_added = 2;
+        // A pod has been removed.
+        //
+        // This corresponds to StatefulSet scaling events. Not temprorary pod state changes.
+        string pod_removed = 3;
+        // A stream has been updated or added.
+        StreamMetadata stream_updated = 4;
+        // A stream has been removed.
+        string stream_removed = 5;
+        // A pipeline has been updated or added.
+        PipelineMetadata pipeline_updated = 6;
+        // A pipeline has been removed.
+        string pipeline_removed = 7;
+    }
 }

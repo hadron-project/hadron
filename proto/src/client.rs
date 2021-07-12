@@ -14,159 +14,75 @@ pub struct Error {
     #[prost(string, tag="1")]
     pub message: ::prost::alloc::string::String,
 }
-/// A stream record with its associated offset and data.
+/// An event record formatted according to the CloudEvents specification.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Record {
-    /// The offset of this record.
+pub struct Event {
+    /// The ID of this event, which is always the offset of this event on its stream partition.
+    ///
+    /// See [`id`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#id).
     #[prost(uint64, tag="1")]
-    pub offset: u64,
-    /// The data payload of this record.
-    #[prost(bytes="vec", tag="2")]
+    pub id: u64,
+    /// The source of this event, formatted as `/{cluster}/{stream}/{partition}/`.
+    ///
+    /// See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
+    #[prost(string, tag="2")]
+    pub source: ::prost::alloc::string::String,
+    /// The CloudEvents specification version which the event uses.
+    ///
+    /// See [`specversion`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#specversion).
+    #[prost(string, tag="3")]
+    pub specversion: ::prost::alloc::string::String,
+    /// The type identifier of this event.
+    ///
+    /// See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
+    #[prost(string, tag="4")]
+    pub r#type: ::prost::alloc::string::String,
+    /// The subject of the event in the context of the event producer.
+    ///
+    /// This is used by Hadron in much the same way that Kafka uses the event `key`.
+    ///
+    /// See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
+    #[prost(string, tag="5")]
+    pub subject: ::prost::alloc::string::String,
+    /// Any additional optional attributes or extension attributes of this event.
+    ///
+    /// See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
+    /// and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
+    #[prost(map="string, string", tag="6")]
+    pub optattrs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
+    /// The data payload of this event.
+    #[prost(bytes="vec", tag="7")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
-/// Details on a Hadron replica set.
+/// A new event record to be published to a stream partition.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ReplicaSet {
-    /// The name of the replica set.
+pub struct NewEvent {
+    /// The type identifier of this event.
     ///
-    /// This is immutable and is always used to identify partition assignment.
+    /// See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     #[prost(string, tag="1")]
-    pub name: ::prost::alloc::string::String,
-}
-///////////////////////////////////////////////////////////////////////////////
-// Metadata ///////////////////////////////////////////////////////////////////
-
-/// All known Hadron metadata.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MetadataResponse {
-    /// The name of the cluster which was queried.
-    #[prost(string, tag="1")]
-    pub cluster_name: ::prost::alloc::string::String,
-    /// Details on the replica set which was queried.
+    pub r#type: ::prost::alloc::string::String,
+    /// The source of this event.
+    ///
+    /// See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
     #[prost(string, tag="2")]
-    pub replica_set: ::prost::alloc::string::String,
-    /// All known replica sets in the cluster.
-    #[prost(message, repeated, tag="3")]
-    pub all_replica_sets: ::prost::alloc::vec::Vec<ReplicaSet>,
-}
-/// A request to create a token.
-///
-/// The API is as follows:
-/// - If the token is to be granted `all` access, then no other fields will be considered.
-/// - If the token is to be granted `metrics` access, then no other fields will be consdiered.
-/// - If neither of the above are true, then a token will be created with the given set
-/// of namespace grants.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateTokenRequest {
-    /// Grant permissions on all resources in the system.
-    #[prost(bool, tag="1")]
-    pub all: bool,
-    /// Grant permissions on only the cluster metrics system.
-    #[prost(bool, tag="2")]
-    pub metrics: bool,
-    /// Grant permissions on namespace scoped resources.
-    #[prost(message, repeated, tag="3")]
-    pub namespaced: ::prost::alloc::vec::Vec<NamespaceGrant>,
-}
-/// A response to a token creation request.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateTokenResponse {
-    #[prost(oneof="create_token_response::Result", tags="1, 2")]
-    pub result: ::core::option::Option<create_token_response::Result>,
-}
-/// Nested message and enum types in `CreateTokenResponse`.
-pub mod create_token_response {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Result {
-        #[prost(string, tag="1")]
-        Ok(::prost::alloc::string::String),
-        #[prost(message, tag="2")]
-        Err(super::Error),
-    }
-}
-/// A permissions grant on a set of resources of a specific namespace.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NamespaceGrant {
-    /// The namespace to which this grant applies.
-    #[prost(string, tag="1")]
-    pub namespace: ::prost::alloc::string::String,
-    /// Grant full access to all resources of the namespace.
-    #[prost(bool, tag="2")]
-    pub all: bool,
-    /// Permissions granted on ephemeral messaging exchanges.
-    #[prost(message, repeated, tag="3")]
-    pub exchanges: ::prost::alloc::vec::Vec<NameMatcher>,
-    /// Permissions granted on RPC endpoints.
-    #[prost(message, repeated, tag="4")]
-    pub endpoints: ::prost::alloc::vec::Vec<NameMatcher>,
-    /// Permissions granted on streams.
-    #[prost(message, repeated, tag="5")]
-    pub streams: ::prost::alloc::vec::Vec<NameMatcher>,
-    /// Permissions to modify the schema of the namespace.
+    pub source: ::prost::alloc::string::String,
+    /// The subject of the event in the context of the event producer.
     ///
-    /// A token with schema permissions is allowed to create, update & delete streams, pipelines
-    /// and other core resources in the associated namespace.
-    #[prost(bool, tag="6")]
-    pub schema: bool,
-}
-/// A name matcher along with the associated access level for a successful match.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NameMatcher {
-    #[prost(string, tag="1")]
-    pub matcher: ::prost::alloc::string::String,
-    #[prost(enumeration="PubSubAccess", tag="2")]
-    pub access: i32,
-}
-///////////////////////////////////////////////////////////////////////////////
-// Schema /////////////////////////////////////////////////////////////////////
-
-/// A request to update the schema of the Hadron cluster.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SchemaUpdateRequest {
-    #[prost(oneof="schema_update_request::Type", tags="1, 2")]
-    pub r#type: ::core::option::Option<schema_update_request::Type>,
-}
-/// Nested message and enum types in `SchemaUpdateRequest`.
-pub mod schema_update_request {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Type {
-        /// A managed schema update request.
-        #[prost(message, tag="1")]
-        Managed(super::SchemaUpdateManaged),
-        /// A one-off schema update request.
-        #[prost(message, tag="2")]
-        Oneoff(super::SchemaUpdateOneOff),
-    }
-}
-/// A response from an earlier `SchemaUpdateRequest`.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SchemaUpdateResponse {
-    /// A bool indicating if the request was a no-op, which would only apply to
-    /// managed schema updates.
-    #[prost(bool, tag="1")]
-    pub was_noop: bool,
-}
-/// A managed schema update request.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SchemaUpdateManaged {
-    /// A set of Hadron schema documents to apply to the system.
-    #[prost(string, tag="1")]
-    pub schema: ::prost::alloc::string::String,
-    /// The branch name of this set of schema updates.
-    #[prost(string, tag="2")]
-    pub branch: ::prost::alloc::string::String,
-    /// The timestamp of this set of schema updates.
+    /// This is used by Hadron in much the same way that Kafka uses the event `key`.
     ///
-    /// This should be an epoch timestamp with millisecond precision.
-    #[prost(int64, tag="3")]
-    pub timestamp: i64,
-}
-/// A one-off schema update request.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SchemaUpdateOneOff {
-    /// A set of Hadron schema documents to apply to the system.
-    #[prost(string, tag="1")]
-    pub schema: ::prost::alloc::string::String,
+    /// See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
+    #[prost(string, tag="3")]
+    pub subject: ::prost::alloc::string::String,
+    /// Any additional optional attributes or extension attributes of this event.
+    ///
+    /// See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
+    /// and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
+    #[prost(map="string, string", tag="4")]
+    pub optattrs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
+    /// The data payload of this event.
+    #[prost(bytes="vec", tag="5")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
 }
 //////////////////////////////////////////////////////////////////////////////
 // Stream Pub ////////////////////////////////////////////////////////////////
@@ -198,8 +114,8 @@ pub mod stream_pub_setup_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamPubRequest {
     /// The batch of entries to publish.
-    #[prost(bytes="vec", repeated, tag="1")]
-    pub batch: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    #[prost(message, repeated, tag="1")]
+    pub batch: ::prost::alloc::vec::Vec<NewEvent>,
 }
 /// A response from publishing data to a stream.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -280,7 +196,7 @@ pub mod stream_sub_setup_response {
 pub struct StreamSubDelivery {
     /// A batch of records for subscriber processing.
     #[prost(message, repeated, tag="1")]
-    pub batch: ::prost::alloc::vec::Vec<Record>,
+    pub batch: ::prost::alloc::vec::Vec<Event>,
     /// The last offset included in this batch.
     #[prost(uint64, tag="2")]
     pub last_included_offset: u64,
@@ -295,7 +211,7 @@ pub struct StreamSubDeliveryResponse {
 pub mod stream_sub_delivery_response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
-        /// All records delivered on the last payload have been processed.
+        /// All events delivered on the last payload have been processed.
         #[prost(message, tag="1")]
         Ack(super::Empty),
         /// An error has taken place during subscriber processing, and the delivered batch was not
@@ -378,14 +294,121 @@ pub struct PipelineStageOutput {
     #[prost(bytes="vec", tag="1")]
     pub output: ::prost::alloc::vec::Vec<u8>,
 }
-//////////////////////////////////////////////////////////////////////////////
-// Auth //////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+// Metadata ///////////////////////////////////////////////////////////////////
 
-/// An enumeration of possible pub/sub access levels.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum PubSubAccess {
-    Pub = 0,
-    Sub = 1,
-    All = 2,
+/// A response to a metadata subscription setup request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MetadataSubSetupResponse {
+    #[prost(oneof="metadata_sub_setup_response::Result", tags="1, 2")]
+    pub result: ::core::option::Option<metadata_sub_setup_response::Result>,
+}
+/// Nested message and enum types in `MetadataSubSetupResponse`.
+pub mod metadata_sub_setup_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag="1")]
+        Ok(super::ClusterMetadata),
+        #[prost(message, tag="2")]
+        Err(super::Error),
+    }
+}
+/// All known metadata of the target cluster.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClusterMetadata {
+    /// The name of the cluster which was queried.
+    #[prost(string, tag="1")]
+    pub cluster_name: ::prost::alloc::string::String,
+    /// All known pods of the Hadron cluster.
+    #[prost(string, repeated, tag="2")]
+    pub pods: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// A mapping of all known streams, with metadata data on all partitions,
+    /// their leaders and their replicas.
+    #[prost(map="string, message", tag="3")]
+    pub streams: ::std::collections::HashMap<::prost::alloc::string::String, StreamMetadata>,
+    /// A mapping of all known pipelines, with metadata data on all partitions,
+    /// their leaders and their replicas.
+    #[prost(map="string, message", tag="4")]
+    pub pipelines: ::std::collections::HashMap<::prost::alloc::string::String, PipelineMetadata>,
+}
+/// Stream metadata.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamMetadata {
+    /// The name of the stream.
+    #[prost(string, tag="1")]
+    pub name: ::prost::alloc::string::String,
+    /// The partitions of this stream.
+    #[prost(message, repeated, tag="2")]
+    pub partitions: ::prost::alloc::vec::Vec<PartitionMetadata>,
+}
+/// Pipeline metadata.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PipelineMetadata {
+    /// The name of the pipeline.
+    #[prost(string, tag="1")]
+    pub name: ::prost::alloc::string::String,
+    /// The source stream of this pipeline.
+    ///
+    /// This is used by clients to establish pipeline topology, as pipelines mirror their source
+    /// stream's topology.
+    #[prost(string, tag="2")]
+    pub source_stream: ::prost::alloc::string::String,
+}
+/// Metadata of a stream partition.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PartitionMetadata {
+    /// The offset of this partition (actually an unsigned 8-bit integer).
+    #[prost(uint32, tag="1")]
+    pub offset: u32,
+    /// The pod name of the partition leader.
+    #[prost(string, tag="2")]
+    pub leader: ::prost::alloc::string::String,
+    /// The pod names of all replicas of this partition.
+    #[prost(string, repeated, tag="3")]
+    pub replicas: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The schedule state of the partition.
+    #[prost(string, tag="4")]
+    pub schedule_state: ::prost::alloc::string::String,
+    /// The runtime state of the partition.
+    #[prost(string, tag="5")]
+    pub runtime_state: ::prost::alloc::string::String,
+}
+/// A metadata change.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MetadataChange {
+    /// The type of metadata change observed.
+    #[prost(oneof="metadata_change::Change", tags="1, 2, 3, 4, 5, 6, 7")]
+    pub change: ::core::option::Option<metadata_change::Change>,
+}
+/// Nested message and enum types in `MetadataChange`.
+pub mod metadata_change {
+    /// The type of metadata change observed.
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Change {
+        /// Metadata streams were reset on the connected pod, so a new full payload has been sent.
+        #[prost(message, tag="1")]
+        Reset(super::ClusterMetadata),
+        /// A pod has been added.
+        ///
+        /// This corresponds to StatefulSet scaling events. Not temprorary pod state changes.
+        #[prost(string, tag="2")]
+        PodAdded(::prost::alloc::string::String),
+        /// A pod has been removed.
+        ///
+        /// This corresponds to StatefulSet scaling events. Not temprorary pod state changes.
+        #[prost(string, tag="3")]
+        PodRemoved(::prost::alloc::string::String),
+        /// A stream has been updated or added.
+        #[prost(message, tag="4")]
+        StreamUpdated(super::StreamMetadata),
+        /// A stream has been removed.
+        #[prost(string, tag="5")]
+        StreamRemoved(::prost::alloc::string::String),
+        /// A pipeline has been updated or added.
+        #[prost(message, tag="6")]
+        PipelineUpdated(super::PipelineMetadata),
+        /// A pipeline has been removed.
+        #[prost(string, tag="7")]
+        PipelineRemoved(::prost::alloc::string::String),
+    }
 }

@@ -5,9 +5,9 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Subscription {
     /// The name of the subscription.
-    #[prost(string, required, tag="1")]
+    #[prost(string, required, tag = "1")]
     pub group_name: ::prost::alloc::string::String,
     /// The maximum batch size for this subscription.
-    #[prost(uint32, required, tag="2")]
+    #[prost(uint32, required, tag = "2")]
     pub max_batch_size: u32,
 }

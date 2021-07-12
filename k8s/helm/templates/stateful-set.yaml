@@ -2,31 +2,55 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{.Values.statefulSet.name}}
+  name: {{.Values.cluster}}-{{.Values.zone}}
   namespace: {{.Values.namespace | default .Release.Namespace}}
   {{- if .Values.statefulSet.annotations}}
   annotations:
 {{toYaml .Values.statefulSet.annotations | indent 4}}
   {{- end}}
   labels:
-    # TODO: update this to use helm helpers and more precise selection.
+    hadron.rs/cluster: {{.Values.cluster}}
+    hadron.rs/zone: {{.Values.zone}}
     app: hadron
+    app.kubernetes.io/name: hadron
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+  {{- if .Values.statefulSet.labels}}
+{{toYaml .Values.statefulSet.labels | indent 4}}
+  {{- end}}
 spec:
-  serviceName: {{.Values.statefulSet.serviceName}}
-  replicas: {{.Values.statefulSet.replicas}}
+  serviceName: {{.Values.cluster}}-{{.Values.zone}}
+  replicas: {{.Values.statefulSet.replicas | int }}
+  updateStrategy:
+    type: OnDelete
+    rollingUpdate: null
   selector:
     matchLabels:
       app: hadron
+      hadron.rs/cluster: {{.Values.cluster}}
+      hadron.rs/zone: {{.Values.zone}}
   template:
     metadata:
+      {{- if .Values.statefulSet.pod.annotations}}
+      annotations:
+{{toYaml .Values.statefulSet.pod.annotations | indent 8}}
+      {{- end}}
       labels:
+        hadron.rs/cluster: {{.Values.cluster}}
+        hadron.rs/zone: {{.Values.zone}}
         app: hadron
+        app.kubernetes.io/name: hadron
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion }}
+        {{- if .Values.statefulSet.pod.labels}}
+{{toYaml .Values.statefulSet.pod.labels | indent 8}}
+        {{- end}}
     spec:
-      # TODO: add service account option.
-      # serviceAccountName:
-
-      # TODO: add init containers option.
-
+      serviceAccountName: {{.Values.cluster}}
       containers:
         - name: hadron
           image: {{.Values.image.fullName}}
@@ -44,31 +68,39 @@ spec:
             - name: SERVER_PORT
               value: {{.Values.statefulSet.server.serverPort | quote}}
 
-            ## Raft Config
-            - name: RAFT_HEARTBEAT_INTERVAL_MILLIS
-              value: {{.Values.statefulSet.raft.heartbeatIntervalMillis | quote}}
-            - name: RAFT_ELECTION_TIMEOUT_MAX
-              value: {{.Values.statefulSet.raft.electionTimeoutMax| quote}}
-            - name: RAFT_ELECTION_TIMEOUT_MIN
-              value: {{.Values.statefulSet.raft.electionTimeoutMin| quote}}
+            ## Cluster Config
+            - name: CLUSTER
+              value: {{.Values.cluster | quote}}
+            - name: NAMESPACE
+              value: {{.Values.namespace | default .Release.Namespace}}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            ## K8s Leadership Config
+            - name: LEASE_DURATION_SECONDS
+              value: {{.Values.statefulSet.lease.durationSeconds | quote}}
+            - name: LEASE_RENEW_SECONDS
+              value: {{.Values.statefulSet.lease.renewSeconds | quote}}
 
             ## Storage Config
             - name: STORAGE_DATA_PATH
               value: {{.Values.statefulSet.storage.dbPath}}
 
-            ## Clustering Config
-            - name: INITIAL_CLUSTER_FORMATION_DELAY
-              value: {{.Values.statefulSet.clustering.formationDelaySeconds | quote}}
-            - name: DISCOVERY_BACKEND
-              value: {{.Values.statefulSet.clustering.discoveryBackend}}
-            - name: DISCOVERY_DNS_NAME
-              value: {{.Values.statefulSet.clustering.dnsName | quote}}
-            - name: DISCOVERY_DNS_INTERVAL
-              value: {{.Values.statefulSet.clustering.dnsInterval | quote}}
-
-            ## Client Config
-            - name: CLIENT_LIVENESS_THRESHOLD
-              value: {{.Values.statefulSet.client.livenessThreshold | quote}}
+            ## JWT Config
+            - name: JWT_ENCODING_KEY
+            {{- if .Values.statefulSet.jwt.encodingKey }}
+{{ toYaml .Values.statefulSet.jwt.encodingKey | indent 14}}
+            {{- else}}
+            {{- required "`value` or `valueFrom` required for `statefulSet.jwt.encodingKey`" nil }}
+            {{- end}}
+            - name: JWT_DECODING_KEY
+            {{- if .Values.statefulSet.jwt.decodingKey }}
+{{ toYaml .Values.statefulSet.jwt.decodingKey | indent 14}}
+            {{- else}}
+            {{- required "`value` or `valueFrom` required for `statefulSet.jwt.decodingKey`" nil }}
+            {{- end}}
 
           volumeMounts:
             - name: data

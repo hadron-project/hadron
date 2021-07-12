@@ -4,7 +4,7 @@
 
 use kube::CustomResource;
 use schemars::JsonSchema;
-use serde::{de::Error as SerdeError, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 /// CRD spec for the Stream resource.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, CustomResource, JsonSchema)]
@@ -19,25 +19,22 @@ use serde::{de::Error as SerdeError, Deserialize, Deserializer, Serialize};
     apiextensions = "v1",
     shortname = "stream",
     printcolumn = r#"{"name":"Partitions","type":"number","jsonPath":".spec.partitions"}"#,
-    printcolumn = r#"{"name":"Replicas","type":"number","jsonPath":".spec.replicas"}"#,
+    printcolumn = r#"{"name":"Replication Enabled","type":"bool","jsonPath":".spec.replicate"}"#,
     printcolumn = r#"{"name":"TTL","type":"number","jsonPath":".spec.ttl"}"#
 )]
 pub struct StreamSpec {
     /// The number of partitions to be created for this stream.
+    ///
+    /// This value can be dynamically scaled up and down. Scaling down the number of partitions
+    /// will cause the data of the removed partitions to be lost. Use with care.
     pub partitions: u8,
-    /// The number of replicas to be used per partition.
-    pub replicas: u8,
     /// An optional TTL in seconds specifying how long records are to be kept on the stream.
     ///
     /// If `0`, then records will stay on the stream forever.
+    #[serde(default)]
     pub ttl: u64,
 }
 
 /// CRD status object.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
-pub struct StreamStatus {
-    /// The number of partitions to be created for this stream.
-    pub partitions: u8,
-    /// The number of replicas to be used per partition.
-    pub replicas: u8,
-}
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+pub struct StreamStatus {}
