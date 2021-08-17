@@ -25,7 +25,7 @@ use k8s_openapi::api::apps::v1::{StatefulSet, StatefulSetUpdateStrategy};
 use k8s_openapi::api::coordination::v1::Lease;
 use k8s_openapi::api::core::v1::{
     Container, ContainerPort, EnvVar, EnvVarSource, ObjectFieldSelector, PersistentVolumeClaim, PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec,
-    ResourceRequirements, Secret, VolumeMount,
+    ResourceRequirements, Secret, Service, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
@@ -33,7 +33,6 @@ use kube::api::{Api, ObjectMeta, Patch, PatchParams};
 use kube::Resource;
 use tokio::time::timeout;
 
-use crate::config::Config;
 use crate::k8s::coordination::LeaderState;
 use crate::k8s::{Controller, APP_NAME};
 use hadron_core::auth::TokenClaims;
@@ -44,6 +43,12 @@ use hadron_core::crd::{Pipeline, Stream, Token};
 const SECRET_KEY_TOKEN: &str = "token";
 /// The default timeout to use for API calls.
 const API_TIMEOUT: Duration = Duration::from_secs(5);
+/// The timeout duration used before rescheduling a scheduler task.
+const RESCHEDULE_TIMEOUT: Duration = Duration::from_secs(2);
+/// The pod container name of the Hadron Stream.
+///
+/// NOTE WELL: do not change the name of this container. It will cause breaking changes.
+const CONTAINER_NAME_HADRON_STREAM: &str = "hadron-stream";
 /// The location where stream controllers place their data.
 const STREAM_DATA_PATH: &str = "/usr/local/hadron-stream/data";
 
@@ -55,6 +60,8 @@ pub(super) enum SchedulerTask {
     PipelineDeleted(Arc<String>, Pipeline),
     SecretUpdated(Arc<String>),
     SecretDeleted(Arc<String>, Secret),
+    ServiceUpdated(Arc<String>),
+    ServiceDeleted(Arc<String>, Service),
     StatefulSetUpdated(Arc<String>),
     StatefulSetDeleted(Arc<String>, StatefulSet),
     StreamUpdated(Arc<String>),
@@ -64,7 +71,12 @@ pub(super) enum SchedulerTask {
 }
 
 impl Controller {
-    pub(super) async fn handle_scheduler_task(&mut self, task: SchedulerTask, state: LeaderState) {
+    /// Handle scheduler tasks.
+    ///
+    /// **NOTE WELL:** we keep the receiver **immutable** to enforce a uni-directional data flow,
+    /// where the scheduler makes changes to the K8s API, and the watchers observe this data,
+    /// indexes it, and then produces additional reconciliation tasks as needed.
+    pub(super) async fn handle_scheduler_task(&self, task: SchedulerTask, state: LeaderState) {
         if !matches!(state, LeaderState::Leading) {
             return;
         }
@@ -73,6 +85,8 @@ impl Controller {
             SchedulerTask::PipelineDeleted(name, pipeline) => self.scheduler_pipeline_deleted(name, pipeline).await,
             SchedulerTask::SecretUpdated(name) => self.scheduler_secret_updated(name).await,
             SchedulerTask::SecretDeleted(name, secret) => self.scheduler_secret_deleted(name, secret).await,
+            SchedulerTask::ServiceUpdated(name) => self.scheduler_service_updated(name).await,
+            SchedulerTask::ServiceDeleted(name, service) => self.scheduler_service_deleted(name, service).await,
             SchedulerTask::StatefulSetUpdated(name) => self.scheduler_sts_updated(name).await,
             SchedulerTask::StatefulSetDeleted(name, set) => self.scheduler_sts_deleted(name, set).await,
             SchedulerTask::StreamUpdated(name) => self.scheduler_stream_updated(name).await,
@@ -87,13 +101,13 @@ impl Controller {
 // Pipeline Reconciliation ///////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, _name))]
-    async fn scheduler_pipeline_updated(&mut self, _name: Arc<String>) {
+    async fn scheduler_pipeline_updated(&self, _name: Arc<String>) {
         tracing::debug!("handling scheduler pipeline updated");
         // NOTE: nothing to do here currently. Stream controllers detect these events and handle as needed.
     }
 
     #[tracing::instrument(level = "debug", skip(self, _name, _pipeline))]
-    async fn scheduler_pipeline_deleted(&mut self, _name: Arc<String>, _pipeline: Pipeline) {
+    async fn scheduler_pipeline_deleted(&self, _name: Arc<String>, _pipeline: Pipeline) {
         tracing::debug!("handling scheduler pipeline delete");
         // NOTE: nothing to do here currently. Stream controllers detect these events and handle as needed.
     }
@@ -103,16 +117,48 @@ impl Controller {
 // Secret Reconciliation /////////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, _name))]
-    async fn scheduler_secret_updated(&mut self, _name: Arc<String>) {
+    async fn scheduler_secret_updated(&self, _name: Arc<String>) {
         tracing::debug!("handling scheduler secret updated");
-        // TODO: ensure the secret has the needed key & is a valid Hadron secret, else re-mint.
-        // TODO: if token does not exist, then delete the secret.
+        // NOTE: nothing to do here currently.
+        // If a secret enters into a bad state due to being manually manipulated, then delete it,
+        // and the operator will re-create it as needed.
     }
 
-    #[tracing::instrument(level = "debug", skip(self, _name, _secret))]
-    async fn scheduler_secret_deleted(&mut self, _name: Arc<String>, _secret: Secret) {
+    #[tracing::instrument(level = "debug", skip(self, name, secret))]
+    async fn scheduler_secret_deleted(&self, name: Arc<String>, secret: Secret) {
         tracing::debug!("handling scheduler secret deleted");
-        // TODO: recrete the secret if the token still exists.
+        if !self.tokens.contains_key(name.as_ref()) {
+            return;
+        }
+        if let Err(err) = self.ensure_token_secret(name.clone()).await {
+            tracing::error!(error = ?err, name = %name, "error creating backing secret for token");
+            let tx = self.scheduler_tasks_tx.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
+                let _res = tx.send(SchedulerTask::SecretDeleted(name, secret)).await;
+            });
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Service Reconciliation ////////////////////////////////////////////////////
+impl Controller {
+    #[tracing::instrument(level = "debug", skip(self, _name))]
+    async fn scheduler_service_updated(&self, _name: Arc<String>) {
+        tracing::debug!("handling scheduler service updated");
+        // NOTE: nothing to do here currently.
+        // If a service enters into a bad state due to being manually manipulated, then delete it,
+        // and the operator will re-create it as needed.
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, name, service))]
+    async fn scheduler_service_deleted(&self, name: Arc<String>, service: Service) {
+        tracing::debug!("handling scheduler service deleted");
+        // TODO:
+        // - check the service's labels to see if it corresponds to a STS or a STS pod.
+        // - once determined, check to see if the corresponding object still exists.
+        // - if still exists, then re-create the service, else no-op.
     }
 }
 
@@ -120,13 +166,13 @@ impl Controller {
 // StatefulSet Reconciliation ////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn scheduler_sts_updated(&mut self, name: Arc<String>) {
+    async fn scheduler_sts_updated(&self, name: Arc<String>) {
         tracing::debug!("handling scheduler statefulset updated");
         // TODO: create any needed services, ingresses &c for this object.
     }
 
     #[tracing::instrument(level = "debug", skip(self, _name, _sts))]
-    async fn scheduler_sts_deleted(&mut self, _name: Arc<String>, _sts: StatefulSet) {
+    async fn scheduler_sts_deleted(&self, _name: Arc<String>, _sts: StatefulSet) {
         tracing::debug!("handling scheduler statefulset deleted");
         // TODO: clean-up any associated services, ingresses &c for this object.
     }
@@ -136,7 +182,7 @@ impl Controller {
 // Stream Reconciliation /////////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn scheduler_stream_updated(&mut self, name: Arc<String>) {
+    async fn scheduler_stream_updated(&self, name: Arc<String>) {
         tracing::debug!("handling scheduler stream updated");
         let stream = match self.streams.get(name.as_ref()) {
             Some(stream) => stream,
@@ -144,53 +190,110 @@ impl Controller {
         };
 
         // Check to see if we need to create a StatefulSet for this stream.
-        if let Some(sts) = self.statefulsets.get(name.as_ref()) {
-            reconcile_stream_changes(stream, sts).await;
+        let res = if let Some(sts) = self.statefulsets.get(name.as_ref()) {
+            self.reconcile_stream_changes(stream, sts)
+                .await
+                .context("error reconciling Stream changes")
         } else {
-            // TODO: fetch tags, and determine latest release per semver compat group. Pass in latest release.
-            let sts = build_stream_statefulset(stream, self.config.as_ref(), "ghcr.io/hadron-project/hadron/hadron-stream:0.1.0").await;
-            let sts = match self.create_stateful_set(sts).await {
-                Ok(sts) => sts,
-                Err(err) => {
-                    tracing::error!(error = ?err, stream = %name, "error creating backing StatefulSet for Stream");
-                    let tx = self.scheduler_tasks_tx.clone();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                        let _res = tx.send(SchedulerTask::StreamUpdated(name)).await;
-                    });
-                    return;
-                }
-            };
-            self.statefulsets.insert(name, sts);
-            // NOTE: the creation of the StatefulSet above will trigger reconciliation events
-            // which will be used to create the various K8s Services and other such resources.
+            let sts = self.build_stream_statefulset(stream);
+            self.create_statefulset(sts)
+                .await
+                .context("error creating new backing StatefulSet for Stream")
+                .map(|_sts| ())
+        };
+
+        // Handle error conditions, and emit a retry if needed.
+        if let Err(err) = res {
+            tracing::error!(error = ?err, stream = %name, "error reconciling updated stream");
+            let tx = self.scheduler_tasks_tx.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
+                let _res = tx.send(SchedulerTask::StreamUpdated(name)).await;
+            });
+        }
+        // NOTE: the creation/update of the StatefulSet above will trigger reconciliation events
+        // which will be used to index the newly created object and to create the various
+        // K8s Services and other such resources.
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, name, stream))]
+    async fn scheduler_stream_deleted(&self, name: Arc<String>, stream: Stream) {
+        tracing::debug!("handling scheduler stream deleted");
+        if let Err(err) = self.delete_statefulset(name.as_str()).await {
+            tracing::error!(error = ?err, stream = %name, "error deleting backing StatefulSet for Stream");
+            let tx = self.scheduler_tasks_tx.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
+                let _res = tx.send(SchedulerTask::StreamDeleted(name, stream)).await;
+            });
         }
     }
 
-    #[tracing::instrument(level = "debug", skip(self, _name, _stream))]
-    async fn scheduler_stream_deleted(&mut self, _name: Arc<String>, _stream: Stream) {
-        tracing::debug!("handling scheduler stream deleted");
-        // TODO: delete StatefulSet.
+    /// Delete the target StatefulSet.
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn delete_statefulset(&self, name: &str) -> Result<()> {
+        let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        self.fence().await?;
+        let res = timeout(API_TIMEOUT, api.delete(name, &Default::default()))
+            .await
+            .context("timeout while deleting backing secret for token")?;
+        match res {
+            Ok(_val) => Ok(()),
+            Err(err) => match err {
+                kube::Error::Api(api_err) if api_err.code == http::StatusCode::NOT_FOUND => Ok(()),
+                _ => Err(err).context("error deleting backing secret for token"),
+            },
+        }
     }
 
-    /// Patch the given stream in K8s using Server-Side Apply.
+    /// Update the given StatefulSet according to the state of the given Stream.
+    #[tracing::instrument(level = "debug", skip(self, stream, sts))]
+    async fn reconcile_stream_changes(&self, stream: &Stream, sts: &StatefulSet) -> Result<()> {
+        tracing::debug!("reconciling stream changes");
+        // Construct an updated StatefulSet object, and if it differs from the currently recorded
+        // StatefulSet, then issue an update.
+        let mut updated_sts = self.build_stream_statefulset(stream);
+        updated_sts.metadata = sts.metadata.clone();
+        if updated_sts.spec != sts.spec {
+            let _updated_sts = self.patch_statefulset(updated_sts).await?;
+        }
+
+        // TODO[services,ingress]: check if changes need to be applied to non STS items.
+        Ok(())
+    }
+
+    /// Patch the given Stream in K8s using Server-Side Apply.
     #[tracing::instrument(level = "debug", skip(self, stream))]
-    async fn patch_stream_cr(&mut self, mut stream: Stream) -> Result<Stream> {
+    async fn patch_stream_cr(&self, mut stream: Stream) -> Result<Stream> {
         self.fence().await?; // Ensure we still hold the lease.
         let api: Api<Stream> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let mut params = PatchParams::apply(APP_NAME);
         params.force = true; // This will still be blocked by the server if we do not have the most up-to-date object info.
         stream.metadata.managed_fields = None;
-        let stream = timeout(API_TIMEOUT, api.patch_status(stream.name(), &params, &Patch::Apply(&stream)))
+        timeout(API_TIMEOUT, api.patch_status(stream.name(), &params, &Patch::Apply(&stream)))
             .await
             .context("timeout while updating stream")?
-            .context("error updating stream")?;
-        Ok(stream)
+            .context("error updating stream")
+    }
+
+    /// Patch the given StatefulSet in K8s using Server-Side Apply.
+    #[tracing::instrument(level = "debug", skip(self, sts))]
+    async fn patch_statefulset(&self, mut sts: StatefulSet) -> Result<StatefulSet> {
+        self.fence().await?; // Ensure we still hold the lease.
+        let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let mut params = PatchParams::apply(APP_NAME);
+        params.force = true; // This will still be blocked by the server if we do not have the most up-to-date object info.
+        sts.metadata.managed_fields = None;
+        let name = sts.metadata.name.as_deref().unwrap_or("");
+        timeout(API_TIMEOUT, api.patch(name, &params, &Patch::Apply(&sts)))
+            .await
+            .context("timeout while updating StatefulSet for Stream")?
+            .context("error updating StatefulSet for Stream")
     }
 
     /// Create the given StatefulSet in K8s.
     #[tracing::instrument(level = "debug", skip(self, sts))]
-    async fn create_stateful_set(&mut self, sts: StatefulSet) -> Result<StatefulSet> {
+    async fn create_statefulset(&self, sts: StatefulSet) -> Result<StatefulSet> {
         let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
         self.fence().await?;
         let params = kube::api::PostParams::default();
@@ -199,187 +302,204 @@ impl Controller {
             .context("timeout while creating backing StatefulSet for Stream")?
             .context("error creating backing StatefulSet for Stream")
     }
-}
 
-/// Update the given StatefulSet according to the state of the given Stream.
-#[tracing::instrument(level = "debug", skip(stream, sts))]
-async fn reconcile_stream_changes(stream: &Stream, sts: &StatefulSet) {
-    tracing::debug!("reconciling stream changes");
-    // TODO: construct a spec update & apply if spec is different.
-    // TODO: if the changes are only related to ingress & services then construct changes for those.
-}
+    /// Build a new StatefulSet for the given stream.
+    #[tracing::instrument(level = "debug", skip(self, stream))]
+    fn build_stream_statefulset(&self, stream: &Stream) -> StatefulSet {
+        tracing::debug!(name = stream.name(), "creating a new statefulset for stream");
 
-/// Build a new StatefulSet for the given stream.
-#[tracing::instrument(level = "debug", skip(stream, config, latest_hadron_stream_image))]
-async fn build_stream_statefulset(stream: &Stream, config: &Config, latest_hadron_stream_image: &str) -> StatefulSet {
-    tracing::debug!(name = stream.name(), "creating a new statefulset for stream");
+        // Build metadata.
+        let mut sts = StatefulSet::default();
+        let labels = sts.meta_mut().labels.get_or_insert_with(Default::default);
+        set_cannonical_labels(labels);
+        labels.insert("hadron.rs/stream".into(), stream.name().into());
+        let labels = labels.clone(); // Used below.
+        sts.meta_mut().namespace = self.config.namespace.clone().into();
+        sts.meta_mut().name = stream.name().to_string().into();
 
-    // Build metadata.
-    let mut sts = StatefulSet::default();
-    let labels = sts.meta_mut().labels.get_or_insert_with(Default::default);
-    set_cannonical_labels(labels);
-    labels.insert("hadron.rs/stream".into(), stream.name().into());
-    let labels = labels.clone(); // Used below.
-    sts.meta_mut().namespace = config.namespace.clone().into();
-    sts.meta_mut().name = stream.name().to_string().into();
-
-    // Build spec.
-    let spec = sts.spec.get_or_insert_with(Default::default);
-    spec.update_strategy = Some(StatefulSetUpdateStrategy {
-        type_: Some("RollingUpdate".into()),
-        rolling_update: None,
-    });
-    spec.replicas = Some(stream.spec.partitions as i32);
-    spec.selector = LabelSelector {
-        match_labels: Some(labels.clone()),
-        ..Default::default()
-    };
-    let image = stream
-        .spec
-        .image
-        .clone()
-        .unwrap_or_else(|| latest_hadron_stream_image.into());
-    spec.template = PodTemplateSpec {
-        metadata: Some(ObjectMeta { labels: Some(labels), ..Default::default() }),
-        spec: Some(PodSpec {
-            containers: vec![Container {
-                name: "hadron-stream".into(),
-                image: Some(image),
-                command: Some(vec!["/bin/hadron-stream".into()]),
-                ports: Some(vec![
-                    ContainerPort {
-                        name: Some("client-port".into()),
-                        container_port: 7000,
-                        ..Default::default()
-                    },
-                    ContainerPort {
-                        name: Some("server-port".into()),
-                        container_port: 7001,
-                        ..Default::default()
-                    },
-                ]),
-                env: Some(vec![
-                    EnvVar {
-                        name: "RUST_LOG".into(),
-                        value: Some("error,hadron_stream=info".into()),
-                        ..Default::default()
-                    },
-                    EnvVar {
-                        name: "CLIENT_PORT".into(),
-                        value: Some("7000".into()),
-                        ..Default::default()
-                    },
-                    EnvVar {
-                        name: "SERVER_PORT".into(),
-                        value: Some("7001".into()),
-                        ..Default::default()
-                    },
-                    EnvVar {
-                        name: "CLUSTER_NAME".into(),
-                        value: Some(stream.spec.cluster_name.clone()),
-                        ..Default::default()
-                    },
-                    EnvVar {
-                        name: "NAMEPSACE".into(),
-                        value_from: Some(EnvVarSource {
-                            field_ref: Some(ObjectFieldSelector {
-                                field_path: "metadata.namespace".into(),
-                                ..Default::default()
-                            }),
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    },
-                    EnvVar {
-                        name: "STREAM".into(),
-                        value: Some(stream.name().into()),
-                        ..Default::default()
-                    },
-                    EnvVar {
-                        name: "STATEFULSET".into(),
-                        value: Some(stream.name().into()),
-                        ..Default::default()
-                    },
-                    EnvVar {
-                        name: "POD_NAME".into(),
-                        value_from: Some(EnvVarSource {
-                            field_ref: Some(ObjectFieldSelector {
-                                field_path: "metadata.name".into(),
-                                ..Default::default()
-                            }),
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    },
-                    EnvVar {
-                        name: "STORAGE_DATA_PATH".into(),
-                        value: Some(STREAM_DATA_PATH.into()),
-                        ..Default::default()
-                    },
-                    EnvVar {
-                        name: "JWT_DECODING_KEY".into(),
-                        value: Some(config.jwt_decoding_key.1.clone()),
-                        ..Default::default()
-                    },
-                ]),
-                volume_mounts: Some(vec![VolumeMount {
-                    name: "data".into(),
-                    mount_path: STREAM_DATA_PATH.into(),
-                    ..Default::default()
-                }]),
-                ..Default::default()
-            }],
+        // Build spec.
+        let spec = sts.spec.get_or_insert_with(Default::default);
+        spec.update_strategy = Some(StatefulSetUpdateStrategy {
+            type_: Some("RollingUpdate".into()),
+            rolling_update: None,
+        });
+        spec.replicas = Some(stream.spec.partitions as i32);
+        spec.selector = LabelSelector {
+            match_labels: Some(labels.clone()),
             ..Default::default()
-        }),
-    };
+        };
+        spec.template = PodTemplateSpec {
+            metadata: Some(ObjectMeta { labels: Some(labels), ..Default::default() }),
+            spec: Some(PodSpec {
+                termination_grace_period_seconds: Some(30),
+                service_account_name: Some("hadron-stream".into()),
+                automount_service_account_token: Some(true),
+                containers: vec![Container {
+                    // NOTE WELL: do not change the name of this container. It will cause breaking changes.
+                    name: CONTAINER_NAME_HADRON_STREAM.into(),
+                    image: Some(stream.spec.image.clone()),
+                    image_pull_policy: Some("IfNotPresent".into()),
+                    command: Some(vec!["/bin/hadron-stream".into()]),
+                    ports: Some(vec![
+                        ContainerPort {
+                            name: Some("client-port".into()),
+                            container_port: 7000,
+                            protocol: Some("TCP".into()),
+                            ..Default::default()
+                        },
+                        ContainerPort {
+                            name: Some("server-port".into()),
+                            container_port: 7001,
+                            protocol: Some("TCP".into()),
+                            ..Default::default()
+                        },
+                    ]),
+                    env: Some(vec![
+                        EnvVar {
+                            name: "RUST_LOG".into(),
+                            value: Some("error,hadron_stream=info".into()),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "CLIENT_PORT".into(),
+                            value: Some("7000".into()),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "SERVER_PORT".into(),
+                            value: Some("7001".into()),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "CLUSTER_NAME".into(),
+                            value: Some(stream.spec.cluster_name.clone()),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "NAMESPACE".into(),
+                            value_from: Some(EnvVarSource {
+                                field_ref: Some(ObjectFieldSelector {
+                                    field_path: "metadata.namespace".into(),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "STREAM".into(),
+                            value: Some(stream.name().into()),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "STATEFULSET".into(),
+                            value: Some(stream.name().into()),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "POD_NAME".into(),
+                            value_from: Some(EnvVarSource {
+                                field_ref: Some(ObjectFieldSelector {
+                                    field_path: "metadata.name".into(),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "STORAGE_DATA_PATH".into(),
+                            value: Some(STREAM_DATA_PATH.into()),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "JWT_DECODING_KEY".into(),
+                            value: Some(self.config.jwt_decoding_key.1.clone()),
+                            ..Default::default()
+                        },
+                    ]),
+                    volume_mounts: Some(vec![VolumeMount {
+                        name: "data".into(),
+                        mount_path: STREAM_DATA_PATH.into(),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+        };
 
-    // Build volume claim templates.
-    spec.volume_claim_templates = Some(vec![PersistentVolumeClaim {
-        metadata: ObjectMeta { name: Some("data".into()), ..Default::default() },
-        spec: Some(PersistentVolumeClaimSpec {
-            access_modes: stream.spec.pvc_access_modes.clone(),
-            storage_class_name: stream.spec.pvc_storage_class.clone(),
-            resources: Some(ResourceRequirements {
-                requests: Some(maplit::btreemap! {
-                    "storage".into() => Quantity(stream.spec.pvc_volume_size.clone()),
+        // Build volume claim templates.
+        spec.volume_claim_templates = Some(vec![PersistentVolumeClaim {
+            metadata: ObjectMeta { name: Some("data".into()), ..Default::default() },
+            spec: Some(PersistentVolumeClaimSpec {
+                access_modes: stream
+                    .spec
+                    .pvc_access_modes
+                    .clone()
+                    .or_else(|| Some(vec!["ReadWriteOnce".into()])),
+                storage_class_name: stream.spec.pvc_storage_class.clone(),
+                resources: Some(ResourceRequirements {
+                    requests: Some(maplit::btreemap! {
+                        "storage".into() => Quantity(stream.spec.pvc_volume_size.clone()),
+                    }),
+                    ..Default::default()
                 }),
                 ..Default::default()
             }),
             ..Default::default()
-        }),
-        ..Default::default()
-    }]);
+        }]);
 
-    sts
+        sts
+    }
 }
 
 //////////////////////////////////////////////////////////////////////////////
 // Token Reconciliation //////////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn scheduler_token_updated(&mut self, name: Arc<String>) {
+    async fn scheduler_token_updated(&self, name: Arc<String>) {
         tracing::debug!("handling scheduler token updated");
         if self.secrets.get(&name).is_none() {
-            if let Err(err) = self.ensure_secret(name.clone()).await {
-                tracing::error!(error = ?err, "error while ensuring backing token secret");
+            if let Err(err) = self.ensure_token_secret(name.clone()).await {
+                tracing::error!(error = ?err, "error while ensuring backing secret for token");
                 let tx = self.scheduler_tasks_tx.clone();
                 tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                    let _ = tx.send(SchedulerTask::TokenUpdated(name));
+                    tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
+                    let _res = tx.send(SchedulerTask::TokenUpdated(name)).await;
                 });
             }
         }
     }
 
-    #[tracing::instrument(level = "debug", skip(self, _name, _token))]
-    async fn scheduler_token_deleted(&mut self, _name: Arc<String>, _token: Token) {
+    #[tracing::instrument(level = "debug", skip(self, name, token))]
+    async fn scheduler_token_deleted(&self, name: Arc<String>, token: Token) {
         tracing::debug!("handling scheduler token deleted");
-        // TODO: delete corresponding secret.
+        if let Err(err) = self.delete_token_secret(name.clone()).await {
+            tracing::error!(error = ?err, "error while deleting backing secret for token");
+            let tx = self.scheduler_tasks_tx.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
+                let _res = tx.send(SchedulerTask::TokenDeleted(name, token)).await;
+            });
+        }
+    }
+
+    /// Delete the target token secret.
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn delete_token_secret(&self, name: Arc<String>) -> Result<()> {
+        let api: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        self.fence().await?;
+        timeout(API_TIMEOUT, api.delete(name.as_str(), &Default::default()))
+            .await
+            .context("timeout while deleting backing secret for token")?
+            .context("error deleting backing secret for token")
+            .map(|_| ())
     }
 
     /// Ensure the given secret exists.
     #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn ensure_secret(&mut self, name: Arc<String>) -> Result<Secret> {
+    async fn ensure_token_secret(&self, name: Arc<String>) -> Result<Secret> {
         // Attempt to fetch the target secret.
         let api: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let secret_opt = timeout(API_TIMEOUT, api.get(name.as_str()))
@@ -413,6 +533,7 @@ impl Controller {
         let labels = secret.meta_mut().labels.get_or_insert_with(Default::default);
         set_cannonical_labels(labels);
 
+        self.fence().await?;
         let params = kube::api::PostParams::default();
         timeout(API_TIMEOUT, api.create(&params, &secret))
             .await
@@ -426,7 +547,7 @@ impl Controller {
 impl Controller {
     /// Ensure we have ownership of the lease, else return an error.
     #[tracing::instrument(level = "debug", skip(self))]
-    async fn fence(&mut self) -> Result<()> {
+    async fn fence(&self) -> Result<()> {
         let api: Api<Lease> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let lease = timeout(API_TIMEOUT, api.get(&self.lease_name))
             .await
@@ -451,5 +572,5 @@ impl Controller {
 /// Set the cannonical labels on an object controlled by Hadron.
 fn set_cannonical_labels(labels: &mut BTreeMap<String, String>) {
     labels.insert("app".into(), "hadron".into());
-    labels.insert("hadron.rs/controlled-by".into(), "hadron".into());
+    labels.insert("hadron.rs/controlled-by".into(), "hadron-operator".into());
 }

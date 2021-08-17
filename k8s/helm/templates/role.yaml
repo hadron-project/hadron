@@ -1,15 +1,12 @@
+---
+# Role definition used by the Hadron Operator.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: hadron-operator
   namespace: {{.Values.namespace | default .Release.Namespace}}
   labels:
-    app: hadron-operator
-    app.kubernetes.io/name: hadron-operator
-    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    {{- include "chart.labels" . | indent 4 }}
 rules:
 # This rule allows for management of the Hadron cluster lease & all Hadron resources.
 - apiGroups: ["coordination.k8s.io", "hadron.rs"]
@@ -31,3 +28,22 @@ rules:
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# Role definition used by Hadron Stream instances.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hadron-stream
+  namespace: {{.Values.namespace | default .Release.Namespace}}
+  labels:
+    {{- include "chart.labels" . | indent 4 }}
+rules:
+# This rule allows for management of the Hadron cluster lease & all Hadron resources.
+- apiGroups: ["hadron.rs"]
+  resources:
+    - "pipelines"
+    - "pipelines/status"
+    - "tokens"
+    - "tokens/status"
+  verbs: ["get", "list", "watch"]

@@ -15,9 +15,6 @@ spec:
   scope: Namespaced
   versions:
     - additionalPrinterColumns:
-        - jsonPath: ".spec.cluster"
-          name: Cluster
-          type: string
         - jsonPath: ".spec.sourceStream"
           name: Source Stream
           type: string
@@ -35,9 +32,6 @@ spec:
             spec:
               description: CRD spec for the Pipeline resource.
               properties:
-                cluster:
-                  description: The cluster to which this token belongs.
-                  type: string
                 maxParallel:
                   description: The maximum number of pipeline instances which may be executed in parallel per partition.
                   format: uint32
@@ -75,7 +69,6 @@ spec:
                   description: "Event type matchers which will trigger this pipeline.\n\nValues are expressed as a comma-separated list. An empty string will match any event type."
                   type: string
               required:
-                - cluster
                 - maxParallel
                 - sourceStream
                 - stages

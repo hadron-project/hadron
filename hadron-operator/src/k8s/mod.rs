@@ -24,7 +24,7 @@ use bytes::BytesMut;
 use futures::prelude::*;
 use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::coordination::v1::{Lease, LeaseSpec};
-use k8s_openapi::api::core::v1::Secret;
+use k8s_openapi::api::core::v1::{Secret, Service};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{MicroTime, ObjectMeta};
 use kube::api::{Api, ListParams};
 use kube::client::Client;
@@ -69,6 +69,7 @@ pub struct Controller {
     scheduler_tasks_tx: mpsc::Sender<SchedulerTask>,
     /// A channel of scheduler tasks.
     scheduler_tasks_rx: ReceiverStream<SchedulerTask>,
+
     /// All known statefulsets managed by this operator.
     statefulsets: HashMap<Arc<String>, StatefulSet>,
     /// All known stream objects managed by this operator.
@@ -79,6 +80,9 @@ pub struct Controller {
     tokens: HashMap<Arc<String>, Token>,
     /// All known K8s secrets corresponding to Hadron Tokens of this cluster.
     secrets: HashMap<Arc<String>, Secret>,
+    /// All known K8s services corresponding to a StatefulSet backing a Stream and its pods.
+    services: HashMap<Arc<String>, Service>,
+
     /// A general purpose reusable bytes buffer, safe for concurrent use.
     buf: BytesMut,
 }
@@ -112,6 +116,7 @@ impl Controller {
             pipelines: Default::default(),
             tokens: Default::default(),
             secrets: Default::default(),
+            services: Default::default(),
             buf: BytesMut::with_capacity(2000),
         })
     }
@@ -152,17 +157,26 @@ impl Controller {
         let tokens_watcher = watcher(tokens, params_spec.clone());
         let secrets: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let secrets_watcher = watcher(secrets, params_labels.clone());
-        tokio::pin!(statefulsets_watcher, pipelines_watcher, streams_watcher, tokens_watcher, secrets_watcher);
+        let services: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let services_watcher = watcher(services, params_labels.clone());
+        tokio::pin!(
+            statefulsets_watcher,
+            pipelines_watcher,
+            streams_watcher,
+            tokens_watcher,
+            secrets_watcher,
+            services_watcher
+        );
 
         tracing::info!("k8s controller initialized");
         loop {
             tokio::select! {
-                // TODO: critical path: wire these up.
-                Some(k8s_event_res) = statefulsets_watcher.next() => (),
-                Some(k8s_event_res) = pipelines_watcher.next() => (),
-                Some(k8s_event_res) = streams_watcher.next() => (),
-                Some(k8s_event_res) = secrets_watcher.next() => (),
-                Some(k8s_event_res) = tokens_watcher.next() => (),
+                Some(k8s_event_res) = statefulsets_watcher.next() => self.handle_sts_event(k8s_event_res).await,
+                Some(k8s_event_res) = pipelines_watcher.next() => self.handle_pipeline_event(k8s_event_res).await,
+                Some(k8s_event_res) = services_watcher.next() => (), // TODO: wire this up.
+                Some(k8s_event_res) = streams_watcher.next() => self.handle_stream_event(k8s_event_res).await,
+                Some(k8s_event_res) = secrets_watcher.next() => self.handle_secret_event(k8s_event_res).await,
+                Some(k8s_event_res) = tokens_watcher.next() => self.handle_token_event(k8s_event_res).await,
                 Some(new_leader_state) = state_rx.next() => {
                     tracing::debug!(state = ?new_leader_state, "new leader state detected");
                     self.leader_state = Some(new_leader_state.clone());
@@ -187,7 +201,7 @@ impl Controller {
     /// Create a list params object which selects only objects which matching Hadron labels.
     fn list_params_cluster_selector_labels(&self) -> ListParams {
         ListParams {
-            label_selector: Some("app=hadron,hadron.rs/controlled-by=hadron".into()),
+            label_selector: Some("app=hadron,hadron.rs/controlled-by=hadron-operator".into()),
             ..Default::default()
         }
     }
@@ -205,8 +219,8 @@ impl Controller {
                 name: Some(Self::generate_lease_name(&config)),
                 namespace: Some(config.namespace.clone()),
                 labels: Some(btreemap! {
-                    "app".into() => APP_NAME.into(),
-                    "app.kubernetes.io/name".into() => APP_NAME.into(),
+                    "app".into() => "hadron".into(),
+                    "hadron.rs/controlled-by".into() => APP_NAME.into(),
                 }),
                 ..Default::default()
             },

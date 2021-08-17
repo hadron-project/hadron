@@ -1,15 +1,14 @@
 # Directory Ignores #
+.github
 docker
 guide
-kubernetes
-**/target
-!target/.artifacts
+hadron-cli
+k8s
+target
 
 # File Ignores #
 .dockerignore
 .gitignore
-book.toml
-DEVELOPMENT.md
 docker-compose.yml
 Justfile
 LICENSE

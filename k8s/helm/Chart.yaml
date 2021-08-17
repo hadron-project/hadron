@@ -1,4 +1,4 @@
-name: hadron-operator
+name: hadron
 version: 0.3.0
 apiVersion: v2
 appVersion: 0.1.0

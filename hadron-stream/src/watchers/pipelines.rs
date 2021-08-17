@@ -67,7 +67,7 @@ impl PipelineWatcher {
     }
 
     async fn run(mut self) -> Result<()> {
-        let pipelines_api: Api<Pipeline> = Api::all(self.client.clone());
+        let pipelines_api: Api<Pipeline> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let stream = watcher(pipelines_api, ListParams::default());
         tokio::pin!(stream);
 
