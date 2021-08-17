@@ -10,24 +10,26 @@ Key Advantages with this cluster design:
 - Relentless pursuit of simplicity.
 - All K8s native, using the K8s API as the universal API. Stand on the shoulders of giants. Don't reinvent the wheel.
 - No distributed consensus overhead for read/write path to streams, pipelines &c.
-- We get to leverage — often at no cost overhead for us — all of the innovation in the K8s ecosystem: policy, networking, distribution, common knowledge base &c.
+- We get to leverage — often at no cost overhead for us — the innovation in the K8s ecosystem: policy, networking, distribution, common knowledge base &c.
 
-## Hadron Operator
-The Hadron experience starts with the Hadron Operator. A Hadron Operator StatefulSet is deployed, along with all of its various CRDs. Then a HadronCluster CR is created which the Operator will use to provision a StatefulSet of Hadron worker nodes.
+## Hadron Cluster
+Hadron clusters are deployed as StatefulSets. Hadron uses CRDs to define the various types of resources which are to be made available within a Hadron cluster for client use.
 
-All provisioned Hadron clusters leverage the Hadron Operator which provisioned them for consensus & leadership rulings. The Operator uses K8s Leases with ServerSideApply (SSA) to ensure idempotent updates which do not overwrite during race conditions.
+All Hadron clusters leverage K8s Leases for consensus & leadership rulings, and use K8s ServerSideApply (SSA) to ensure idempotent updates which do not overwrite during race conditions.
 
-The Hadron Operator is intended to run as a cluster-wide controller, but can be limited to a single namespace if needed.
-
-- When an Operator replica has acquired the Lease, it then works to perform reconciliation tasks, other leadership tasks, and renews the lease for as long as possible.
-- Operator replicas will contend for lease acquisition, and will follow the same pattern as K8s core controllers: https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/ Lease checking will be based on lease expiration time plus randomized interval to reduce contention.
+- When an a Hadron cluster replica has acquired its cluster's Lease, it then works to perform reconciliation tasks, other leadership tasks, and renews the lease for as long as possible.
+- Other replicas will contend for lease acquisition, and will follow the same pattern as K8s core controllers: https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/ Lease checking will be based on lease expiration time plus randomized interval to reduce contention. This is a very low-overhead and efficient process.
 - All resource updates from the leader will use SSA to avoid race conditions. Conflicts will result in a check-lock-check followed by a forced update when it is safe to do so — ensuring that updates do not fail indefinitely.
 - All members of a Hadron cluster observe changes to the CRs which apply to their cluster, and react when applicable.
+- Hadron Cluster CRs will be able to declare robust HPA targets which will allow for dense packing of objects when possible, as well as dynamic StatefulSet scaling when more partitions are needed.
 
 ## Operations
 - Hadron clusters are deployed as StatefulSets along with various other CRs.
-- Horizontally scaling write throughput will typically be a matter of just scaling up the number of replicas of one of the Hadron cluster's StatefulSet.
-- Multiple StatefulSets can be created for multi-zone or multi-region clusters. CRs can be federated. The Hadron scheduler will select based on their StatefulSet/pod labels.
+- Horizontally scaling write throughput for a cluster is as simple as scaling the number of partitions for the corresponding object (E.G., stream, pipeline) and ensuring that there are enough replicas of the cluster's StatefulSet for the partition to be scheduled.
+- StatefulSets are created with zone information to allow the scheduler to optimize spread and data survivability. Multiple StatefulSets can be created as part of the same logical cluster and deployed in different zones for multi-zone high-availability and replication.
+- Hadron cluster leaders are able to observe all pods of a multi-StatefulSet cluster based on a configured pod selector label matcher. This value is typically just the name of the cluster.
+- For globally distributed operations, all data on streams and pipelines are isolated to the partition where they are published, with no concern over data consistency.
+    - We are designing global data stream integration patterns with the MaterializedView system. See [RFC#007](./007-views.md).
 
 ## Cluster Resources
 Streams, Pipelines, Exchanges, RPC Endpoints, MaterializedViews and any other future objects will be declared as K8s CRDs.
@@ -40,11 +42,18 @@ Streams, Pipelines, Exchanges, RPC Endpoints, MaterializedViews and any other fu
 - We can allow for objects to declare that they need to be replicated to other specific regions for survivability, this will also be based on labels in CRs.
 - The Hadron Operator also functions as the Validating Admissions Webhook for Hadron CRs.
 
+### K8s Services
+K8s services are created for many Hadron objects to facilitate load balancing to the Hadron cluster pods which back the target objects. Services which need to target specific pods of a Hadron cluster StatefulSet will have their endpoints managed by the Hadron Operator.
+
+- Hadron K8s services are always created in the K8s namespace in which the Hadron cluster is running, named as `{objectType}-{objectName}`. E.G., `pipeline-new-user`.
+- Network policy may be added to Hadron K8s services, but Hadron does not add such network policy on its own.
+- Hadron creates a service for accessing metrics which target all nodes of a Hadron cluster.
+- Instead of clients needing to query for cluster metadata to know which pods to target, clients will simply target the service corresponding to the object they intend to interact with.
+
 ### Credentials
 #secrets #users #tokens #serviceaccount #clusterrole #opa
 
-- Hadron uses AuthGrants to declare a secret JWT to be minted and granted access to the Hadron API and its various resources.
-- These grants allow for hierarchical matching on Hadron resource object names.
+- Hadron uses Tokens to declare a secret JWT to be minted and granted access to the Hadron API and its various resources.
 - The corresponding generated tokens can be referenced by workloads within the K8s cluster seamlessly.
 - Creation of all Hadron CRs can be limited to ServiceAccounts with various roles using native K8s resources, helping to ensure secure access to Hadron resources.
 - JWT creation & verification use standard RSA keys. Administrators are recommended to use cert-manager for CA creation and generation of public and private keys for cluster use.

@@ -1,0 +1,69 @@
+apiVersion: hadron.rs/v1
+kind: Stream
+metadata:
+  name: events
+  namespace: default
+spec:
+  partitions: 3
+  ttl: 0
+
+---
+apiVersion: hadron.rs/v1
+kind: Pipeline
+metadata:
+  name: service-creation
+  namespace: default
+spec:
+  cluster: hadron
+  sourceStream: events
+  triggers: ""
+  maxParallel: 50
+  stages:
+    - name: deploy-service
+
+    - name: setup-monitoring
+      dependencies: ["deploy-service"]
+    - name: setup-billing
+      dependencies: ["deploy-service"]
+    - name: email-customer
+      dependencies: ["deploy-service"]
+
+    - name: cleanup
+      dependencies:
+        - setup-monitoring
+        - setup-billing
+        - email-customer
+
+---
+apiVersion: hadron.rs/v1
+kind: Token
+metadata:
+  name: hadron-full-access
+  namespace: default
+spec:
+  cluster: hadron
+  all: true
+
+---
+apiVersion: hadron.rs/v1
+kind: Token
+metadata:
+  name: hadron-read-only
+  namespace: default
+spec:
+  cluster: hadron
+  streams:
+    pub: []
+    sub: ["events"]
+
+---
+apiVersion: hadron.rs/v1
+kind: Token
+metadata:
+  name: hadron-read-write
+  namespace: default
+spec:
+  cluster: hadron
+  streams:
+    pub: ["events"]
+    sub: ["events"]

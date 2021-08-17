@@ -1,4 +1,5 @@
-name: hadron
-version: 0.1.0
+name: hadron-operator
+version: 0.3.0
 apiVersion: v2
-description: The Hadron distributed event streaming, event coordination & messaging platform.
+appVersion: 0.1.0
+description: Hadron is the Kubernetes native and CloudEvents native distributed event streaming, event orchestration & messaging platform.

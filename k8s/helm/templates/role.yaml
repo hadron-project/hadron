@@ -1,0 +1,33 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hadron-operator
+  namespace: {{.Values.namespace | default .Release.Namespace}}
+  labels:
+    app: hadron-operator
+    app.kubernetes.io/name: hadron-operator
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+rules:
+# This rule allows for management of the Hadron cluster lease & all Hadron resources.
+- apiGroups: ["coordination.k8s.io", "hadron.rs"]
+  resources:
+    - "streams"
+    - "streams/status"
+    - "pipelines"
+    - "pipelines/status"
+    - "tokens"
+    - "tokens/status"
+    - "leases"
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# This rule allows for CRUD on StatefulSets which corresponding to streams.
+- apiGroups: ["apps"]
+  resources: ["statefulsets", "statefulsets/status"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# This rule allows for CRUD on secrets, which are used to store
+# Hadron JWTs, corresponding to the Token CR.
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

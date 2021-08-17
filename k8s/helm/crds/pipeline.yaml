@@ -1,0 +1,94 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: pipelines.hadron.rs
+spec:
+  group: hadron.rs
+  names:
+    categories: []
+    kind: Pipeline
+    plural: pipelines
+    shortNames:
+      - pipeline
+    singular: pipeline
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: ".spec.cluster"
+          name: Cluster
+          type: string
+        - jsonPath: ".spec.sourceStream"
+          name: Source Stream
+          type: string
+        - jsonPath: ".spec.triggers"
+          name: Triggers
+          type: string
+        - jsonPath: ".spec.maxParallel"
+          name: Max Parallel
+          type: number
+      name: v1
+      schema:
+        openAPIV3Schema:
+          description: "Auto-generated derived type for PipelineSpec via `CustomResource`"
+          properties:
+            spec:
+              description: CRD spec for the Pipeline resource.
+              properties:
+                cluster:
+                  description: The cluster to which this token belongs.
+                  type: string
+                maxParallel:
+                  description: The maximum number of pipeline instances which may be executed in parallel per partition.
+                  format: uint32
+                  minimum: 0.0
+                  type: integer
+                sourceStream:
+                  description: The name of the stream which will trigger this pipeline.
+                  type: string
+                stages:
+                  description: The stages of this pipeline.
+                  items:
+                    description: The definition of a Pipeline stage.
+                    properties:
+                      after:
+                        default: []
+                        description: All stages which must complete before this stage may be started.
+                        items:
+                          type: string
+                        type: array
+                      dependencies:
+                        default: []
+                        description: All inputs (previous stages) which this stage depends upon in order to be started.
+                        items:
+                          type: string
+                        type: array
+                      name:
+                        description: "The name of this pipeline stage, which is unique per pipeline."
+                        type: string
+                    required:
+                      - name
+                    type: object
+                  type: array
+                triggers:
+                  default: ""
+                  description: "Event type matchers which will trigger this pipeline.\n\nValues are expressed as a comma-separated list. An empty string will match any event type."
+                  type: string
+              required:
+                - cluster
+                - maxParallel
+                - sourceStream
+                - stages
+              type: object
+            status:
+              description: CRD status object.
+              nullable: true
+              type: object
+          required:
+            - spec
+          title: PipelineCRD
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

@@ -1,0 +1,24 @@
+[package]
+authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
+edition = "2018"
+name = "hadron-cli"
+version = "0.1.0"
+description = "The Hadron CLI."
+
+[dependencies]
+anyhow = "1"
+base64 = "0.13.0"
+bytes = "1"
+futures = "0.3"
+hadron = { version = "0.1.0", path = "../lib/rust" }
+lazy_static = "1"
+regex = "1"
+structopt = "0.3"
+structopt-derive = "0.4"
+tokio = { version = "1", default-features = false, features = [
+    # See https://docs.rs/tokio/1.4.0/tokio/#feature-flags
+    "rt", "io-util", "net", "time", "macros", "sync", "signal", "fs",
+]}
+tokio-stream = { version = "0.1", default-features = false, features = ["time", "net", "signal", "sync"] }
+tracing = { version = "0.1", features = ["attributes"] }
+tracing-subscriber = "0.2"
