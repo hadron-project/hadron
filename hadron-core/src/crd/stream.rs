@@ -52,7 +52,7 @@ pub struct StreamSpec {
     ///
     /// Normally this will should not be set, and the Operator will ensure that the most recent
     /// semver compatible image is being used.
-    pub image: Option<String>,
+    pub image: String,
 
     /// The volume size to use for the Stream's backing StatefulSet PVCs.
     pub pvc_volume_size: String,
@@ -66,9 +66,4 @@ pub struct StreamSpec {
 
 /// CRD status object.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
-pub struct StreamStatus {
-    /// The last image to have been used by the Stream's backing StatefulSet.
-    ///
-    /// This helps to guide automated upgrades and determine semver compatibility.
-    pub last_used_image: Option<String>,
-}
+pub struct StreamStatus {}

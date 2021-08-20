@@ -15,15 +15,21 @@ spec:
   scope: Namespaced
   versions:
     - additionalPrinterColumns:
+        - jsonPath: ".spec.cluster_name"
+          name: Cluster Name
+          type: string
         - jsonPath: ".spec.partitions"
           name: Partitions
           type: number
         - jsonPath: ".spec.ttl"
           name: TTL
           type: number
+        - jsonPath: ".spec.pvc_volume_size"
+          name: PVC Volume Size
+          type: string
         - jsonPath: ".spec.pvc_access_modes"
           name: PVC Access Modes
-          type: "[]string"
+          type: string
         - jsonPath: ".spec.pvc_storage_class"
           name: PVC Storage Class
           type: string
@@ -35,23 +41,30 @@ spec:
             spec:
               description: CRD spec for the Stream resource.
               properties:
+                cluster_name:
+                  description: "The CloudEvents root `source` of all events of this cluster.\n\nThis value is used as the prefix of the `source` field of all events published to this stream, formatted as `{cluster_name}/{stream}/{partition}`.\n\nThis value can be re-used for any number of streams."
+                  type: string
+                image:
+                  description: "Force an exact image to be used for the backing StatefulSet.\n\nNormally this will should not be set, and the Operator will ensure that the most recent semver compatible image is being used."
+                  type: string
                 partitions:
                   description: "The number of partitions to be created for this stream.\n\nThis value can be dynamically scaled up and down and directly corresponds to the number of pods in the corresponding StatefulSet. Scaling down the number of partitions will cause the data of the removed partitions to be lost. Use with care."
                   format: uint8
                   minimum: 0.0
                   type: integer
                 pvc_access_modes:
-                  description: "The access modes to use for the Stream's backing StatefulSet PVC."
+                  description: "The access modes to use for the Stream's backing StatefulSet PVCs."
                   items:
                     type: string
                   nullable: true
                   type: array
                 pvc_storage_class:
-                  description: "The storage class to use for the Stream's backing StatefulSet PVC."
-                  items:
-                    type: string
+                  description: "The storage class to use for the Stream's backing StatefulSet PVCs."
                   nullable: true
-                  type: array
+                  type: string
+                pvc_volume_size:
+                  description: "The volume size to use for the Stream's backing StatefulSet PVCs."
+                  type: string
                 ttl:
                   default: 0
                   description: "An optional TTL in seconds specifying how long records are to be kept on the stream.\n\nIf `0`, then records will stay on the stream forever. Modifying this value will require a restart of the stream's StatefulSet."
@@ -59,7 +72,10 @@ spec:
                   minimum: 0.0
                   type: integer
               required:
+                - cluster_name
+                - image
                 - partitions
+                - pvc_volume_size
               type: object
             status:
               description: CRD status object.

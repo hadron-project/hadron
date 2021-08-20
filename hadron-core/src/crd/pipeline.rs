@@ -20,14 +20,11 @@ pub type Pipeline = PipelineCRD; // Mostly to resolve a Rust Analyzer issue.
     derive = "PartialEq",
     apiextensions = "v1",
     shortname = "pipeline",
-    printcolumn = r#"{"name":"Cluster","type":"string","jsonPath":".spec.cluster"}"#,
     printcolumn = r#"{"name":"Source Stream","type":"string","jsonPath":".spec.sourceStream"}"#,
     printcolumn = r#"{"name":"Triggers","type":"string","jsonPath":".spec.triggers"}"#,
     printcolumn = r#"{"name":"Max Parallel","type":"number","jsonPath":".spec.maxParallel"}"#
 )]
 pub struct PipelineSpec {
-    /// The cluster to which this token belongs.
-    pub cluster: String,
     /// The name of the stream which will trigger this pipeline.
     #[serde(rename = "sourceStream")]
     pub source_stream: String,

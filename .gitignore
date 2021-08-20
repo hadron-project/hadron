@@ -1,7 +1,7 @@
 # File Ignores #
 
 # Directory Ignores #
+.artifacts
+.git
 **/target
-target
 guide/book
-hadrond/.artifacts

@@ -25,7 +25,7 @@ pub struct TokensWatcher {
     /// K8s client.
     client: Client,
     /// Runtime config.
-    _config: Arc<Config>,
+    config: Arc<Config>,
     /// A channel used for triggering graceful shutdown.
     shutdown: BroadcastStream<()>,
 
@@ -34,10 +34,10 @@ pub struct TokensWatcher {
 
 impl TokensWatcher {
     /// Create a new instance.
-    pub fn new(client: Client, _config: Arc<Config>, shutdown: broadcast::Receiver<()>) -> (Self, TokensMap) {
+    pub fn new(client: Client, config: Arc<Config>, shutdown: broadcast::Receiver<()>) -> (Self, TokensMap) {
         let shutdown = BroadcastStream::new(shutdown);
         let tokens: TokensMap = Default::default();
-        (Self { client, _config, shutdown, tokens: tokens.clone() }, tokens)
+        (Self { client, config, shutdown, tokens: tokens.clone() }, tokens)
     }
 
     pub fn spawn(self) -> JoinHandle<Result<()>> {
@@ -45,7 +45,7 @@ impl TokensWatcher {
     }
 
     async fn run(mut self) -> Result<()> {
-        let tokens_api: Api<Token> = Api::all(self.client.clone());
+        let tokens_api: Api<Token> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let stream = watcher(tokens_api, ListParams::default());
         tokio::pin!(stream);
 

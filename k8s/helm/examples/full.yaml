@@ -4,8 +4,13 @@ metadata:
   name: events
   namespace: default
 spec:
+  cluster_name: "example.hadron.rs"
   partitions: 3
   ttl: 0
+  image: "ghcr.io/hadron-project/hadron/hadron-stream:latest"
+  pvc_volume_size: "5Gi"
+  pvc_access_modes:
+  - ReadWriteOnce
 
 ---
 apiVersion: hadron.rs/v1
@@ -14,7 +19,6 @@ metadata:
   name: service-creation
   namespace: default
 spec:
-  cluster: hadron
   sourceStream: events
   triggers: ""
   maxParallel: 50
@@ -41,7 +45,6 @@ metadata:
   name: hadron-full-access
   namespace: default
 spec:
-  cluster: hadron
   all: true
 
 ---
@@ -51,7 +54,6 @@ metadata:
   name: hadron-read-only
   namespace: default
 spec:
-  cluster: hadron
   streams:
     pub: []
     sub: ["events"]
@@ -63,7 +65,6 @@ metadata:
   name: hadron-read-write
   namespace: default
 spec:
-  cluster: hadron
   streams:
     pub: ["events"]
     sub: ["events"]

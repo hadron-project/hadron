@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use k8s_openapi::api::apps::v1::StatefulSet;
-use k8s_openapi::api::core::v1::Secret;
+use k8s_openapi::api::core::v1::{Secret, Service};
 use kube::Resource;
 use kube_runtime::watcher::Event;
 
@@ -128,6 +128,67 @@ impl Controller {
     async fn secret_restarted(&mut self, secrets: Vec<Secret>) {
         for secret in secrets {
             self.secret_applied(secret).await;
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Service Events ////////////////////////////////////////////////////////////
+impl Controller {
+    /// Handle `Service` watcher event.
+    #[tracing::instrument(level = "debug", skip(self, res))]
+    pub(super) async fn handle_service_event(&mut self, res: EventResult<Service>) {
+        let event = match res {
+            Ok(event) => event,
+            Err(err) => {
+                tracing::error!(error = ?err, "error from Service k8s watcher");
+                let _ = tokio::time::sleep(Duration::from_secs(10)).await;
+                return;
+            }
+        };
+        match event {
+            Event::Applied(obj) => self.service_applied(obj).await,
+            Event::Deleted(obj) => self.service_deleted(obj).await,
+            Event::Restarted(objs) => self.service_restarted(objs).await,
+        }
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, service))]
+    async fn service_applied(&mut self, service: Service) {
+        let name_str = match service.meta().name.as_ref() {
+            Some(name_str) => name_str,
+            None => return, // Not actually possible as K8s requires name.
+        };
+        let name = match self.services.get_key_value(name_str) {
+            Some((key, old)) => {
+                if old == &service {
+                    return;
+                }
+                Arc::clone(key) // No additional alloc.
+            }
+            None => Arc::new(name_str.clone()),
+        };
+        self.services.insert(name.clone(), service);
+        self.spawn_scheduler_task_pub(SchedulerTask::ServiceUpdated(name));
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, service))]
+    async fn service_deleted(&mut self, service: Service) {
+        let name_str = match service.meta().name.as_ref() {
+            Some(name_str) => name_str,
+            None => return, // Not actually possible as K8s requires name.
+        };
+        let (name, _service) = match self.services.remove_entry(name_str) {
+            Some((name, service)) => (name, service),
+            None => return,
+        };
+        self.spawn_scheduler_task_pub(SchedulerTask::ServiceDeleted(name, service));
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, services))]
+    async fn service_restarted(&mut self, services: Vec<Service>) {
+        for service in services {
+            self.service_applied(service).await;
         }
     }
 }

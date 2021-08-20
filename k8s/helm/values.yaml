@@ -51,7 +51,7 @@ container:
   ## Operator env vars.
   env:
     ## Logging configuration.
-    logging: "error,hadron-operator=trace"
+    logging: "error,hadron_operator=trace"
 
     ## K8s Leadership Config
     lease:
