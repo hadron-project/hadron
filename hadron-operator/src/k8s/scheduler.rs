@@ -15,6 +15,12 @@
 //! scheduler reacts to that data, and only makes updates according to that stream of data. Due to
 //! the properties of SSA described above, we are able to confidently publish updates to a resource
 //! and as long as the K8s API accepts the update, we know that our updates were the most up-to-date.
+//!
+//! ## Object Updates
+//! All scheduler tasks are broken up into "updated" & "deleted" tasks. Deletion tasks are easy.
+//! Updated tasks on the other hand can be a bit tricky. In order to ensure that we do not have
+//! stale data which needs to be deleted (for cases where the corresponding deleted event has been
+//! missed), we check for the possibility of deletion being needed in all "updated" handlers.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -33,7 +39,7 @@ use kube::api::{Api, ObjectMeta, Patch, PatchParams};
 use kube::Resource;
 use tokio::time::timeout;
 
-use crate::k8s::coordination::LeaderState;
+use crate::k8s::LeaderState;
 use crate::k8s::{Controller, APP_NAME};
 use hadron_core::auth::TokenClaims;
 use hadron_core::crd::RequiredMetadata;
@@ -43,8 +49,6 @@ use hadron_core::crd::{Pipeline, Stream, Token};
 const SECRET_KEY_TOKEN: &str = "token";
 /// The default timeout to use for API calls.
 const API_TIMEOUT: Duration = Duration::from_secs(5);
-/// The timeout duration used before rescheduling a scheduler task.
-const RESCHEDULE_TIMEOUT: Duration = Duration::from_secs(2);
 /// The pod container name of the Hadron Stream.
 ///
 /// NOTE WELL: do not change the name of this container. It will cause breaking changes.
@@ -55,7 +59,7 @@ const STREAM_DATA_PATH: &str = "/usr/local/hadron-stream/data";
 /// A scheduling task to be performed.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)] // Arcs vs PodInfo.
-pub(super) enum SchedulerTask {
+pub enum SchedulerTask {
     PipelineUpdated(Arc<String>),
     PipelineDeleted(Arc<String>, Pipeline),
     SecretUpdated(Arc<String>),
@@ -119,7 +123,8 @@ impl Controller {
     #[tracing::instrument(level = "debug", skip(self, _name))]
     async fn scheduler_secret_updated(&self, _name: Arc<String>) {
         tracing::debug!("handling scheduler secret updated");
-        // NOTE: nothing to do here currently.
+        // TODO: if this objects parent (Token) does not exist, then delete this object.
+
         // If a secret enters into a bad state due to being manually manipulated, then delete it,
         // and the operator will re-create it as needed.
     }
@@ -132,11 +137,7 @@ impl Controller {
         }
         if let Err(err) = self.ensure_token_secret(name.clone()).await {
             tracing::error!(error = ?err, name = %name, "error creating backing secret for token");
-            let tx = self.scheduler_tasks_tx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
-                let _res = tx.send(SchedulerTask::SecretDeleted(name, secret)).await;
-            });
+            self.spawn_scheduler_task(SchedulerTask::SecretDeleted(name, secret), true);
         }
     }
 }
@@ -147,13 +148,14 @@ impl Controller {
     #[tracing::instrument(level = "debug", skip(self, _name))]
     async fn scheduler_service_updated(&self, _name: Arc<String>) {
         tracing::debug!("handling scheduler service updated");
-        // NOTE: nothing to do here currently.
+        // TODO: if this objects parent (Stream/Stream Replicas) does not exist, then delete this object.
+
         // If a service enters into a bad state due to being manually manipulated, then delete it,
         // and the operator will re-create it as needed.
     }
 
-    #[tracing::instrument(level = "debug", skip(self, name, service))]
-    async fn scheduler_service_deleted(&self, name: Arc<String>, service: Service) {
+    #[tracing::instrument(level = "debug", skip(self, _name, _service))]
+    async fn scheduler_service_deleted(&self, _name: Arc<String>, _service: Service) {
         tracing::debug!("handling scheduler service deleted");
         // TODO:
         // - check the service's labels to see if it corresponds to a STS or a STS pod.
@@ -165,9 +167,10 @@ impl Controller {
 //////////////////////////////////////////////////////////////////////////////
 // StatefulSet Reconciliation ////////////////////////////////////////////////
 impl Controller {
-    #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn scheduler_sts_updated(&self, name: Arc<String>) {
+    #[tracing::instrument(level = "debug", skip(self, _name))]
+    async fn scheduler_sts_updated(&self, _name: Arc<String>) {
         tracing::debug!("handling scheduler statefulset updated");
+        // TODO: if this objects parent (Stream) does not exist, then delete this object.
         // TODO: create any needed services, ingresses &c for this object.
     }
 
@@ -205,11 +208,7 @@ impl Controller {
         // Handle error conditions, and emit a retry if needed.
         if let Err(err) = res {
             tracing::error!(error = ?err, stream = %name, "error reconciling updated stream");
-            let tx = self.scheduler_tasks_tx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
-                let _res = tx.send(SchedulerTask::StreamUpdated(name)).await;
-            });
+            self.spawn_scheduler_task(SchedulerTask::StreamUpdated(name), true);
         }
         // NOTE: the creation/update of the StatefulSet above will trigger reconciliation events
         // which will be used to index the newly created object and to create the various
@@ -221,11 +220,7 @@ impl Controller {
         tracing::debug!("handling scheduler stream deleted");
         if let Err(err) = self.delete_statefulset(name.as_str()).await {
             tracing::error!(error = ?err, stream = %name, "error deleting backing StatefulSet for Stream");
-            let tx = self.scheduler_tasks_tx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
-                let _res = tx.send(SchedulerTask::StreamDeleted(name, stream)).await;
-            });
+            self.spawn_scheduler_task(SchedulerTask::StreamDeleted(name, stream), true);
         }
     }
 
@@ -463,11 +458,7 @@ impl Controller {
         if self.secrets.get(&name).is_none() {
             if let Err(err) = self.ensure_token_secret(name.clone()).await {
                 tracing::error!(error = ?err, "error while ensuring backing secret for token");
-                let tx = self.scheduler_tasks_tx.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
-                    let _res = tx.send(SchedulerTask::TokenUpdated(name)).await;
-                });
+                self.spawn_scheduler_task(SchedulerTask::TokenUpdated(name), true);
             }
         }
     }
@@ -477,11 +468,7 @@ impl Controller {
         tracing::debug!("handling scheduler token deleted");
         if let Err(err) = self.delete_token_secret(name.clone()).await {
             tracing::error!(error = ?err, "error while deleting backing secret for token");
-            let tx = self.scheduler_tasks_tx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
-                let _res = tx.send(SchedulerTask::TokenDeleted(name, token)).await;
-            });
+            self.spawn_scheduler_task(SchedulerTask::TokenDeleted(name, token), true);
         }
     }
 

@@ -9,18 +9,15 @@
 //! healthchecking cluster members and detecting partition leadership failures. When a partition
 //! leader fails, the cluster leader will assign a new leader for the partition.
 
-#![allow(unused_variables)]
-#![allow(dead_code)]
-
 mod coordination;
 mod data;
 mod scheduler;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
-use bytes::BytesMut;
 use futures::prelude::*;
 use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::coordination::v1::{Lease, LeaseSpec};
@@ -39,7 +36,10 @@ use crate::k8s::coordination::{LeaderElectionConfig, LeaderElector, LeaderState}
 use crate::k8s::scheduler::SchedulerTask;
 use hadron_core::crd::{Pipeline, Stream, Token};
 
+/// The app name used by the operator.
 const APP_NAME: &str = "hadron-operator";
+/// The timeout duration used before rescheduling a scheduler task.
+const RESCHEDULE_TIMEOUT: Duration = Duration::from_secs(5);
 
 type EventResult<T> = std::result::Result<Event<T>, WatcherError>;
 
@@ -82,15 +82,12 @@ pub struct Controller {
     secrets: HashMap<Arc<String>, Secret>,
     /// All known K8s services corresponding to a StatefulSet backing a Stream and its pods.
     services: HashMap<Arc<String>, Service>,
-
-    /// A general purpose reusable bytes buffer, safe for concurrent use.
-    buf: BytesMut,
 }
 
 impl Controller {
     /// Create a new instance.
     pub fn new(client: Client, config: Arc<Config>, shutdown_tx: broadcast::Sender<()>) -> Result<Self> {
-        let lease_name = Self::generate_lease_name(&config);
+        let lease_name = Self::generate_lease_name();
         let elect_conf = LeaderElectionConfig::new(
             &config.namespace,
             &lease_name,
@@ -117,7 +114,6 @@ impl Controller {
             tokens: Default::default(),
             secrets: Default::default(),
             services: Default::default(),
-            buf: BytesMut::with_capacity(2000),
         })
     }
 
@@ -173,13 +169,28 @@ impl Controller {
             tokio::select! {
                 Some(k8s_event_res) = statefulsets_watcher.next() => self.handle_sts_event(k8s_event_res).await,
                 Some(k8s_event_res) = pipelines_watcher.next() => self.handle_pipeline_event(k8s_event_res).await,
-                Some(k8s_event_res) = services_watcher.next() => (), // TODO: wire this up.
+                Some(k8s_event_res) = services_watcher.next() => self.handle_service_event(k8s_event_res).await,
                 Some(k8s_event_res) = streams_watcher.next() => self.handle_stream_event(k8s_event_res).await,
                 Some(k8s_event_res) = secrets_watcher.next() => self.handle_secret_event(k8s_event_res).await,
                 Some(k8s_event_res) = tokens_watcher.next() => self.handle_token_event(k8s_event_res).await,
                 Some(new_leader_state) = state_rx.next() => {
+                    // If just becoming a leader, then perform a full data reconciliation to ensure
+                    // there are no outstanding tasks which need to be performed since the last leader.
+                    //
+                    // NOTE WELL: this routine will block this controller from making progress elsewhere.
+                    // This is required as an up-to-date view of the system data is required.
                     tracing::debug!(state = ?new_leader_state, "new leader state detected");
                     self.leader_state = Some(new_leader_state.clone());
+                    if matches!(&self.leader_state, Some(LeaderState::Leading)) {
+                        loop {
+                            if let Err(err) = self.full_data_reconciliation().await {
+                                tracing::error!(error = ?err, "error performing full data reconciliation");
+                                tokio::time::sleep(Duration::from_secs(5)).await;
+                                continue;
+                            }
+                            break;
+                        }
+                    }
                 }
                 Some(scheduler_task) = self.scheduler_tasks_rx.next() => {
                     let state = { state_rx_raw.borrow().clone() }; // Ensure borrow ref doesn't leak read lock.
@@ -198,6 +209,54 @@ impl Controller {
         Ok(())
     }
 
+    /// Fetch all needed data from the backing K8s cluster.
+    #[tracing::instrument(level = "debug", skip(self))]
+    async fn full_data_reconciliation(&mut self) -> Result<()> {
+        let params_spec = ListParams::default();
+        let api: Api<Pipeline> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let pipelines = api.list(&params_spec).await.context("error fetching pipelines")?;
+        let api: Api<Stream> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let streams = api.list(&params_spec).await.context("error fetching streams")?;
+        let api: Api<Token> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let tokens = api.list(&params_spec).await.context("error fetching tokens")?;
+
+        let params_labels = self.list_params_cluster_selector_labels();
+        let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let statefulsets = api.list(&params_labels).await.context("error fetching statefulsets")?;
+        let api: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let secrets = api.list(&params_labels).await.context("error fetching secrets")?;
+        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let services = api.list(&params_labels).await.context("error fetching services")?;
+
+        self.handle_pipeline_event(Ok(Event::Restarted(pipelines.items))).await;
+        self.handle_stream_event(Ok(Event::Restarted(streams.items))).await;
+        self.handle_token_event(Ok(Event::Restarted(tokens.items))).await;
+        self.handle_sts_event(Ok(Event::Restarted(statefulsets.items))).await;
+        self.handle_secret_event(Ok(Event::Restarted(secrets.items))).await;
+        self.handle_service_event(Ok(Event::Restarted(services.items))).await;
+
+        Ok(())
+    }
+
+    /// Spawn a task which emits a new scheduler tasks.
+    ///
+    /// This indirection is used to ensure that we don't use an unlimited amount of memory with an
+    /// unbounded queue, and also so that we do not block the controller from making progress and
+    /// dead-locking when we hit the scheduler task queue cap.
+    ///
+    /// The runtime will stack up potentially lots of tasks, and memory will be consumed that way,
+    /// but ultimately the controller will be able to begin processing scheduler tasks and will
+    /// drain the scheduler queue and ultimately relieve the memory pressure of the tasks.
+    fn spawn_scheduler_task(&self, task: SchedulerTask, is_retry: bool) {
+        let tx = self.scheduler_tasks_tx.clone();
+        tokio::spawn(async move {
+            if is_retry {
+                tokio::time::sleep(RESCHEDULE_TIMEOUT).await;
+            }
+            let _res = tx.send(task).await;
+        });
+    }
+
     /// Create a list params object which selects only objects which matching Hadron labels.
     fn list_params_cluster_selector_labels(&self) -> ListParams {
         ListParams {
@@ -207,7 +266,7 @@ impl Controller {
     }
 
     /// Generate the name to be used for the lease.
-    fn generate_lease_name(config: &Config) -> String {
+    fn generate_lease_name() -> String {
         APP_NAME.into()
     }
 
@@ -216,7 +275,7 @@ impl Controller {
         let now = chrono::Utc::now();
         Lease {
             metadata: ObjectMeta {
-                name: Some(Self::generate_lease_name(&config)),
+                name: Some(Self::generate_lease_name()),
                 namespace: Some(config.namespace.clone()),
                 labels: Some(btreemap! {
                     "app".into() => "hadron".into(),
