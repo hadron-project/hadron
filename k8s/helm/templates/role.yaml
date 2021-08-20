@@ -26,7 +26,7 @@ rules:
 # This rule allows for CRUD on secrets, which are used to store
 # Hadron JWTs, corresponding to the Token CR.
 - apiGroups: [""]
-  resources: ["secrets"]
+  resources: ["secrets", "services"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
 ---

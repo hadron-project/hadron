@@ -1,3 +1,15 @@
+//! Data ingest logic for the controller.
+//!
+//! ## Important Implementation Notes
+//! - When watcher streams restart, it means we could have stale data of objects which have been
+//! deleted.
+//! - As such, we diff the current data with the new data, and emit deletion events for stale data.
+//! - We do not attempt to reduce scheduler load by checking the equality of data as it comes in.
+//! This is because when a node is not the leader, it accepts data as is, and does not perform any
+//! reconciliation. In cases where the cluster leader was down, this means we will have a build-up
+//! of unreconciled data. Thus, when a leader comes to power, it will fetch a full update of data,
+//! which ultimately will cause all objects to be fully reconciled.
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,16 +50,11 @@ impl Controller {
             None => return, // Not actually possible as K8s requires name.
         };
         let name = match self.pipelines.get_key_value(name_str) {
-            Some((key, old)) => {
-                if old == &pipeline {
-                    return;
-                }
-                Arc::clone(key) // No additional alloc.
-            }
+            Some((key, _old)) => Arc::clone(key), // No additional alloc.
             None => Arc::new(name_str.clone()),
         };
         self.pipelines.insert(name.clone(), pipeline);
-        self.spawn_scheduler_task_pub(SchedulerTask::PipelineUpdated(name));
+        self.spawn_scheduler_task(SchedulerTask::PipelineUpdated(name), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, pipeline))]
@@ -60,13 +67,19 @@ impl Controller {
             Some((name, pipeline)) => (name, pipeline),
             None => return,
         };
-        self.spawn_scheduler_task_pub(SchedulerTask::PipelineDeleted(name, pipeline));
+        self.spawn_scheduler_task(SchedulerTask::PipelineDeleted(name, pipeline), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, pipelines))]
     async fn pipeline_restarted(&mut self, pipelines: Vec<Pipeline>) {
+        let old = self.pipelines.clone();
         for pipeline in pipelines {
             self.pipeline_applied(pipeline).await;
+        }
+        for (name, pipeline) in old {
+            if !self.pipelines.contains_key(name.as_ref()) {
+                self.pipeline_deleted(pipeline).await;
+            }
         }
     }
 }
@@ -99,16 +112,11 @@ impl Controller {
             None => return, // Not actually possible as K8s requires name.
         };
         let name = match self.secrets.get_key_value(name_str) {
-            Some((key, old)) => {
-                if old == &secret {
-                    return;
-                }
-                Arc::clone(key) // No additional alloc.
-            }
+            Some((key, _old)) => Arc::clone(key), // No additional alloc.
             None => Arc::new(name_str.clone()),
         };
         self.secrets.insert(name.clone(), secret);
-        self.spawn_scheduler_task_pub(SchedulerTask::SecretUpdated(name));
+        self.spawn_scheduler_task(SchedulerTask::SecretUpdated(name), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, secret))]
@@ -121,13 +129,19 @@ impl Controller {
             Some((name, secret)) => (name, secret),
             None => return,
         };
-        self.spawn_scheduler_task_pub(SchedulerTask::SecretDeleted(name, secret));
+        self.spawn_scheduler_task(SchedulerTask::SecretDeleted(name, secret), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, secrets))]
     async fn secret_restarted(&mut self, secrets: Vec<Secret>) {
+        let old = self.secrets.clone();
         for secret in secrets {
             self.secret_applied(secret).await;
+        }
+        for (name, secret) in old {
+            if !self.secrets.contains_key(name.as_ref()) {
+                self.secret_deleted(secret).await;
+            }
         }
     }
 }
@@ -160,16 +174,11 @@ impl Controller {
             None => return, // Not actually possible as K8s requires name.
         };
         let name = match self.services.get_key_value(name_str) {
-            Some((key, old)) => {
-                if old == &service {
-                    return;
-                }
-                Arc::clone(key) // No additional alloc.
-            }
+            Some((key, _old)) => Arc::clone(key), // No additional alloc.
             None => Arc::new(name_str.clone()),
         };
         self.services.insert(name.clone(), service);
-        self.spawn_scheduler_task_pub(SchedulerTask::ServiceUpdated(name));
+        self.spawn_scheduler_task(SchedulerTask::ServiceUpdated(name), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, service))]
@@ -182,13 +191,19 @@ impl Controller {
             Some((name, service)) => (name, service),
             None => return,
         };
-        self.spawn_scheduler_task_pub(SchedulerTask::ServiceDeleted(name, service));
+        self.spawn_scheduler_task(SchedulerTask::ServiceDeleted(name, service), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, services))]
     async fn service_restarted(&mut self, services: Vec<Service>) {
+        let old = self.services.clone();
         for service in services {
             self.service_applied(service).await;
+        }
+        for (name, service) in old {
+            if !self.services.contains_key(name.as_ref()) {
+                self.service_deleted(service).await;
+            }
         }
     }
 }
@@ -221,16 +236,11 @@ impl Controller {
             None => return, // Not actually possible as K8s requires name.
         };
         let name = match self.statefulsets.get_key_value(name_str) {
-            Some((key, old)) => {
-                if old == &set {
-                    return;
-                }
-                Arc::clone(key) // No additional alloc.
-            }
+            Some((key, _old)) => Arc::clone(key), // No additional alloc.
             None => Arc::new(name_str.clone()),
         };
         self.statefulsets.insert(name.clone(), set);
-        self.spawn_scheduler_task_pub(SchedulerTask::StatefulSetUpdated(name));
+        self.spawn_scheduler_task(SchedulerTask::StatefulSetUpdated(name), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, set))]
@@ -243,13 +253,19 @@ impl Controller {
             Some((name, set)) => (name, set),
             None => return,
         };
-        self.spawn_scheduler_task_pub(SchedulerTask::StatefulSetDeleted(name, set));
+        self.spawn_scheduler_task(SchedulerTask::StatefulSetDeleted(name, set), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, sets))]
     async fn sts_restarted(&mut self, sets: Vec<StatefulSet>) {
+        let old = self.statefulsets.clone();
         for set in sets {
             self.sts_applied(set).await;
+        }
+        for (name, sts) in old {
+            if !self.statefulsets.contains_key(name.as_ref()) {
+                self.sts_deleted(sts).await;
+            }
         }
     }
 }
@@ -282,16 +298,11 @@ impl Controller {
             None => return, // Not actually possible as K8s requires name.
         };
         let name = match self.streams.get_key_value(name_str) {
-            Some((key, old)) => {
-                if old == &stream {
-                    return;
-                }
-                Arc::clone(key) // No additional alloc.
-            }
+            Some((key, _old)) => Arc::clone(key), // No additional alloc.
             None => Arc::new(name_str.clone()),
         };
         self.streams.insert(name.clone(), stream);
-        self.spawn_scheduler_task_pub(SchedulerTask::StreamUpdated(name));
+        self.spawn_scheduler_task(SchedulerTask::StreamUpdated(name), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, stream))]
@@ -304,13 +315,19 @@ impl Controller {
             Some((name, stream)) => (name, stream),
             None => return,
         };
-        self.spawn_scheduler_task_pub(SchedulerTask::StreamDeleted(name, stream));
+        self.spawn_scheduler_task(SchedulerTask::StreamDeleted(name, stream), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, streams))]
     async fn stream_restarted(&mut self, streams: Vec<Stream>) {
+        let old = self.streams.clone();
         for stream in streams {
             self.stream_applied(stream).await;
+        }
+        for (name, stream) in old {
+            if !self.streams.contains_key(name.as_ref()) {
+                self.stream_deleted(stream).await;
+            }
         }
     }
 }
@@ -343,16 +360,11 @@ impl Controller {
             None => return, // Not actually possible as K8s requires name.
         };
         let name = match self.tokens.get_key_value(name_str) {
-            Some((key, old)) => {
-                if old == &token {
-                    return;
-                }
-                Arc::clone(key) // No additional alloc.
-            }
+            Some((key, _old)) => Arc::clone(key), // No additional alloc.
             None => Arc::new(name_str.clone()),
         };
         self.tokens.insert(name.clone(), token);
-        self.spawn_scheduler_task_pub(SchedulerTask::TokenUpdated(name));
+        self.spawn_scheduler_task(SchedulerTask::TokenUpdated(name), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, token))]
@@ -365,33 +377,19 @@ impl Controller {
             Some((name, token)) => (name, token),
             None => return,
         };
-        self.spawn_scheduler_task_pub(SchedulerTask::TokenDeleted(name, token));
+        self.spawn_scheduler_task(SchedulerTask::TokenDeleted(name, token), false);
     }
 
     #[tracing::instrument(level = "debug", skip(self, tokens))]
     async fn token_restarted(&mut self, tokens: Vec<Token>) {
+        let old = self.tokens.clone();
         for token in tokens {
             self.token_applied(token).await;
         }
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// Utility Methods ///////////////////////////////////////////////////////////
-impl Controller {
-    /// Spawn a task which emits a new scheduler tasks.
-    ///
-    /// This indirection is used to ensure that we don't use an unlimited amount of memory with an
-    /// unbounded queue, and also so that we do not block the controller from making progress and
-    /// dead-locking when we hit the scheduler task queue cap.
-    ///
-    /// The runtime will stack up potentially lots of tasks, and memory will be consumed that way,
-    /// but ultimately the controller will be able to begin processing scheduler tasks and will
-    /// drain the scheduler queue and ultimately relieve the memory pressure of the tasks.
-    fn spawn_scheduler_task_pub(&self, task: SchedulerTask) {
-        let tx = self.scheduler_tasks_tx.clone();
-        tokio::spawn(async move {
-            let _res = tx.send(task).await;
-        });
+        for (name, token) in old {
+            if !self.tokens.contains_key(name.as_ref()) {
+                self.token_deleted(token).await;
+            }
+        }
     }
 }
