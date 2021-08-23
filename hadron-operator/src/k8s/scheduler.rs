@@ -31,10 +31,11 @@ use k8s_openapi::api::apps::v1::{StatefulSet, StatefulSetUpdateStrategy};
 use k8s_openapi::api::coordination::v1::Lease;
 use k8s_openapi::api::core::v1::{
     Container, ContainerPort, EnvVar, EnvVarSource, ObjectFieldSelector, PersistentVolumeClaim, PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec,
-    ResourceRequirements, Secret, Service, VolumeMount,
+    ResourceRequirements, Secret, Service, ServicePort, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
+use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::api::{Api, ObjectMeta, Patch, PatchParams};
 use kube::Resource;
 use tokio::time::timeout;
@@ -193,7 +194,8 @@ impl Controller {
         };
 
         // Check to see if we need to create a StatefulSet for this stream.
-        let res = if let Some(sts) = self.statefulsets.get(name.as_ref()) {
+        let mut needs_retry = false;
+        let sts_res = if let Some(sts) = self.statefulsets.get(name.as_ref()) {
             self.reconcile_stream_changes(stream, sts)
                 .await
                 .context("error reconciling Stream changes")
@@ -204,12 +206,27 @@ impl Controller {
                 .context("error creating new backing StatefulSet for Stream")
                 .map(|_sts| ())
         };
+        if let Err(err) = sts_res {
+            needs_retry = true;
+            tracing::error!(error = ?err, stream = %name, "error reconciling StatefulSet for updated Stream");
+        }
 
-        // Handle error conditions, and emit a retry if needed.
-        if let Err(err) = res {
-            tracing::error!(error = ?err, stream = %name, "error reconciling updated stream");
+        // Ensure the STS Service exists.
+        if let Err(err) = self.ensure_sts_service(&name, stream).await {
+            needs_retry = true;
+            tracing::error!(error = ?err, stream = %name, "error ensuring StatefulSet Service for updated Stream");
+        }
+        // Ensure the STS Services exist for StatefulSet pod replicas.
+        if let Err(err) = self.ensure_sts_pods_services(&name, stream).await {
+            needs_retry = true;
+            tracing::error!(error = ?err, stream = %name, "error ensuring StatefulSet Pod Services for updated Stream");
+        }
+
+        // Spawn a retry if needed.
+        if needs_retry {
             self.spawn_scheduler_task(SchedulerTask::StreamUpdated(name), true);
         }
+
         // NOTE: the creation/update of the StatefulSet above will trigger reconciliation events
         // which will be used to index the newly created object and to create the various
         // K8s Services and other such resources.
@@ -222,6 +239,124 @@ impl Controller {
             tracing::error!(error = ?err, stream = %name, "error deleting backing StatefulSet for Stream");
             self.spawn_scheduler_task(SchedulerTask::StreamDeleted(name, stream), true);
         }
+    }
+
+    /// Ensure the K8s Service exists for the given Stream's StatefulSet.
+    #[tracing::instrument(level = "debug", skip(self, name, stream))]
+    async fn ensure_sts_service(&self, name: &Arc<String>, stream: &Stream) -> Result<()> {
+        if let Some(_service) = self.services.get(name) {
+            return Ok(()); // No-op, service exists.
+        }
+
+        // Service does not exist in cache, so create it.
+        let service = self.build_sts_service(stream);
+        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        self.fence().await?;
+        timeout(API_TIMEOUT, api.create(&Default::default(), &service))
+            .await
+            .context("timeout while creating frontend Service for Stream StatefulSet")?
+            .context("error creating frontend Service for Stream StatefulSet")?;
+        Ok(())
+    }
+
+    /// Build a frontend Service for a Stream's StatefulSet.
+    fn build_sts_service(&self, stream: &Stream) -> Service {
+        tracing::debug!(name = stream.name(), "creating a new service for stream statefulset");
+
+        // Build metadata.
+        let mut service = Service::default();
+        let labels = service.meta_mut().labels.get_or_insert_with(Default::default);
+        set_cannonical_labels(labels);
+        labels.insert("hadron.rs/statefulset".into(), stream.name().into());
+        service.meta_mut().namespace = self.config.namespace.clone().into();
+        service.meta_mut().name = stream.name().to_string().into();
+
+        // Build spec.
+        let spec = service.spec.get_or_insert_with(Default::default);
+        let selector = spec.selector.get_or_insert_with(Default::default);
+        set_cannonical_labels(selector);
+        selector.insert("hadron.rs/stream".into(), stream.name().into());
+        spec.ports = Some(vec![
+            ServicePort {
+                name: Some("client-port".into()),
+                port: 7000,
+                protocol: Some("TCP".into()),
+                target_port: Some(IntOrString::Int(7000)),
+                ..Default::default()
+            },
+            ServicePort {
+                name: Some("server-port".into()),
+                port: 7001,
+                protocol: Some("TCP".into()),
+                target_port: Some(IntOrString::Int(7001)),
+                ..Default::default()
+            },
+        ]);
+
+        service
+    }
+
+    /// Ensure the K8s Services exists for the Pods of the given Stream's StatefulSet.
+    #[tracing::instrument(level = "debug", skip(self, name, stream))]
+    async fn ensure_sts_pods_services(&self, name: &Arc<String>, stream: &Stream) -> Result<()> {
+        let mut pod_services = vec![];
+        for replica in 0..stream.spec.partitions {
+            let service_name = format!("{}-{}", name, replica);
+            if let Some(_service) = self.services.get(&service_name) {
+                continue;
+            }
+            let pod_service = self.build_sts_pod_service(stream, service_name);
+            pod_services.push(pod_service);
+        }
+
+        // Service does not exist in cache, so create it.
+        for service in pod_services {
+            let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
+            self.fence().await?;
+            timeout(API_TIMEOUT, api.create(&Default::default(), &service))
+                .await
+                .context("timeout while creating frontend Service for Stream StatefulSet Pod")?
+                .context("error creating frontend Service for Stream StatefulSet Pod")?;
+        }
+        Ok(())
+    }
+
+    /// Build a frontend Service for a Stream StatefulSet Pod.
+    fn build_sts_pod_service(&self, stream: &Stream, service_name: String) -> Service {
+        tracing::debug!(name = stream.name(), "creating a new service for stream statefulset pod");
+
+        // Build metadata.
+        let mut service = Service::default();
+        let labels = service.meta_mut().labels.get_or_insert_with(Default::default);
+        set_cannonical_labels(labels);
+        labels.insert("hadron.rs/statefulset".into(), stream.name().into());
+        service.meta_mut().namespace = self.config.namespace.clone().into();
+        service.meta_mut().name = Some(service_name.clone());
+
+        // Build spec.
+        let spec = service.spec.get_or_insert_with(Default::default);
+        let selector = spec.selector.get_or_insert_with(Default::default);
+        set_cannonical_labels(selector);
+        selector.insert("hadron.rs/stream".into(), stream.name().into());
+        selector.insert("statefulset.kubernetes.io/pod-name".into(), service_name);
+        spec.ports = Some(vec![
+            ServicePort {
+                name: Some("client-port".into()),
+                port: 7000,
+                protocol: Some("TCP".into()),
+                target_port: Some(IntOrString::Int(7000)),
+                ..Default::default()
+            },
+            ServicePort {
+                name: Some("server-port".into()),
+                port: 7001,
+                protocol: Some("TCP".into()),
+                target_port: Some(IntOrString::Int(7001)),
+                ..Default::default()
+            },
+        ]);
+
+        service
     }
 
     /// Delete the target StatefulSet.
@@ -252,8 +387,6 @@ impl Controller {
         if updated_sts.spec != sts.spec {
             let _updated_sts = self.patch_statefulset(updated_sts).await?;
         }
-
-        // TODO[services,ingress]: check if changes need to be applied to non STS items.
         Ok(())
     }
 
