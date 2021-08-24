@@ -64,6 +64,25 @@ spec:
                       - name
                     type: object
                   type: array
+                startPoint:
+                  description: The starting point of the source stream from which to begin this pipeline.
+                  properties:
+                    location:
+                      description: The start point location.
+                      enum:
+                        - beginning
+                        - latest
+                        - offset
+                      type: string
+                    offset:
+                      description: The offset of the source stream from which to start this pipeline.
+                      format: uint64
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                  required:
+                    - location
+                  type: object
                 triggers:
                   default: ""
                   description: "Event type matchers which will trigger this pipeline.\n\nValues are expressed as a comma-separated list. An empty string will match any event type."
@@ -72,6 +91,7 @@ spec:
                 - maxParallel
                 - sourceStream
                 - stages
+                - startPoint
               type: object
             status:
               description: CRD status object.

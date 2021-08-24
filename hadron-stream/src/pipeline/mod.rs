@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use bytes::BytesMut;
 use futures::stream::StreamExt;
 use prost::Message;
 use rand::seq::IteratorRandom;
@@ -23,15 +22,21 @@ use crate::database::Database;
 use crate::error::{RpcResult, ShutdownError, ShutdownResult, ERR_DB_FLUSH, ERR_ITER_FAILURE};
 use crate::futures::LivenessStream;
 use crate::grpc::{Event, PipelineSubscribeRequest, PipelineSubscribeRequestAction, PipelineSubscribeResponse};
-use crate::models::pipeline::{ActivePipelineInstance, PipelineInstance, PipelineStageOutput as PipelineStageOutputModel};
+use crate::models::pipeline::{ActivePipelineInstance, PipelineStageOutput as PipelineStageOutputModel};
 use crate::utils;
-use hadron_core::crd::{Pipeline, RequiredMetadata};
+use hadron_core::crd::{Pipeline, PipelineStartPointLocation, RequiredMetadata};
 
 /// A pipeline metadata key used to track the last offset of the source stream to have been
-/// processed by this pipeline.
+/// transformed into a pipeline instance for pipeline processing.
+///
+/// NOTE: this does not necessarily indicate that the pipeline for this key has actually been
+/// executed, but only that it has been prepared for execution.
 const KEY_LAST_OFFSET_PROCESSED: &str = "/meta/last_offset_processed";
 /// A metadata key prefix used for tracking active pipeline instances.
-const PREFIX_META_ACTIVE_INSTANCES: &str = "/meta/active_instances/";
+///
+/// Active instances are keyed as `/a/{offset}` where `{offset}` is the offset
+/// of the event from the source stream. The value is the offset.
+const PREFIX_META_ACTIVE_INSTANCES: &[u8; 3] = b"/a/";
 /// The key prefix under which pipeline instances are stored.
 const PREFIX_PIPELINE_INSTANCES: &[u8; 3] = b"/i/";
 /// The key prefix under which pipeline stage outputs are stored.
@@ -89,9 +94,6 @@ pub struct PipelineCtl {
     shutdown_rx: BroadcastStream<()>,
     /// A bool indicating that this controller has been descheduled and needs to shutdown.
     descheduled: bool,
-
-    /// A general purpose reusable bytes buffer, safe for concurrent use.
-    buf: BytesMut,
 }
 
 impl PipelineCtl {
@@ -103,8 +105,9 @@ impl PipelineCtl {
         let tree = db.get_pipeline_tree(pipeline.name()).await?;
         let tree_metadata = db.get_pipeline_tree_metadata(pipeline.name()).await?;
         let stream_tree = db.get_stream_tree().await?;
-        let (last_offset_processed, active_pipelines) = recover_pipeline_state(&tree, &tree_metadata, &stream_tree, pipeline.clone()).await?;
         let stream_offset = *stream_signal.borrow();
+        let (last_offset_processed, active_pipelines) =
+            recover_pipeline_state(&tree, &tree_metadata, &stream_tree, pipeline.clone(), stream_offset).await?;
 
         Ok(Self {
             _config: config,
@@ -126,7 +129,6 @@ impl PipelineCtl {
             shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
             shutdown_tx,
             descheduled: false,
-            buf: BytesMut::with_capacity(5000),
         })
     }
 
@@ -247,7 +249,7 @@ impl PipelineCtl {
         self.active_pipelines.extend(
             data.new_pipeline_instances
                 .into_iter()
-                .map(|inst| (inst.instance.id, inst)),
+                .map(|inst| (inst.root_event.id, inst)),
         );
 
         // Drive another delivery pass.
@@ -374,7 +376,7 @@ impl PipelineCtl {
                 // payload with all needed inputs.
                 let mut payload = PipelineSubscribeResponse {
                     stage: stage.name.clone(),
-                    offset: inst.instance.id,
+                    offset: inst.root_event.id,
                     inputs: Default::default(),
                 };
                 stage.dependencies.iter().for_each(|dep| {
@@ -400,7 +402,7 @@ impl PipelineCtl {
                 // Spawn off a task to await the response from the client.
                 inst.active_deliveries.insert(sub_group.stage_name.clone(), chan_id);
                 sub_group.active_channels.insert(chan_id, SubChannelState::OutForDelivery);
-                let (tx, group_name, id, offset) = (self.events_tx.clone(), sub_group.stage_name.clone(), chan_id, inst.instance.id);
+                let (tx, group_name, id, offset) = (self.events_tx.clone(), sub_group.stage_name.clone(), chan_id, inst.root_event.id);
                 tokio::spawn(async move {
                     // TODO: add optional timeouts here based on pipeline config.
                     let output = chan
@@ -551,28 +553,30 @@ impl PipelineCtl {
             self.tree_metadata.clone(),
             self.last_offset_processed,
             self.pipeline.clone(),
-            self.buf.clone(),
             self.events_tx.clone(),
         ));
     }
 
-    #[tracing::instrument(
-        level = "trace",
-        skip(tree_pipeline, tree_stream, tree_metadata, last_offset_processed, pipeline, buffer, tx)
-    )]
+    #[tracing::instrument(level = "trace", skip(tree_pipeline, tree_stream, tree_metadata, last_offset_processed, pipeline, tx))]
     async fn try_fetch_stream_data(
-        tree_pipeline: Tree, tree_stream: Tree, tree_metadata: Tree, last_offset_processed: u64, pipeline: Arc<Pipeline>, mut buffer: BytesMut,
+        tree_pipeline: Tree, tree_stream: Tree, tree_metadata: Tree, last_offset_processed: u64, pipeline: Arc<Pipeline>,
         tx: mpsc::Sender<PipelineCtlMsg>,
     ) {
         tracing::debug!("fetching stream data for pipeline");
         let data_res = Database::spawn_blocking(move || -> Result<FetchStreamRecords> {
             // Iterate over the records of the stream up to the maximum parallel allowed.
-            let (mut batch, mut new_instances) = (sled::Batch::default(), Vec::with_capacity(pipeline.spec.max_parallel as usize));
-            let (start, mut count) = (&utils::encode_u64(last_offset_processed + 1), 0);
+            let (mut pipeline_batch, mut metadata_batch, mut new_instances) = (
+                sled::Batch::default(),
+                sled::Batch::default(),
+                Vec::with_capacity(pipeline.spec.max_parallel as usize),
+            );
+            let (start, mut last_processed, mut count) = (&utils::encode_u64(last_offset_processed + 1), last_offset_processed, 0);
             let stream = tree_stream.range::<_, std::ops::RangeFrom<&[u8]>>(start..);
             for event_res in stream {
                 // Decode the records offset.
-                let (_key, root_event_bytes) = event_res.context(ERR_ITER_FAILURE)?;
+                let (key, root_event_bytes) = event_res.context(ERR_ITER_FAILURE)?;
+                let offset = utils::decode_u64(key.as_ref())?;
+                last_processed = offset;
                 let root_event: Event = utils::decode_model(root_event_bytes.as_ref()).context("error decoding event from storage")?;
 
                 // Check the event's type to ensure it matches the pipeline's matcher patterns, else skip.
@@ -581,20 +585,9 @@ impl PipelineCtl {
                 }
 
                 // Construct pipeline instance & add to batch.
-                let mut buf = buffer.split();
-                let pipeline_inst = PipelineInstance {
-                    id: root_event.id,
-                    pipeline: pipeline.name().into(),
-                };
-                pipeline_inst
-                    .encode(&mut buf)
-                    .context("error encoding pipeline instance record")?;
-                batch.insert(
-                    &utils::encode_3_byte_prefix(PREFIX_PIPELINE_INSTANCES, root_event.id),
-                    buf.freeze().as_ref(),
-                );
+                pipeline_batch.insert(&utils::encode_3_byte_prefix(PREFIX_PIPELINE_INSTANCES, root_event.id), &key);
+                metadata_batch.insert(&utils::encode_3_byte_prefix(PREFIX_META_ACTIVE_INSTANCES, offset), &key);
                 let inst = ActivePipelineInstance {
-                    instance: pipeline_inst,
                     root_event,
                     root_event_bytes,
                     outputs: Default::default(),
@@ -610,11 +603,11 @@ impl PipelineCtl {
             }
 
             // Transactionally apply the batch.
-            let last_processed = last_offset_processed + count as u64;
+            metadata_batch.insert(KEY_LAST_OFFSET_PROCESSED, &utils::encode_u64(last_processed));
             let _ = (&tree_pipeline, &tree_metadata)
                 .transaction(move |(pipeline, metadata)| -> TxResult {
-                    pipeline.apply_batch(&batch)?;
-                    metadata.insert(KEY_LAST_OFFSET_PROCESSED, &utils::encode_u64(last_processed))?;
+                    pipeline.apply_batch(&pipeline_batch)?;
+                    metadata.apply_batch(&metadata_batch)?;
                     Ok(())
                 })
                 .map_err(|err: sled::transaction::TransactionError<anyhow::Error>| match err {
@@ -641,11 +634,11 @@ impl PipelineCtl {
 /// offset, which provides easy "exactly once" consumption of the input stream. In the pipeline
 /// tree:
 /// - The key for a pipeline instance will be roughly `/i/{instance}/`, where `{instance}` is the
-/// input stream record's offset. The value stored here is top-level metadata on the instance.
+/// input stream record's offset. The value stored here is top-level metadata of the pipeline instance.
 /// - The output of each stage of a pipeline instance is recorded under `/s/{instance}/{stage}` where
 /// `{instance}` is the input stream record's offset and `{stage}` is the name of the pipeline stage.
 async fn recover_pipeline_state(
-    pipeline_tree: &Tree, metadata_tree: &Tree, stream_tree: &Tree, pipeline: Arc<Pipeline>,
+    pipeline_tree: &Tree, metadata_tree: &Tree, stream_tree: &Tree, pipeline: Arc<Pipeline>, stream_latest_offset: u64,
 ) -> Result<(u64, BTreeMap<u64, ActivePipelineInstance>)> {
     let (pipeline_tree, metadata_tree, stream_tree) = (pipeline_tree.clone(), metadata_tree.clone(), stream_tree.clone());
     let val = Database::spawn_blocking(move || -> Result<(u64, BTreeMap<u64, ActivePipelineInstance>)> {
@@ -656,9 +649,13 @@ async fn recover_pipeline_state(
             .map(|val| utils::decode_u64(&val))
             .transpose()
             .context("error decoding pipeline last offset processed key")?
-            // If no data recorded, then this is pristine, so start at 1. This mirrors how streams
-            // initialize, see `recover_stream_state`.
-            .unwrap_or(1);
+            // If no data recorded, then this is pristine, so start at the configured starting location.
+            .unwrap_or_else(|| match &pipeline.spec.start_point.location {
+                // Start at 1. This mirrors how streams initialize, see `recover_stream_state`.
+                PipelineStartPointLocation::Beginning => 1,
+                PipelineStartPointLocation::Latest => stream_latest_offset,
+                PipelineStartPointLocation::Offset => pipeline.spec.start_point.offset.unwrap_or(0),
+            });
 
         // Fetch active instances.
         let active_instances = metadata_tree.scan_prefix(PREFIX_META_ACTIVE_INSTANCES).values().try_fold(
@@ -666,12 +663,10 @@ async fn recover_pipeline_state(
             |mut acc, val| -> Result<BTreeMap<u64, ActivePipelineInstance>> {
                 let offset_ivec = val.context(ERR_ITER_FAILURE)?;
                 let offset = utils::decode_u64(&offset_ivec).context("error decoding active pipeline offset")?;
-                let instance = pipeline_tree
+                let _offset = pipeline_tree
                     .get(&utils::encode_3_byte_prefix(PREFIX_PIPELINE_INSTANCES, offset))
                     .context("error fetching pipeline instance")?
-                    .map(|val| PipelineInstance::decode(val.as_ref()).context("error decoding pipeline instance"))
-                    .transpose()?
-                    .unwrap_or_else(|| PipelineInstance { id: offset, pipeline: pipeline.name().into() });
+                    .with_context(|| format!("could not find pipeline instance '{}' which was recorded as active", offset))?;
 
                 // Fetch the stream event which triggered this pipeline instance.
                 let (root_event_bytes, root_event) = stream_tree
@@ -693,7 +688,6 @@ async fn recover_pipeline_state(
                 }
 
                 let inst = ActivePipelineInstance {
-                    instance,
                     root_event,
                     root_event_bytes,
                     outputs,

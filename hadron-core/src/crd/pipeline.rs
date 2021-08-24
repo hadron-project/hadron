@@ -38,6 +38,9 @@ pub struct PipelineSpec {
     /// The maximum number of pipeline instances which may be executed in parallel per partition.
     #[serde(rename = "maxParallel")]
     pub max_parallel: u32,
+    /// The starting point of the source stream from which to begin this pipeline.
+    #[serde(rename = "startPoint")]
+    pub start_point: PipelineStartPoint,
 }
 
 /// The definition of a Pipeline stage.
@@ -51,6 +54,28 @@ pub struct PipelineStage {
     /// All inputs (previous stages) which this stage depends upon in order to be started.
     #[serde(default)]
     pub dependencies: Vec<String>,
+}
+
+/// The starting point of the source stream from which to begin this pipeline.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+pub struct PipelineStartPoint {
+    /// The start point location.
+    pub location: PipelineStartPointLocation,
+    /// The offset of the source stream from which to start this pipeline.
+    #[serde(default)]
+    pub offset: Option<u64>,
+}
+
+/// The starting point of the source stream from which to begin this pipeline.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PipelineStartPointLocation {
+    /// The beginning of the source stream.
+    Beginning,
+    /// The most recent offset of the source stream.
+    Latest,
+    /// A specific offset of the source stream.
+    Offset,
 }
 
 /// CRD status object.

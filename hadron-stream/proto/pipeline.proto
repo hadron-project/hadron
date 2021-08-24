@@ -2,18 +2,6 @@
 syntax = "proto2";
 package pipeline;
 
-// A pipeline instance.
-//
-// Pipeline instances are created when the source stream on the same partition receives a new
-// record which matches the pipeline's trigger criteria.
-message PipelineInstance {
-    // The ID of this object, which always corresponds to the offset of the source stream from
-    // which this instance was created.
-    required uint64 id = 1;
-    // The name of the parent pipeline object.
-    required string pipeline = 2;
-}
-
 // A pipeline stage output record.
 message PipelineStageOutput {
     // The ID of the pipeline instance with which this output is associated.
