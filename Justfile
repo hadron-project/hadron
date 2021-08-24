@@ -3,21 +3,37 @@ kindCreateCluster:
     kind create cluster --name hadron
 
 # Build the Hadron Operator docker image.
-buildHadronOperator buildopts="--build-arg=RELEASE_OPT=--release" tag="latest":
-    docker build {{buildopts}} --target builder -f hadron-operator/Dockerfile .
-    docker build {{buildopts}} --target release -f hadron-operator/Dockerfile -t ghcr.io/hadron-project/hadron/hadron-operator:{{tag}} .
+buildOperator mode="debug" tag="latest":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case '{{mode}}' in
+    'debug') opts='';;
+    'release') opts='--build-arg=RELEASE_OPT=--release';;
+    *) echo 'unrecognized value for `mode`, must be either `debug` or `release`'; exit 1;;
+    esac
+
+    docker build ${opts} --target builder -f hadron-operator/Dockerfile .
+    docker build ${opts} --target release -f hadron-operator/Dockerfile -t ghcr.io/hadron-project/hadron/hadron-operator:{{tag}} .
 
 # Load the Hadron Operator docker image into kind cluster.
-kindLoadHadronOperator tag="latest":
+kindLoadOperator tag="latest":
     kind load docker-image --name hadron ghcr.io/hadron-project/hadron/hadron-operator:{{tag}}
 
 # Build the Hadron Stream docker image.
-buildHadronStream buildopts="--build-arg=RELEASE_OPT=--release" tag="latest":
-    docker build {{buildopts}} --target builder -f hadron-stream/Dockerfile .
-    docker build {{buildopts}} --target release -f hadron-stream/Dockerfile -t ghcr.io/hadron-project/hadron/hadron-stream:{{tag}} .
+buildStream mode="debug" tag="latest":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case '{{mode}}' in
+    'debug') opts='';;
+    'release') opts='--build-arg=RELEASE_OPT=--release';;
+    *) echo 'unrecognized value for `mode`, must be either `debug` or `release`'; exit 1;;
+    esac
+
+    docker build ${opts} --target builder -f hadron-stream/Dockerfile .
+    docker build ${opts} --target release -f hadron-stream/Dockerfile -t ghcr.io/hadron-project/hadron/hadron-stream:{{tag}} .
 
 # Load the Hadron Stream docker image into kind cluster.
-kindLoadHadronStream tag="latest":
+kindLoadStream tag="latest":
     kind load docker-image --name hadron ghcr.io/hadron-project/hadron/hadron-stream:{{tag}}
 
 # Perform a upgrade --install of the Hadron chart into the kind cluster.
