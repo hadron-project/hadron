@@ -10,8 +10,6 @@ pub use crate::models::proto::pipeline::*;
 /// An active pipeline instance along with all outputs from any completed stages.
 #[derive(Debug)]
 pub struct ActivePipelineInstance {
-    /// The model of the pipeline instance, directly from storage.
-    pub instance: PipelineInstance,
     /// A copy of the stream event which triggered this instance.
     pub root_event: Event,
     /// A copy of the raw bytes of the root event.

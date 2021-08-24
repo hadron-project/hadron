@@ -22,6 +22,8 @@ spec:
   sourceStream: events
   triggers: ""
   maxParallel: 50
+  startPoint:
+    location: beginning
   stages:
     - name: deploy-service
 

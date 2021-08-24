@@ -11,7 +11,7 @@ mod token;
 
 use kube::Resource;
 
-pub use pipeline::{Pipeline, PipelineSpec, PipelineStage, PipelineStatus};
+pub use pipeline::{Pipeline, PipelineSpec, PipelineStage, PipelineStatus, PipelineStartPointLocation, PipelineStartPoint};
 pub use stream::{Stream, StreamSpec, StreamStatus};
 pub use token::{PubSubAccess, Token, TokenSpec, TokenStatus};
 
