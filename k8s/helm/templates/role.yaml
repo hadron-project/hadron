@@ -46,4 +46,6 @@ rules:
     - "pipelines/status"
     - "tokens"
     - "tokens/status"
+    - "streams"
+    - "streams/status"
   verbs: ["get", "list", "watch"]
