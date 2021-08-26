@@ -12,7 +12,7 @@ use crate::config::Config;
 use crate::database::Database;
 use crate::server::AppServer;
 use crate::stream::StreamCtl;
-use crate::watchers::{PipelineWatcher, PipelinesMap, TokensMap, TokensWatcher};
+use crate::watchers::{PipelineWatcher, PipelinesMap, StreamWatcher, TokensMap, TokensWatcher};
 
 /// The application object for when Hadron is running as a server.
 pub struct App {
@@ -33,6 +33,8 @@ pub struct App {
 
     /// The join handle of the stream controller.
     stream_handle: JoinHandle<Result<()>>,
+    /// The join handle of the stream CR watcher.
+    stream_watcher_handle: JoinHandle<Result<()>>,
     /// The join handle of the tokens CR watcher.
     tokens_handle: JoinHandle<Result<()>>,
     /// The join handle of the pipelines CR watcher.
@@ -65,12 +67,22 @@ impl App {
             .context("error spawning stream controller")?;
         let stream_handle = stream_ctl.spawn();
 
+        let (stream_watcher, metadata_rx) = StreamWatcher::new(client.clone(), config.clone(), shutdown_tx.subscribe());
+        let stream_watcher_handle = stream_watcher.spawn();
+
         let (pipelines, pipelines_map) = PipelineWatcher::new(client, config.clone(), db.clone(), stream_offset_signal, shutdown_tx.clone());
         let pipelines_handle = pipelines.spawn();
 
-        let client_server = AppServer::new(config.clone(), pipelines_map.clone(), tokens_map.clone(), shutdown_tx.clone(), stream_tx)
-            .spawn()
-            .context("error setting up client gRPC server")?;
+        let client_server = AppServer::new(
+            config.clone(),
+            pipelines_map.clone(),
+            tokens_map.clone(),
+            metadata_rx,
+            shutdown_tx.clone(),
+            stream_tx,
+        )
+        .spawn()
+        .context("error setting up client gRPC server")?;
 
         Ok(Self {
             _config: config,
@@ -80,6 +92,7 @@ impl App {
             shutdown_rx: BroadcastStream::new(shutdown_rx),
             shutdown_tx,
             stream_handle,
+            stream_watcher_handle,
             tokens_handle,
             pipelines_handle,
             client_server,
@@ -137,6 +150,14 @@ impl App {
             .and_then(|res| res)
         {
             tracing::error!(error = ?err, "error shutting down stream controller");
+        }
+        if let Err(err) = self
+            .stream_watcher_handle
+            .await
+            .context("error joining stream CR watcher handle")
+            .and_then(|res| res)
+        {
+            tracing::error!(error = ?err, "error shutting down stream CR watcher");
         }
         if let Err(err) = self.client_server.await {
             tracing::error!(error = ?err, "error joining client gRPC server task");

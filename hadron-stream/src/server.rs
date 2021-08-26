@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
+use futures::prelude::*;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::{ReceiverStream, WatchStream};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
 
@@ -12,7 +13,7 @@ use crate::error::{AppError, AppErrorExt, RpcResult};
 use crate::grpc;
 use crate::pipeline::PipelineCtlMsg;
 use crate::stream::StreamCtlMsg;
-use crate::watchers::{PipelinesMap, TokensMap};
+use crate::watchers::{PipelinesMap, StreamMetadataRx, TokensMap};
 use hadron_core::auth;
 use hadron_core::crd::Token;
 
@@ -26,6 +27,8 @@ pub struct AppServer {
     pipelines: PipelinesMap,
     /// A map of all known Token CRs in the namespace.
     tokens: TokensMap,
+    /// A channel of stream metadata for connection info.
+    metadata_rx: StreamMetadataRx,
 
     /// A channel used for triggering graceful shutdown.
     shutdown: broadcast::Sender<()>,
@@ -37,9 +40,17 @@ pub struct AppServer {
 impl AppServer {
     /// Create a new instance.
     pub fn new(
-        config: Arc<Config>, pipelines: PipelinesMap, tokens: TokensMap, shutdown: broadcast::Sender<()>, stream_tx: mpsc::Sender<StreamCtlMsg>,
+        config: Arc<Config>, pipelines: PipelinesMap, tokens: TokensMap, metadata_rx: StreamMetadataRx, shutdown: broadcast::Sender<()>,
+        stream_tx: mpsc::Sender<StreamCtlMsg>,
     ) -> Self {
-        Self { config, pipelines, tokens, shutdown, stream_tx }
+        Self {
+            config,
+            pipelines,
+            tokens,
+            metadata_rx,
+            shutdown,
+            stream_tx,
+        }
     }
 
     /// Spawn this controller which also creates the client gRPC server.
@@ -107,17 +118,35 @@ impl grpc::StreamController for AppServer {
     /// Open a metadata stream.
     async fn metadata(&self, request: Request<grpc::MetadataRequest>) -> RpcResult<Response<Self::MetadataStream>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
-        let _claims = self.must_get_token_claims(&creds.claims.id).map_err(AppError::grpc)?;
-        // TODO: critical path:
-        // - finish implementing metadata streams;
-        // - metadata system can be driven entirely from a watch channel updated by a k8s watcher;
-        todo!()
+        let _claims = self.must_get_token_claims(&creds.claims.sub).map_err(AppError::grpc)?;
+
+        let (res_tx, res_rx) = mpsc::channel(1);
+        let mut metadata_rx = WatchStream::new(self.metadata_rx.clone());
+        tokio::spawn(async move {
+            loop {
+                let timeout = tokio::time::sleep(std::time::Duration::from_secs(15));
+                tokio::select! {
+                    data_opt = metadata_rx.next() => match data_opt {
+                        Some(data) => {
+                            let _res = res_tx.send(Ok(grpc::MetadataResponse { partitions: data })).await;
+                        }
+                        None => break,
+                    },
+                    _ = timeout => {
+                        if res_tx.is_closed() {
+                            break;
+                        }
+                    },
+                }
+            }
+        });
+        Ok(Response::new(ReceiverStream::new(res_rx)))
     }
 
     /// Open a stream publisher channel.
     async fn stream_publish(&self, request: Request<Streaming<grpc::StreamPublishRequest>>) -> RpcResult<Response<Self::StreamPublishStream>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
-        let claims = self.must_get_token_claims(&creds.claims.id).map_err(AppError::grpc)?;
+        let claims = self.must_get_token_claims(&creds.claims.sub).map_err(AppError::grpc)?;
         claims.check_stream_pub_auth(&self.config.stream).map_err(AppError::grpc)?;
 
         let (res_tx, res_rx) = mpsc::channel(10);
@@ -131,7 +160,7 @@ impl grpc::StreamController for AppServer {
     /// Open a stream subscriber channel.
     async fn stream_subscribe(&self, request: Request<Streaming<grpc::StreamSubscribeRequest>>) -> RpcResult<Response<Self::StreamSubscribeStream>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
-        let claims = self.must_get_token_claims(&creds.claims.id).map_err(AppError::grpc)?;
+        let claims = self.must_get_token_claims(&creds.claims.sub).map_err(AppError::grpc)?;
         claims.check_stream_sub_auth(&self.config.stream).map_err(AppError::grpc)?;
 
         // Await initial setup payload and forward it along to the controller.
@@ -164,7 +193,7 @@ impl grpc::StreamController for AppServer {
         &self, request: Request<Streaming<grpc::PipelineSubscribeRequest>>,
     ) -> RpcResult<Response<Self::PipelineSubscribeStream>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
-        let claims = self.must_get_token_claims(&creds.claims.id).map_err(AppError::grpc)?;
+        let claims = self.must_get_token_claims(&creds.claims.sub).map_err(AppError::grpc)?;
         claims.check_stream_sub_auth(&self.config.stream).map_err(AppError::grpc)?;
 
         // Await initial setup payload and use it to find the target controller.

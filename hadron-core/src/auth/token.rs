@@ -49,13 +49,17 @@ impl TokenCredentials {
 pub struct TokenClaims {
     /// The ID of this token.
     pub id: String,
+    /// The name of the Token CR which this token corresponds with.
+    pub sub: String,
 }
 
 impl TokenClaims {
     /// Create a new instance.
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self { id: Uuid::new_v4().to_string() }
+    pub fn new(cr_name: &str) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            sub: cr_name.into(),
+        }
     }
 
     /// Encode this claims body as a JWT.
@@ -66,7 +70,12 @@ impl TokenClaims {
 
     /// Decode the given string as a JWT with a `TokenClaims` body.
     pub fn decode(token: impl AsRef<str>, key: &DecodingKey) -> jsonwebtoken::errors::Result<Self> {
-        let validation = Validation::new(Algorithm::RS512);
+        let validation = Validation {
+            algorithms: vec![Algorithm::RS512],
+            validate_exp: false,
+            validate_nbf: false,
+            ..Default::default()
+        };
         jsonwebtoken::decode(token.as_ref(), &key, &validation).map(|body| body.claims)
     }
 }

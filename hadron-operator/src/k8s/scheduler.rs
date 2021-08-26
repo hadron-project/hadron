@@ -637,7 +637,7 @@ impl Controller {
         }
 
         // Secret does not exist. Mint a new JWT & create the backing secret.
-        let claims = TokenClaims::new();
+        let claims = TokenClaims::new(name.as_str());
         let jwt = claims
             .encode(&self.config.jwt_encoding_key)
             .context("error encoding claims as JWT")?;
