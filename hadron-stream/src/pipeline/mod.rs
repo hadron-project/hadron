@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use prost::Message;
 use rand::seq::IteratorRandom;
-use sled::{IVec, Transactional, Tree};
+use sled::{Transactional, Tree};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::{
@@ -22,7 +22,6 @@ use crate::database::Database;
 use crate::error::{RpcResult, ShutdownError, ShutdownResult, ERR_DB_FLUSH, ERR_ITER_FAILURE};
 use crate::futures::LivenessStream;
 use crate::grpc::{Event, PipelineSubscribeRequest, PipelineSubscribeRequestAction, PipelineSubscribeResponse};
-use crate::models::pipeline::{ActivePipelineInstance, PipelineStageOutput as PipelineStageOutputModel};
 use crate::utils;
 use hadron_core::crd::{Pipeline, PipelineStartPointLocation, RequiredMetadata};
 
@@ -67,6 +66,10 @@ pub struct PipelineCtl {
     pipeline: Arc<Pipeline>,
     /// The pipeline partition of this controller.
     partition: u32,
+    /// The base source template used for encoding a pipeline event source for stroage.
+    ///
+    /// The `stage_name` should be concatenated to the end of this string first before each use.
+    source: String,
 
     /// A channel of inbound client requests.
     events_tx: mpsc::Sender<PipelineCtlMsg>,
@@ -79,7 +82,7 @@ pub struct PipelineCtl {
     /// A stream of liveness checks on the active subscriber channels.
     liveness_checks: StreamMap<Uuid, PipelineLivenessStream>,
 
-    /// A signal describing the source stream's current `next_offset` value.
+    /// A signal describing the source stream's `next_offset` value.
     stream_signal: WatchStream<u64>,
     /// The last known offset of the input stream.
     stream_offset: u64,
@@ -108,6 +111,7 @@ impl PipelineCtl {
         let stream_offset = *stream_signal.borrow();
         let (last_offset_processed, active_pipelines) =
             recover_pipeline_state(&tree, &tree_metadata, &stream_tree, pipeline.clone(), stream_offset).await?;
+        let source = format!("/{}/{}/{}/{}/", config.cluster_name, config.stream, partition, pipeline.name());
 
         Ok(Self {
             _config: config,
@@ -117,6 +121,7 @@ impl PipelineCtl {
             tree_stream: stream_tree,
             pipeline,
             partition,
+            source,
             events_tx,
             events_rx: ReceiverStream::new(events_rx),
             active_pipelines,
@@ -176,7 +181,7 @@ impl PipelineCtl {
     #[tracing::instrument(level = "trace", skip(self, offset))]
     async fn handle_input_stream_offset_update(&mut self, offset: u64) {
         // Track the offset update.
-        self.stream_offset = offset;
+        self.stream_offset = offset.saturating_sub(1);
         // Only fetch new data if we are not already at capacity.
         if self.active_pipelines.len() >= self.pipeline.spec.max_parallel as usize {
             return;
@@ -244,8 +249,8 @@ impl PipelineCtl {
                 return;
             }
         };
-        tracing::debug!(?data, "response from pipeline data fetch");
         self.last_offset_processed = data.last_offset_processed;
+        tracing::debug!(data.last_offset_processed, "response from pipeline data fetch");
         self.active_pipelines.extend(
             data.new_pipeline_instances
                 .into_iter()
@@ -259,7 +264,7 @@ impl PipelineCtl {
     /// Handle a pipeline stage delivery response.
     #[tracing::instrument(level = "trace", skip(self, res))]
     async fn handle_delivery_response(&mut self, res: DeliveryResponse) {
-        tracing::info!("received pipeline stage delivery response");
+        tracing::debug!("received pipeline stage delivery response");
         if let Err(err) = self.try_handle_delivery_response(res).await {
             tracing::error!(error = ?err, "error handling pipeline subscriber ack/nack response");
             if err.downcast_ref::<ShutdownError>().is_some() {
@@ -274,7 +279,7 @@ impl PipelineCtl {
     /// Handle a request which has been sent to this controller.
     #[tracing::instrument(level = "trace", skip(self, tx, rx, stage_name))]
     async fn handle_request(&mut self, (tx, rx): ClientChannel, stage_name: String) {
-        tracing::info!("request received on pipeline controller");
+        tracing::debug!("request received on pipeline controller");
         // Validate contents of setup request.
         if !self.pipeline.spec.stages.iter().any(|stage| stage.name == stage_name) {
             let _res = tx
@@ -314,7 +319,7 @@ impl PipelineCtl {
     ///   cache updates will stay in memory for up-to-date subscriptions.
     #[tracing::instrument(level = "trace", skip(self))]
     async fn execute_delivery_pass(&mut self) {
-        tracing::info!("executing pipeline delivery pass");
+        tracing::debug!("executing pipeline delivery pass");
         if let Err(err) = self.try_execute_delivery_pass().await {
             tracing::error!(error = ?err, "error during pipeline delivery pass");
         }
@@ -381,11 +386,11 @@ impl PipelineCtl {
                 };
                 stage.dependencies.iter().for_each(|dep| {
                     if dep == ROOT_EVENT {
-                        payload.inputs.insert(ROOT_EVENT.into(), inst.root_event_bytes.to_vec());
+                        payload.inputs.insert(ROOT_EVENT.into(), inst.root_event.clone());
                     } else {
                         match inst.outputs.get(dep) {
                             Some(input) => {
-                                payload.inputs.insert(dep.clone(), input.data.clone());
+                                payload.inputs.insert(dep.clone(), input.clone());
                             }
                             None => tracing::error!("failed to accumulate stage dependencies even though all were accounted for"),
                         }
@@ -485,16 +490,18 @@ impl PipelineCtl {
         // Decode the response body and record the result.
         let record_res = match body.action {
             Some(PipelineSubscribeRequestAction::Ack(output)) => {
-                inst.outputs.insert(
-                    stage_name.clone(),
-                    PipelineStageOutputModel {
-                        id: offset,
-                        pipeline: self.pipeline.name().into(),
-                        stage: stage_name.clone(),
-                        data: output.output.clone(),
-                    },
-                );
-                Ok(output.output)
+                let output = output.output.unwrap_or_default();
+                let entry = Event {
+                    id: offset,
+                    source: format!("{}{}", &self.source, &stage_name),
+                    specversion: utils::CLOUD_EVENTS_SPEC_VERSION.into(),
+                    r#type: output.r#type,
+                    subject: output.subject,
+                    optattrs: output.optattrs,
+                    data: output.data,
+                };
+                inst.outputs.insert(stage_name.clone(), entry.clone());
+                Ok(entry)
             }
             Some(PipelineSubscribeRequestAction::Nack(err)) => Err(err),
             _ => Err("malformed response returned from pipeline subscriber, unknown result variant".into()),
@@ -515,10 +522,10 @@ impl PipelineCtl {
     /// Record the ack/nack response from a subscriber delivery.
     #[tracing::instrument(level = "trace", skip(res, offset, stage_name, pipeline_tree))]
     async fn try_record_delivery_response(
-        res: std::result::Result<Vec<u8>, String>, offset: u64, stage_name: Arc<String>, pipeline_tree: Tree,
+        res: std::result::Result<Event, String>, offset: u64, stage_name: Arc<String>, pipeline_tree: Tree,
     ) -> ShutdownResult<()> {
-        let output = match res {
-            Ok(output) => output,
+        let event = match res {
+            Ok(event) => event,
             Err(_err) => {
                 // FUTURE: record this error info for observability system.
                 return Ok(());
@@ -530,8 +537,9 @@ impl PipelineCtl {
             offset,
             &*stage_name,
         );
+        let event_bytes = utils::encode_model(&event)?;
         pipeline_tree
-            .insert(key.as_bytes(), output.as_slice())
+            .insert(key.as_bytes(), event_bytes.as_slice())
             .context("error recording pipeline stage output on disk")
             .map_err(ShutdownError::from)?;
         pipeline_tree
@@ -589,7 +597,6 @@ impl PipelineCtl {
                 metadata_batch.insert(&utils::encode_3_byte_prefix(PREFIX_META_ACTIVE_INSTANCES, offset), &key);
                 let inst = ActivePipelineInstance {
                     root_event,
-                    root_event_bytes,
                     outputs: Default::default(),
                     active_deliveries: Default::default(),
                 };
@@ -651,8 +658,7 @@ async fn recover_pipeline_state(
             .context("error decoding pipeline last offset processed key")?
             // If no data recorded, then this is pristine, so start at the configured starting location.
             .unwrap_or_else(|| match &pipeline.spec.start_point.location {
-                // Start at 1. This mirrors how streams initialize, see `recover_stream_state`.
-                PipelineStartPointLocation::Beginning => 1,
+                PipelineStartPointLocation::Beginning => 0,
                 PipelineStartPointLocation::Latest => stream_latest_offset,
                 PipelineStartPointLocation::Offset => pipeline.spec.start_point.offset.unwrap_or(0),
             });
@@ -669,27 +675,26 @@ async fn recover_pipeline_state(
                     .with_context(|| format!("could not find pipeline instance '{}' which was recorded as active", offset))?;
 
                 // Fetch the stream event which triggered this pipeline instance.
-                let (root_event_bytes, root_event) = stream_tree
+                let root_event = stream_tree
                     .get(&offset_ivec)
                     .context("error fetching pipeline instance root event")?
-                    .map(|data| -> Result<(IVec, Event)> {
-                        let root_event: Event = utils::decode_model(data.as_ref()).context("error decoding event from storage")?;
-                        Ok((data, root_event))
-                    })
+                    .map(|data| -> Result<Event> { utils::decode_model::<Event>(data.as_ref()).context("error decoding event from storage") })
                     .transpose()?
                     .context("source event of pipeline instance not found")?;
 
                 // Iterate over all outputs currently recorded for this pipeline instance.
+                // See `try_record_delivery_response`, these are keyed as `/s/{offset}/{stage_name}`.
                 let mut outputs = HashMap::new();
                 for iter_res in pipeline_tree.scan_prefix(&utils::encode_3_byte_prefix(PREFIX_PIPELINE_STAGE_OUTPUTS, offset)) {
-                    let (_key, val) = iter_res.context(ERR_ITER_FAILURE)?;
-                    let output = PipelineStageOutputModel::decode(val.as_ref()).context("error decoding pipeline stage output")?;
-                    outputs.insert(output.stage.clone(), output);
+                    let (key, val) = iter_res.context(ERR_ITER_FAILURE)?;
+                    let key = std::str::from_utf8(&key).context("data corruption: all keys should be valid utf8")?;
+                    let stage = key.split('/').last().unwrap_or("");
+                    let output = Event::decode(val.as_ref()).context("error decoding pipeline stage output")?;
+                    outputs.insert(stage.into(), output);
                 }
 
                 let inst = ActivePipelineInstance {
                     root_event,
-                    root_event_bytes,
                     outputs,
                     active_deliveries: Default::default(),
                 };
@@ -726,7 +731,6 @@ pub enum PipelineCtlMsg {
 }
 
 /// A result from fetching stream records for pipeline creation.
-#[derive(Debug)]
 pub struct FetchStreamRecords {
     /// The last offset to be processed as part of this fetch routine.
     last_offset_processed: u64,
@@ -782,4 +786,15 @@ pub struct PipelineHandle {
     pub pipeline: Arc<Pipeline>,
     /// The controller's communication channel.
     pub tx: mpsc::Sender<PipelineCtlMsg>,
+}
+
+/// An active pipeline instance along with all outputs from any completed stages.
+pub struct ActivePipelineInstance {
+    /// A copy of the stream event which triggered this instance.
+    pub root_event: Event,
+    /// A mapping of stage names to their completion outputs.
+    pub outputs: HashMap<String, Event>,
+    /// A mapping of active deliveries by stage name to the channel ID currently processing
+    /// the stage's delivery.
+    pub active_deliveries: HashMap<Arc<String>, Uuid>,
 }

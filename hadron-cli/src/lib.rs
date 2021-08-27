@@ -32,18 +32,18 @@ pub struct Hadron {
     /// Set the auth token to use for interacting with the cluster.
     #[structopt(long, conflicts_with("username"), conflicts_with("password"))]
     token: Option<String>,
-    /// Set the username to use for interacting with the cluster.
-    #[structopt(long, requires("password"), conflicts_with("token"))]
-    username: Option<String>,
-    /// Set the password to use for interacting with the cluster.
-    #[structopt(long, requires("username"), conflicts_with("token"))]
-    password: Option<String>,
+    // /// Set the username to use for interacting with the cluster.
+    // #[structopt(long, requires("password"), conflicts_with("token"))]
+    // username: Option<String>,
+    // /// Set the password to use for interacting with the cluster.
+    // #[structopt(long, requires("username"), conflicts_with("token"))]
+    // password: Option<String>,
 }
 
 impl Hadron {
     pub async fn run(self) -> Result<()> {
         // Initialize logging based on CLI config.
-        let fmt_layer = fmt::layer().with_target(false);
+        let fmt_layer = fmt::layer().with_target(true);
         let filter_layer;
         let level_filter;
         if self.verbose {
@@ -70,8 +70,8 @@ impl Hadron {
         new_client(
             self.url.as_deref(),
             self.token.as_deref(),
-            self.username.as_deref(),
-            self.password.as_deref(),
+            None, // self.username.as_deref(),
+            None, // self.password.as_deref(),
         )
         .await
     }

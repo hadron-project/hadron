@@ -256,213 +256,108 @@ pub enum WriteAck {
     /// Do not wait for replica write acknowledgement.
     None = 2,
 }
-#[doc = r" Generated server implementations."]
-pub mod stream_controller_server {
+#[doc = r" Generated client implementations."]
+pub mod stream_controller_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    #[doc = "Generated trait containing gRPC methods that should be implemented for use with StreamControllerServer."]
-    #[async_trait]
-    pub trait StreamController: Send + Sync + 'static {
-        #[doc = "Server streaming response type for the Metadata method."]
-        type MetadataStream: futures_core::Stream<Item = Result<super::MetadataResponse, tonic::Status>> + Send + Sync + 'static;
-        #[doc = " Open a metadata stream."]
-        async fn metadata(&self, request: tonic::Request<super::MetadataRequest>) -> Result<tonic::Response<Self::MetadataStream>, tonic::Status>;
-        #[doc = " Open a stream publisher channel."]
-        async fn stream_publish(
-            &self, request: tonic::Request<super::StreamPublishRequest>,
-        ) -> Result<tonic::Response<super::StreamPublishResponse>, tonic::Status>;
-        #[doc = "Server streaming response type for the StreamSubscribe method."]
-        type StreamSubscribeStream: futures_core::Stream<Item = Result<super::StreamSubscribeResponse, tonic::Status>> + Send + Sync + 'static;
-        #[doc = " Open a stream subscriber channel."]
-        async fn stream_subscribe(
-            &self, request: tonic::Request<tonic::Streaming<super::StreamSubscribeRequest>>,
-        ) -> Result<tonic::Response<Self::StreamSubscribeStream>, tonic::Status>;
-        #[doc = "Server streaming response type for the PipelineSubscribe method."]
-        type PipelineSubscribeStream: futures_core::Stream<Item = Result<super::PipelineSubscribeResponse, tonic::Status>> + Send + Sync + 'static;
-        #[doc = " Open a pipeline subscriber channel."]
-        async fn pipeline_subscribe(
-            &self, request: tonic::Request<tonic::Streaming<super::PipelineSubscribeRequest>>,
-        ) -> Result<tonic::Response<Self::PipelineSubscribeStream>, tonic::Status>;
-    }
     #[doc = " The Hadron stream controller interface."]
-    #[derive(Debug)]
-    pub struct StreamControllerServer<T: StreamController> {
-        inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+    #[derive(Debug, Clone)]
+    pub struct StreamControllerClient<T> {
+        inner: tonic::client::Grpc<T>,
     }
-    struct _Inner<T>(Arc<T>);
-    impl<T: StreamController> StreamControllerServer<T> {
-        pub fn new(inner: T) -> Self {
-            let inner = Arc::new(inner);
-            let inner = _Inner(inner);
-            Self {
-                inner,
-                accept_compression_encodings: Default::default(),
-                send_compression_encodings: Default::default(),
-            }
+    impl StreamControllerClient<tonic::transport::Channel> {
+        #[doc = r" Attempt to create a new client by connecting to a given endpoint."]
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
         }
-        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+    }
+    impl<T> StreamControllerClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::BoxBody>,
+        T::ResponseBody: Body + Send + Sync + 'static,
+        T::Error: Into<StdError>,
+        <T::ResponseBody as Body>::Error: Into<StdError> + Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> StreamControllerClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<<T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody>,
+            >,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error: Into<StdError> + Send + Sync,
         {
-            InterceptedService::new(Self::new(inner), interceptor)
+            StreamControllerClient::new(InterceptedService::new(inner, interceptor))
         }
-    }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for StreamControllerServer<T>
-    where
-        T: StreamController,
-        B: Body + Send + Sync + 'static,
-        B::Error: Into<StdError> + Send + 'static,
-    {
-        type Response = http::Response<tonic::body::BoxBody>;
-        type Error = Never;
-        type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
+        #[doc = r" Compress requests with `gzip`."]
+        #[doc = r""]
+        #[doc = r" This requires the server to support it otherwise it might respond with an"]
+        #[doc = r" error."]
+        pub fn send_gzip(mut self) -> Self {
+            self.inner = self.inner.send_gzip();
+            self
         }
-        fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            let inner = self.inner.clone();
-            match req.uri().path() {
-                "/stream.StreamController/Metadata" => {
-                    #[allow(non_camel_case_types)]
-                    struct MetadataSvc<T: StreamController>(pub Arc<T>);
-                    impl<T: StreamController> tonic::server::ServerStreamingService<super::MetadataRequest> for MetadataSvc<T> {
-                        type Response = super::MetadataResponse;
-                        type ResponseStream = T::MetadataStream;
-                        type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::MetadataRequest>) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).metadata(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = MetadataSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc =
-                            tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
-                        let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/stream.StreamController/StreamPublish" => {
-                    #[allow(non_camel_case_types)]
-                    struct StreamPublishSvc<T: StreamController>(pub Arc<T>);
-                    impl<T: StreamController> tonic::server::UnaryService<super::StreamPublishRequest> for StreamPublishSvc<T> {
-                        type Response = super::StreamPublishResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::StreamPublishRequest>) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).stream_publish(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = StreamPublishSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc =
-                            tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/stream.StreamController/StreamSubscribe" => {
-                    #[allow(non_camel_case_types)]
-                    struct StreamSubscribeSvc<T: StreamController>(pub Arc<T>);
-                    impl<T: StreamController> tonic::server::StreamingService<super::StreamSubscribeRequest> for StreamSubscribeSvc<T> {
-                        type Response = super::StreamSubscribeResponse;
-                        type ResponseStream = T::StreamSubscribeStream;
-                        type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<tonic::Streaming<super::StreamSubscribeRequest>>) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).stream_subscribe(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = StreamSubscribeSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc =
-                            tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
-                        let res = grpc.streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/stream.StreamController/PipelineSubscribe" => {
-                    #[allow(non_camel_case_types)]
-                    struct PipelineSubscribeSvc<T: StreamController>(pub Arc<T>);
-                    impl<T: StreamController> tonic::server::StreamingService<super::PipelineSubscribeRequest> for PipelineSubscribeSvc<T> {
-                        type Response = super::PipelineSubscribeResponse;
-                        type ResponseStream = T::PipelineSubscribeStream;
-                        type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<tonic::Streaming<super::PipelineSubscribeRequest>>) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).pipeline_subscribe(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = PipelineSubscribeSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc =
-                            tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
-                        let res = grpc.streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                _ => Box::pin(async move {
-                    Ok(http::Response::builder()
-                        .status(200)
-                        .header("grpc-status", "12")
-                        .header("content-type", "application/grpc")
-                        .body(empty_body())
-                        .unwrap())
-                }),
-            }
+        #[doc = r" Enable decompressing responses with `gzip`."]
+        pub fn accept_gzip(mut self) -> Self {
+            self.inner = self.inner.accept_gzip();
+            self
         }
-    }
-    impl<T: StreamController> Clone for StreamControllerServer<T> {
-        fn clone(&self) -> Self {
-            let inner = self.inner.clone();
-            Self {
-                inner,
-                accept_compression_encodings: self.accept_compression_encodings,
-                send_compression_encodings: self.send_compression_encodings,
-            }
+        #[doc = " Open a metadata stream."]
+        pub async fn metadata(
+            &mut self, request: impl tonic::IntoRequest<super::MetadataRequest>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<super::MetadataResponse>>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/stream.StreamController/Metadata");
+            self.inner.server_streaming(request.into_request(), path, codec).await
         }
-    }
-    impl<T: StreamController> Clone for _Inner<T> {
-        fn clone(&self) -> Self {
-            Self(self.0.clone())
+        #[doc = " Open a stream publisher channel."]
+        pub async fn stream_publish(
+            &mut self, request: impl tonic::IntoRequest<super::StreamPublishRequest>,
+        ) -> Result<tonic::Response<super::StreamPublishResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/stream.StreamController/StreamPublish");
+            self.inner.unary(request.into_request(), path, codec).await
         }
-    }
-    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{:?}", self.0)
+        #[doc = " Open a stream subscriber channel."]
+        pub async fn stream_subscribe(
+            &mut self, request: impl tonic::IntoStreamingRequest<Message = super::StreamSubscribeRequest>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<super::StreamSubscribeResponse>>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/stream.StreamController/StreamSubscribe");
+            self.inner.streaming(request.into_streaming_request(), path, codec).await
         }
-    }
-    impl<T: StreamController> tonic::transport::NamedService for StreamControllerServer<T> {
-        const NAME: &'static str = "stream.StreamController";
+        #[doc = " Open a pipeline subscriber channel."]
+        pub async fn pipeline_subscribe(
+            &mut self, request: impl tonic::IntoStreamingRequest<Message = super::PipelineSubscribeRequest>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<super::PipelineSubscribeResponse>>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into())))?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/stream.StreamController/PipelineSubscribe");
+            self.inner.streaming(request.into_streaming_request(), path, codec).await
+        }
     }
 }

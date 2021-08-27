@@ -1,7 +1,7 @@
 //! Hadron client code.
 
 use anyhow::{bail, Context, Result};
-use hadron::{Client, ClientCreds};
+use hadron::{Client, ClientCreds, Mode};
 
 const ENV_HADRON_URL: &str = "HADRON_URL";
 const ENV_HADRON_TOKEN: &str = "HADRON_TOKEN";
@@ -41,7 +41,7 @@ pub async fn new_client(url: Option<&str>, token: Option<&str>, user: Option<&st
         (Some(token), None) | (Some(token), Some(_)) => ClientCreds::new_with_token(&token)?,
         (None, Some(user)) => ClientCreds::new_with_password(&user, password.as_deref().unwrap_or(""))?,
     };
-    let client = Client::new(url, creds).await?;
+    let client = Client::new(url.as_str(), Mode::Internal, creds)?;
     Ok(client)
 }
 

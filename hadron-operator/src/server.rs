@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use axum::handler::get;
 use axum::http::StatusCode;
-use axum::prelude::*;
-use axum::Server as AxumServer;
+use axum::{Router, Server as AxumServer};
 use futures::future::FusedFuture;
 use futures::prelude::*;
 use tokio::sync::broadcast;
@@ -36,7 +36,7 @@ impl AppServer {
         // Spawn the HTTP server for webhooks & healthcheck.
         let shutdown = self.shutdown.clone();
         let mut http_shutdown_rx = self.shutdown.subscribe();
-        let app = route("/health", get(|| async { StatusCode::OK }));
+        let app = Router::new().route("/health", get(|| async { StatusCode::OK }));
         let http_server = AxumServer::bind(&([0, 0, 0, 0], self.config.http_port).into())
             .serve(app.into_make_service())
             .with_graceful_shutdown(async move {

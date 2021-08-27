@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use futures::prelude::*;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{ReceiverStream, WatchStream};
 use tonic::transport::Server;
@@ -108,8 +108,6 @@ impl AppServer {
 impl grpc::StreamController for AppServer {
     /// Server streaming response type for the Metadata method.
     type MetadataStream = ReceiverStream<RpcResult<grpc::MetadataResponse>>;
-    /// Server streaming response type for the StreamPublish method.
-    type StreamPublishStream = ReceiverStream<RpcResult<grpc::StreamPublishResponse>>;
     /// Server streaming response type for the StreamSubscribe method.
     type StreamSubscribeStream = ReceiverStream<RpcResult<grpc::StreamSubscribeResponse>>;
     /// Server streaming response type for the PipelineSubscribe method.
@@ -144,17 +142,20 @@ impl grpc::StreamController for AppServer {
     }
 
     /// Open a stream publisher channel.
-    async fn stream_publish(&self, request: Request<Streaming<grpc::StreamPublishRequest>>) -> RpcResult<Response<Self::StreamPublishStream>> {
+    async fn stream_publish(&self, request: Request<grpc::StreamPublishRequest>) -> RpcResult<Response<grpc::StreamPublishResponse>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
         let claims = self.must_get_token_claims(&creds.claims.sub).map_err(AppError::grpc)?;
         claims.check_stream_pub_auth(&self.config.stream).map_err(AppError::grpc)?;
 
-        let (res_tx, res_rx) = mpsc::channel(10);
+        let (tx, rx) = oneshot::channel();
         self.stream_tx
-            .send(StreamCtlMsg::RequestPublish { tx: res_tx, rx: request.into_inner() })
+            .send(StreamCtlMsg::RequestPublish { tx, request: request.into_inner() })
             .await
             .map_err(|_err| AppError::grpc(anyhow!("error communicating with stream controller")))?;
-        Ok(Response::new(ReceiverStream::new(res_rx)))
+        let res = rx
+            .await
+            .map_err(|_err| AppError::grpc(anyhow!("error awaiting response from stream controller")))??;
+        Ok(Response::new(res))
     }
 
     /// Open a stream subscriber channel.

@@ -2,6 +2,28 @@
 kindCreateCluster:
     kind create cluster --name hadron
 
+# Build the Hadron CLI docker image.
+buildCli mode="debug" tag="latest":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case '{{mode}}' in
+    'debug') opts='';;
+    'release') opts='--build-arg=RELEASE_OPT=--release';;
+    *) echo 'unrecognized value for `mode`, must be either `debug` or `release`'; exit 1;;
+    esac
+
+    docker build ${opts} --target builder -f hadron-cli/Dockerfile .
+    docker build ${opts} --target release -f hadron-cli/Dockerfile -t ghcr.io/hadron-project/hadron/hadron-cli:{{tag}} .
+
+# Load the Hadron CLI docker image into kind cluster.
+kindLoadCli tag="latest":
+    kind load docker-image --name hadron ghcr.io/hadron-project/hadron/hadron-cli:{{tag}}
+
+# Run the Hadron CLI within the kind cluster.
+runCli:
+    kubectl --context="kind-hadron" run hadron-cli --rm -it \
+        --image ghcr.io/hadron-project/hadron/hadron-cli:latest --image-pull-policy=Never
+
 # Build the Hadron Operator docker image.
 buildOperator mode="debug" tag="latest":
     #!/usr/bin/env bash

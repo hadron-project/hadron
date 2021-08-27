@@ -3,8 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use bytes::Bytes;
-use hadron::PipelineSubDelivery;
+use hadron::{NewEvent, PipelineSubscribeResponse};
 use structopt::StructOpt;
 
 use crate::Hadron;
@@ -39,20 +38,18 @@ struct StdoutHandler {}
 #[hadron::async_trait]
 impl hadron::PipelineHandler for StdoutHandler {
     #[tracing::instrument(level = "debug", skip(self, payload))]
-    async fn handle(&self, payload: PipelineSubDelivery) -> Result<Bytes> {
+    async fn handle(&self, payload: PipelineSubscribeResponse) -> Result<NewEvent> {
         let mut data = vec![];
         for (key, record) in payload.inputs.iter() {
-            match std::str::from_utf8(&record) {
-                Ok(strdata) => {
-                    data.push((key, strdata));
-                }
-                Err(_) => {
-                    data.push((key, "[binary data]"));
-                }
-            }
+            data.push((key, format!("{:?}", &record)));
         }
         data.sort_by(|a, b| a.0.cmp(b.0));
         tracing::info!(stage = ?payload.stage, offset = payload.offset, inputs = ?data, "handling pipeline stage delivery");
-        Ok(Bytes::new())
+        Ok(NewEvent {
+            r#type: "".into(),
+            subject: "".into(),
+            optattrs: Default::default(),
+            data: Vec::with_capacity(0),
+        })
     }
 }

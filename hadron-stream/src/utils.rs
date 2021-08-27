@@ -3,7 +3,8 @@
 use anyhow::{bail, Context, Result};
 use prost::Message;
 
-pub const HEADER_APP_PROTO: &str = "application/protobuf";
+/// The CloudEvents spec version currently being used.
+pub const CLOUD_EVENTS_SPEC_VERSION: &str = "1.0";
 
 /// Encode a stream entry key using the given prefix & offset.
 pub fn encode_3_byte_prefix(prefix: &[u8; 3], offset: u64) -> [u8; 12] {
