@@ -29,10 +29,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use futures::stream::{FuturesUnordered, StreamExt};
+use futures::stream::StreamExt;
 use prost::Message;
 use sled::Tree;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use tonic::Streaming;
@@ -67,8 +67,6 @@ pub struct StreamCtl {
 
     /// A channel of inbound client requests.
     requests: ReceiverStream<StreamCtlMsg>,
-    /// A stream of all publisher channels sending in data to be published.
-    publishers: futures::stream::FuturesUnordered<publisher::PublisherFut>,
     /// A channel of requests for stream subscription.
     subs_tx: mpsc::Sender<StreamSubCtlMsg>,
 
@@ -102,7 +100,7 @@ impl StreamCtl {
         let source = format!("/{}/{}/{}", config.cluster_name, config.stream, partition);
 
         // Spawn the subscriber controller.
-        let (offset_signal, offset_signal_rx) = watch::channel(next_offset);
+        let (offset_signal, offset_signal_rx) = watch::channel(next_offset.saturating_sub(1));
         let (subs_tx, subs_rx) = mpsc::channel(100);
         let sub_ctl = subscriber::StreamSubCtl::new(
             config.clone(),
@@ -127,7 +125,6 @@ impl StreamCtl {
                 _tree_metadata: tree_metadata,
                 partition,
                 requests: ReceiverStream::new(requests),
-                publishers: FuturesUnordered::new(),
                 subs_tx,
                 offset_signal,
                 shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
@@ -154,7 +151,6 @@ impl StreamCtl {
             }
             tokio::select! {
                 msg_opt = self.requests.next() => self.handle_ctl_msg(msg_opt).await,
-                Some(Some(pubres)) = self.publishers.next() => self.handle_publisher_request(pubres).await,
                 _ = self.shutdown_rx.next() => break,
             }
         }
@@ -179,14 +175,9 @@ impl StreamCtl {
             }
         };
         match msg {
-            StreamCtlMsg::RequestPublish { tx, rx } => self.handle_request_publish(tx, rx).await,
+            StreamCtlMsg::RequestPublish { tx, request } => self.handle_publisher_request(tx, request).await,
             StreamCtlMsg::RequestSubscribe { tx, rx, setup } => self.handle_request_subscribe(tx, rx, setup).await,
         }
-    }
-
-    /// Handle a request to setup a publisher channel.
-    async fn handle_request_publish(&mut self, tx: mpsc::Sender<RpcResult<StreamPublishResponse>>, rx: Streaming<StreamPublishRequest>) {
-        self.publishers.push(publisher::PublisherFut::new((tx, rx)));
     }
 
     /// Handle a request to setup a subscriber channel.
@@ -249,8 +240,8 @@ async fn recover_stream_state(stream_tree: &Tree, metadata_tree: &Tree) -> Resul
 pub enum StreamCtlMsg {
     /// A client request to setup a publisher channel.
     RequestPublish {
-        tx: mpsc::Sender<RpcResult<StreamPublishResponse>>,
-        rx: Streaming<StreamPublishRequest>,
+        tx: oneshot::Sender<RpcResult<StreamPublishResponse>>,
+        request: StreamPublishRequest,
     },
     /// A client request to setup a subscriber channel.
     RequestSubscribe {

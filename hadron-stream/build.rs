@@ -7,12 +7,6 @@ fn main() -> Result<()> {
         .compile(&["proto/stream.proto"], &["proto"])
         .context("error compiling stream proto")?;
 
-    // Build the pipeline.proto code.
-    tonic_build::configure()
-        .out_dir("src/models/proto")
-        .compile(&["proto/pipeline.proto"], &["proto"])
-        .context("error compiling pipeline proto")?;
-
     // Build the stream.proto code.
     tonic_build::configure()
         .out_dir("src/grpc")

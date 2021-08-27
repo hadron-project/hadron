@@ -7,7 +7,7 @@ service StreamController {
     rpc Metadata(MetadataRequest) returns (stream MetadataResponse);
 
     // Open a stream publisher channel.
-    rpc StreamPublish(stream StreamPublishRequest) returns (stream StreamPublishResponse);
+    rpc StreamPublish(StreamPublishRequest) returns (StreamPublishResponse);
 
     // Open a stream subscriber channel.
     rpc StreamSubscribe(stream StreamSubscribeRequest) returns (stream StreamSubscribeResponse);
@@ -28,7 +28,10 @@ message Event {
     //
     // See [`id`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#id).
     uint64 id = 1;
-    // The source of this event, formatted as `/{cluster}/{stream}/{partition}/`.
+    // The source of this event.
+    //
+    // For streams this will be formatted as `/{cluster}/{stream}/{partition}/` and for pipelines
+    // this will be formatted as `/{cluster}/{stream}/{partition}/{pipeline}/{stage}/`.
     //
     // See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
     string source = 2;
@@ -102,7 +105,7 @@ message StreamPublishRequest {
 // A response from publishing data to a stream.
 message StreamPublishResponse {
     // The offset of the last entry to be written to the stream.
-    uint64 last_offset = 1;
+    uint64 offset = 1;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -187,13 +190,13 @@ message PipelineSubscribeResponse {
     // Every key will be the name of the corresponding pipeline stage output which has been declared
     // as an input dependency for this stage, or the `root_event` if declared as a dependency for
     // this stage.
-    map<string, bytes> inputs = 3;
+    map<string, Event> inputs = 3;
 }
 
 // The output of a successful pipeline stage consumption.
 message PipelineStageOutput {
     // The base output of the corresponding pipeline stage.
-    bytes output = 1;
+    NewEvent output = 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -210,8 +213,10 @@ message MetadataResponse {
 
 // Stream partition metadata.
 message StreamPartition {
+    // The partition number of this partition.
+    uint32 partition = 1;
     // The Kubernetes internal address of this partition.
-    string internal = 1;
+    string internal = 2;
     // The Kubernetes external address of this partition, or empty string if not externally accessible.
-    string external = 2;
+    string external = 3;
 }

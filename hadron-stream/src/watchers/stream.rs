@@ -94,15 +94,18 @@ impl StreamWatcher {
         tracing::debug!("updating stream CR info");
         let data = (0..stream.spec.partitions).fold(vec![], |mut acc, offset| {
             let internal = format!(
-                "{}-{}.{}.{}.svc.cluster.local:{}",
+                "{}-{}.{}.svc.cluster.local:{}", // TODO: make cluster apex configurable.
                 stream.name(),
                 offset,
-                stream.name(),
                 &self.config.namespace,
                 &self.config.client_port,
             );
             // TODO[#62,ingress]: external connection info should be built here when applicable.
-            acc.push(StreamPartition { internal, ..Default::default() });
+            acc.push(StreamPartition {
+                partition: offset as u32,
+                internal,
+                ..Default::default()
+            });
             acc
         });
         let _res = self.metadata.send(data);

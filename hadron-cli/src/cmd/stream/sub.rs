@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use hadron::{StreamSubDelivery, SubscriberConfig, SubscriptionStartingPoint};
+use hadron::{StreamSubscribeResponse, SubscriberConfig, SubscriptionStartingPoint};
 use structopt::StructOpt;
 
 use crate::Hadron;
@@ -12,9 +12,6 @@ use crate::Hadron;
 #[derive(StructOpt)]
 #[structopt(name = "sub")]
 pub struct Sub {
-    /// The namespace/stream to which the subscription should be made.
-    #[structopt(short, long)]
-    stream: String,
     /// The subscription group to use.
     #[structopt(short, long)]
     group: String,
@@ -37,7 +34,7 @@ pub struct Sub {
 
 impl Sub {
     pub async fn run(&self, base: &Hadron) -> Result<()> {
-        tracing::info!("subscribing to stream {}", self.stream);
+        tracing::info!("subscribing to stream");
         let handler = Arc::new(StdoutHandler {});
         let config = Some(SubscriberConfig {
             durable: self.durable,
@@ -54,7 +51,7 @@ impl Sub {
         });
         let client = base.get_client().await?;
         let sub = client
-            .subscribe(&self.stream, &self.group, config, handler)
+            .subscribe(&self.group, config, handler)
             .await
             .context("error building subscription")?;
         let _ = tokio::signal::ctrl_c().await;
@@ -67,7 +64,7 @@ struct StdoutHandler {}
 
 #[hadron::async_trait]
 impl hadron::StreamHandler for StdoutHandler {
-    async fn handle(&self, payload: StreamSubDelivery) -> Result<()> {
+    async fn handle(&self, payload: StreamSubscribeResponse) -> Result<()> {
         for record in payload.batch {
             let data = std::str::from_utf8(&record.data).unwrap_or("[binary data]");
             tracing::info!(
@@ -75,7 +72,8 @@ impl hadron::StreamHandler for StdoutHandler {
                 source = %record.source,
                 specversion = %record.specversion,
                 r#type = %record.r#type,
-                key = %record.key,
+                subject = %record.subject,
+                optattrs = ?record.optattrs,
                 data,
                 "handling subscription delivery",
             );

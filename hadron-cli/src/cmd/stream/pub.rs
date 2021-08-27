@@ -4,21 +4,18 @@ use anyhow::{Context, Result};
 use structopt::StructOpt;
 
 use crate::Hadron;
-use hadron::NewEvent;
+use hadron::{NewEvent, WriteAck};
 
 /// Publish data to a stream.
 #[derive(StructOpt)]
 #[structopt(name = "pub")]
 pub struct Pub {
-    /// The stream to which data should be published.
-    #[structopt(short, long)]
-    stream: String,
     /// The type of the new event.
     #[structopt(short, long)]
     r#type: String,
-    /// The key of the new event.
+    /// The subject of the new event.
     #[structopt(short, long)]
-    key: String,
+    subject: String,
     /// Optional attributes to associate with the given payload.
     #[structopt(short = "o", parse(try_from_str = parse_key_val), number_of_values = 1)]
     optattrs: Vec<(String, String)>,
@@ -35,8 +32,8 @@ pub struct Pub {
 impl Pub {
     pub async fn run(&self, base: &Hadron) -> Result<()> {
         // Build a new client.
-        tracing::info!("publishing data to {}", self.stream);
-        let mut client = base.get_client().await?.publisher("hadron-cli", &self.stream).await?;
+        tracing::info!("publishing data");
+        let mut client = base.get_client().await?.publisher("hadron-cli").await?;
 
         // If the given payload is binary, base64 decode it before sending it to the cluster.
         let data = if self.binary {
@@ -45,16 +42,19 @@ impl Pub {
             self.data.as_bytes().to_vec()
         };
 
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
         // Submit the request to the cluster.
+        client.ready(None).await?;
         let res = client
-            .publish(NewEvent {
-                r#type: self.r#type.clone(),
-                key: self.key.clone(),
-                optattrs: self.optattrs.iter().cloned().collect(),
-                data,
-            })
+            .publish(
+                NewEvent {
+                    r#type: self.r#type.clone(),
+                    subject: self.subject.clone(),
+                    optattrs: self.optattrs.iter().cloned().collect(),
+                    data,
+                },
+                WriteAck::All,
+                true,
+            )
             .await
             .context("error publishing data")?;
         tracing::info!("Response: {:?}", res);

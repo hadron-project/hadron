@@ -27,6 +27,9 @@ use crate::models::stream::Subscription;
 use crate::stream::{PREFIX_STREAM_SUBS, PREFIX_STREAM_SUB_OFFSETS};
 use crate::utils;
 
+/// The default max batch size for subscription groups.
+const DEFAULT_MAX_BATCH_SIZE: u32 = 50;
+
 /// The liveness stream type used by this controller.
 type SubLivenessStream = LivenessStream<RpcResult<StreamSubscribeResponse>, StreamSubscribeRequest>;
 /// The sender & receiver side of a client channel.
@@ -54,7 +57,7 @@ pub struct StreamSubCtl {
     events_tx: mpsc::Sender<StreamSubCtlMsg>,
     /// A channel of events to be processed by this controller.
     events_rx: ReceiverStream<StreamSubCtlMsg>,
-    /// A signal from the parent stream on the stream's current `next_offset` value.
+    /// A signal from the parent stream on the stream's `next_offset` value.
     stream_offset: WatchStream<u64>,
     /// A stream of liveness checks on the active subscriber channels.
     liveness_checks: StreamMap<Uuid, SubLivenessStream>,
@@ -261,7 +264,7 @@ impl StreamSubCtl {
     async fn ensure_subscriber_record(&mut self, sub: &StreamSubscribeSetup) -> Result<&mut SubscriptionGroup> {
         // Get a handle to the group subscriber data, creating one if not present.
         let already_exists = self.subs.groups.contains_key(&sub.group_name);
-        let stream_current_offset = self.next_offset - 1; // Underflow not possible, see `recover_stream_state`.
+        let stream_current_offset = self.next_offset.saturating_sub(1);
         let offset = match &sub.starting_point {
             Some(StreamSubscribeSetupStartingPoint::Beginning(_empty)) => 0,
             Some(StreamSubscribeSetupStartingPoint::Latest(_empty)) => stream_current_offset,
@@ -279,9 +282,10 @@ impl StreamSubCtl {
             // Ensure the subscription model exists.
             .or_insert_with(|| {
                 let durable = sub.durable;
+                let max_batch_size = if sub.max_batch_size == 0 { DEFAULT_MAX_BATCH_SIZE } else { sub.max_batch_size };
                 let sub = Subscription {
                     group_name: sub.group_name.clone(),
-                    max_batch_size: sub.max_batch_size,
+                    max_batch_size,
                 };
                 SubscriptionGroup::new(sub, offset, durable)
             });
@@ -321,13 +325,14 @@ impl StreamSubCtl {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn execute_delivery_pass(&mut self) {
         // Execute a delivery pass.
+        let stream_current_offset = self.next_offset.saturating_sub(1);
         for (_name, group) in self.subs.groups.iter_mut() {
             // If the gruop has no active channels, then skip it.
             if group.active_channels.is_empty() {
                 continue;
             }
 
-            // If the group has an idel delivery cache, attempt to deliver it.
+            // If the group has an idle delivery cache, attempt to deliver it.
             match group.delivery_cache {
                 // Attempt to drive a delivery.
                 SubGroupDataCache::NeedsDelivery(_) => {
@@ -341,7 +346,7 @@ impl StreamSubCtl {
             }
 
             // If the group is at the head of the stream, then skip it.
-            if group.offset >= self.next_offset {
+            if group.offset >= stream_current_offset {
                 continue;
             }
 

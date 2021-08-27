@@ -1,5 +1,5 @@
-hadron
-======
+hadron-client
+=============
 The Hadron Rust client library.
 
 This library can be used independently in Rust applications, or it can be used via C FFI in any other language in order to provide a uniform base across all supported languages.
