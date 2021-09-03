@@ -70,7 +70,7 @@ pub struct StreamCtl {
     /// A channel of requests for stream subscription.
     subs_tx: mpsc::Sender<StreamSubCtlMsg>,
 
-    /// A channel used for communicating the stream's `next_offset` value.
+    /// A channel used for communicating the stream's last written offset value.
     offset_signal: watch::Sender<u64>,
     /// A channel used for triggering graceful shutdown.
     _shutdown_tx: broadcast::Sender<()>,
@@ -81,8 +81,8 @@ pub struct StreamCtl {
     /// A handle to this controller's spawned subscription controller.
     sub_ctl: JoinHandle<Result<()>>,
 
-    /// The next offset of the stream.
-    next_offset: u64,
+    /// The last written offset of the stream.
+    current_offset: u64,
     /// The CloudEvents `source` field assigned to each stream event on this partition.
     source: String,
 }
@@ -96,11 +96,11 @@ impl StreamCtl {
         let partition = config.partition;
         let tree = db.get_stream_tree().await?;
         let tree_metadata = db.get_stream_tree_metadata().await?;
-        let (next_offset, subs) = recover_stream_state(&tree, &tree_metadata).await?;
+        let (current_offset, subs) = recover_stream_state(&tree, &tree_metadata).await?;
         let source = format!("/{}/{}/{}", config.cluster_name, config.stream, partition);
 
         // Spawn the subscriber controller.
-        let (offset_signal, offset_signal_rx) = watch::channel(next_offset.saturating_sub(1));
+        let (offset_signal, offset_signal_rx) = watch::channel(current_offset);
         let (subs_tx, subs_rx) = mpsc::channel(100);
         let sub_ctl = subscriber::StreamSubCtl::new(
             config.clone(),
@@ -113,7 +113,7 @@ impl StreamCtl {
             subs_rx,
             offset_signal_rx.clone(),
             subs,
-            next_offset,
+            current_offset,
         )
         .spawn();
 
@@ -131,7 +131,7 @@ impl StreamCtl {
                 _shutdown_tx: shutdown_tx,
                 descheduled: false,
                 sub_ctl,
-                next_offset,
+                current_offset,
                 source,
             },
             offset_signal_rx,
@@ -196,12 +196,10 @@ async fn recover_stream_state(stream_tree: &Tree, metadata_tree: &Tree) -> Resul
         let kv_opt = stream_tree
             .last()
             .context("error fetching next offset key during recovery")?;
-        let next_offset = kv_opt
-            .map(|(key, _val)| utils::decode_u64(&key).context("error decoding next offset value from storage"))
+        let last_written_offset = kv_opt
+            .map(|(key, _val)| utils::decode_u64(&key).context("error decoding offset value from storage"))
             .transpose()?
-            .map(|val| val + 1) // We need to know the next offset, not the last written.
-            // Always start at `1`, not `0`, as this makes subscriber initialization more simple.
-            .unwrap_or(1);
+            .unwrap_or(0);
 
         // Fetch all stream subscriber info.
         let mut subs = HashMap::new();
@@ -230,7 +228,7 @@ async fn recover_stream_state(stream_tree: &Tree, metadata_tree: &Tree) -> Resul
         }
 
         let subs: Vec<_> = subs.into_iter().map(|(_, val)| val).collect();
-        Ok((next_offset, subs))
+        Ok((last_written_offset, subs))
     })
     .await??;
     Ok(val)

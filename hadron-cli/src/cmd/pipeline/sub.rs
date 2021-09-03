@@ -44,7 +44,7 @@ impl hadron::PipelineHandler for StdoutHandler {
             data.push((key, format!("{:?}", &record)));
         }
         data.sort_by(|a, b| a.0.cmp(b.0));
-        tracing::info!(stage = ?payload.stage, offset = payload.offset, inputs = ?data, "handling pipeline stage delivery");
+        tracing::info!(stage = ?payload.stage, root_event = ?payload.root_event, inputs = ?data, "handling pipeline stage delivery");
         Ok(NewEvent {
             r#type: "".into(),
             subject: "".into(),

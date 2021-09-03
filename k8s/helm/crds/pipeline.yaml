@@ -84,9 +84,11 @@ spec:
                     - location
                   type: object
                 triggers:
-                  default: ""
-                  description: "Event type matchers which will trigger this pipeline.\n\nValues are expressed as a comma-separated list. An empty string will match any event type."
-                  type: string
+                  default: []
+                  description: "Event type matchers which will trigger this pipeline.\n\n- An empty list will match any event. - Hierarchies may be matched using the `.` to match different segments. - Wildcards `*` and `>` may be used. The `*` will match any segment, and `>` will match one or more following segments."
+                  items:
+                    type: string
+                  type: array
               required:
                 - maxParallel
                 - sourceStream

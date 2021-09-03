@@ -95,30 +95,7 @@ impl PipelineWatcher {
             }
         };
         match event {
-            Event::Applied(pipeline) => {
-                let name = match &pipeline.metadata.name {
-                    Some(name) => name,
-                    None => return,
-                };
-                tracing::debug!(%name, "adding new Pipeline CR");
-                let orig = self.pipelines.load_full();
-
-                // If pipeline already exists, then simply pass along the updated model.
-
-                // Else, spawn new pipeline.
-                let mut updated = orig.as_ref().clone();
-                let (pipeline_name, pipeline) = (Arc::new(name.to_string()), Arc::new(pipeline));
-                let events_tx = match self
-                    .spawn_pipeline_controller(pipeline_name.clone(), pipeline.clone())
-                    .await
-                {
-                    Some(events_tx) => events_tx,
-                    None => return,
-                };
-
-                updated.insert(pipeline_name.clone(), PipelineHandle { pipeline: pipeline.clone(), tx: events_tx });
-                self.pipelines.store(Arc::new(updated));
-            }
+            Event::Applied(pipeline) => self.handle_pipeline_applied(pipeline).await,
             Event::Deleted(pipeline) => {
                 let pipeline = Arc::new(pipeline);
                 let name = match &pipeline.metadata.name {
@@ -204,6 +181,37 @@ impl PipelineWatcher {
                 self.pipelines.store(Arc::new(new_pipelines));
             }
         }
+    }
+
+    /// Handle a pipeline applied/updated event.
+    #[tracing::instrument(level = "debug", skip(self, pipeline))]
+    async fn handle_pipeline_applied(&mut self, pipeline: Pipeline) {
+        let name = match &pipeline.metadata.name {
+            Some(name) => name,
+            None => return,
+        };
+        tracing::debug!(%name, "adding new Pipeline CR");
+        let orig = self.pipelines.load_full();
+
+        // If pipeline already exists, then simply pass along the updated model.
+        if let Some(handle) = orig.get(name) {
+            let _res = handle.tx.send(PipelineCtlMsg::PipelineUpdated(Arc::new(pipeline))).await;
+            return;
+        }
+
+        // Else, spawn new pipeline.
+        let mut updated = orig.as_ref().clone();
+        let (pipeline_name, pipeline) = (Arc::new(name.to_string()), Arc::new(pipeline));
+        let events_tx = match self
+            .spawn_pipeline_controller(pipeline_name.clone(), pipeline.clone())
+            .await
+        {
+            Some(events_tx) => events_tx,
+            None => return,
+        };
+
+        updated.insert(pipeline_name.clone(), PipelineHandle { pipeline: pipeline.clone(), tx: events_tx });
+        self.pipelines.store(Arc::new(updated));
     }
 
     /// Spawn a pipeline controller.

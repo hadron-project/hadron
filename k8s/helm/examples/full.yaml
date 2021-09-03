@@ -20,7 +20,8 @@ metadata:
   namespace: default
 spec:
   sourceStream: events
-  triggers: ""
+  triggers:
+    - "service.created"
   maxParallel: 50
   startPoint:
     location: beginning
@@ -36,6 +37,7 @@ spec:
 
     - name: cleanup
       dependencies:
+        - deploy-service
         - setup-monitoring
         - setup-billing
         - email-customer

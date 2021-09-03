@@ -25,6 +25,7 @@ use crate::grpc::{Event, PipelineSubscribeRequest, PipelineSubscribeRequestActio
 use crate::utils;
 use hadron_core::crd::{Pipeline, PipelineStartPointLocation, RequiredMetadata};
 
+const DEFAULT_MAX_PARALLEL: u32 = 50;
 /// A pipeline metadata key used to track the last offset of the source stream to have been
 /// transformed into a pipeline instance for pipeline processing.
 ///
@@ -40,8 +41,6 @@ const PREFIX_META_ACTIVE_INSTANCES: &[u8; 3] = b"/a/";
 const PREFIX_PIPELINE_INSTANCES: &[u8; 3] = b"/i/";
 /// The key prefix under which pipeline stage outputs are stored.
 const PREFIX_PIPELINE_STAGE_OUTPUTS: &[u8; 3] = b"/s/";
-/// The root event dependency identifier.
-const ROOT_EVENT: &str = "root_event";
 
 /// The transaction type returned from DB operations.
 type TxResult = sled::transaction::ConflictableTransactionResult<(), anyhow::Error>;
@@ -53,7 +52,7 @@ type ClientChannel = (mpsc::Sender<RpcResult<PipelineSubscribeResponse>>, Stream
 /// A pipeline controller for managing a pipeline.
 pub struct PipelineCtl {
     /// The application's runtime config.
-    _config: Arc<Config>,
+    config: Arc<Config>,
     /// The application's database system.
     _db: Database,
     /// The database tree for storing this pipeline's instance records.
@@ -82,7 +81,7 @@ pub struct PipelineCtl {
     /// A stream of liveness checks on the active subscriber channels.
     liveness_checks: StreamMap<Uuid, PipelineLivenessStream>,
 
-    /// A signal describing the source stream's `next_offset` value.
+    /// A signal of the parent stream's last written offset.
     stream_signal: WatchStream<u64>,
     /// The last known offset of the input stream.
     stream_offset: u64,
@@ -114,7 +113,7 @@ impl PipelineCtl {
         let source = format!("/{}/{}/{}/{}/", config.cluster_name, config.stream, partition, pipeline.name());
 
         Ok(Self {
-            _config: config,
+            config,
             _db: db,
             tree,
             tree_metadata,
@@ -142,7 +141,12 @@ impl PipelineCtl {
     }
 
     async fn run(mut self) -> Result<()> {
-        tracing::debug!("pipeline controller {}/{} has started", self.pipeline.name(), self.partition);
+        tracing::debug!(
+            "pipeline controller {}/{}/{} has started",
+            self.config.stream,
+            self.partition,
+            self.pipeline.name()
+        );
 
         loop {
             if self.descheduled {
@@ -157,8 +161,22 @@ impl PipelineCtl {
         }
 
         // Begin shutdown routine.
-        tracing::debug!("pipeline controller {}/{} has shutdown", self.pipeline.name(), self.partition);
+        tracing::debug!(
+            "pipeline controller {}/{}/{} has shutdown",
+            self.config.stream,
+            self.partition,
+            self.pipeline.name()
+        );
         Ok(())
+    }
+
+    /// A getter for the Pipeline's max parallel config, defaulting to `DEFAULT_MAX_PARALLEL` if set to `0`.
+    fn max_parallel(&self) -> u32 {
+        if self.pipeline.spec.max_parallel == 0 {
+            DEFAULT_MAX_PARALLEL
+        } else {
+            self.pipeline.spec.max_parallel
+        }
     }
 
     /// Handle any dead channels.
@@ -181,9 +199,9 @@ impl PipelineCtl {
     #[tracing::instrument(level = "trace", skip(self, offset))]
     async fn handle_input_stream_offset_update(&mut self, offset: u64) {
         // Track the offset update.
-        self.stream_offset = offset.saturating_sub(1);
+        self.stream_offset = offset;
         // Only fetch new data if we are not already at capacity.
-        if self.active_pipelines.len() >= self.pipeline.spec.max_parallel as usize {
+        if self.active_pipelines.len() >= self.max_parallel() as usize {
             return;
         }
         // Fetch new data from the input stream & create new pipeline instances if triggers match.
@@ -338,11 +356,7 @@ impl PipelineCtl {
                     continue;
                 }
                 // Skip stages which do not have all dependencies met.
-                if !stage
-                    .dependencies
-                    .iter()
-                    .all(|dep| inst.outputs.contains_key(dep) || dep == ROOT_EVENT)
-                {
+                if !stage.dependencies.iter().all(|dep| inst.outputs.contains_key(dep)) {
                     continue;
                 }
                 // Get a handle to the stage subs.
@@ -381,20 +395,14 @@ impl PipelineCtl {
                 // payload with all needed inputs.
                 let mut payload = PipelineSubscribeResponse {
                     stage: stage.name.clone(),
-                    offset: inst.root_event.id,
+                    root_event: Some(inst.root_event.clone()),
                     inputs: Default::default(),
                 };
-                stage.dependencies.iter().for_each(|dep| {
-                    if dep == ROOT_EVENT {
-                        payload.inputs.insert(ROOT_EVENT.into(), inst.root_event.clone());
-                    } else {
-                        match inst.outputs.get(dep) {
-                            Some(input) => {
-                                payload.inputs.insert(dep.clone(), input.clone());
-                            }
-                            None => tracing::error!("failed to accumulate stage dependencies even though all were accounted for"),
-                        }
+                stage.dependencies.iter().for_each(|dep| match inst.outputs.get(dep) {
+                    Some(input) => {
+                        payload.inputs.insert(dep.clone(), input.clone());
                     }
+                    None => tracing::error!("failed to accumulate stage dependencies even though all were accounted for"),
                 });
 
                 // Payload is ready, send it.
@@ -429,7 +437,7 @@ impl PipelineCtl {
 
         // If number of active instances is < the pipeline's max parallel settings, then fetch
         // more data from the source stream to find matching records for pipeline instantiation.
-        if self.active_pipelines.len() < self.pipeline.spec.max_parallel as usize
+        if self.active_pipelines.len() < self.max_parallel() as usize
             && self.stream_offset > self.last_offset_processed
             && !self.is_fetching_stream_data
         {
@@ -561,23 +569,24 @@ impl PipelineCtl {
             self.tree_metadata.clone(),
             self.last_offset_processed,
             self.pipeline.clone(),
+            self.max_parallel(),
             self.events_tx.clone(),
         ));
     }
 
-    #[tracing::instrument(level = "trace", skip(tree_pipeline, tree_stream, tree_metadata, last_offset_processed, pipeline, tx))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(tree_pipeline, tree_stream, tree_metadata, last_offset_processed, pipeline, max_parallel, tx)
+    )]
     async fn try_fetch_stream_data(
-        tree_pipeline: Tree, tree_stream: Tree, tree_metadata: Tree, last_offset_processed: u64, pipeline: Arc<Pipeline>,
+        tree_pipeline: Tree, tree_stream: Tree, tree_metadata: Tree, last_offset_processed: u64, pipeline: Arc<Pipeline>, max_parallel: u32,
         tx: mpsc::Sender<PipelineCtlMsg>,
     ) {
         tracing::debug!("fetching stream data for pipeline");
         let data_res = Database::spawn_blocking(move || -> Result<FetchStreamRecords> {
             // Iterate over the records of the stream up to the maximum parallel allowed.
-            let (mut pipeline_batch, mut metadata_batch, mut new_instances) = (
-                sled::Batch::default(),
-                sled::Batch::default(),
-                Vec::with_capacity(pipeline.spec.max_parallel as usize),
-            );
+            let (mut pipeline_batch, mut metadata_batch, mut new_instances) =
+                (sled::Batch::default(), sled::Batch::default(), Vec::with_capacity(max_parallel as usize));
             let (start, mut last_processed, mut count) = (&utils::encode_u64(last_offset_processed + 1), last_offset_processed, 0);
             let stream = tree_stream.range::<_, std::ops::RangeFrom<&[u8]>>(start..);
             for event_res in stream {
@@ -588,7 +597,7 @@ impl PipelineCtl {
                 let root_event: Event = utils::decode_model(root_event_bytes.as_ref()).context("error decoding event from storage")?;
 
                 // Check the event's type to ensure it matches the pipeline's matcher patterns, else skip.
-                if !Pipeline::event_type_matches_triggers(&pipeline.spec.triggers, &root_event.r#type) {
+                if !Pipeline::event_type_matches_triggers(pipeline.spec.triggers.as_slice(), &root_event.r#type) {
                     continue;
                 }
 
@@ -604,7 +613,7 @@ impl PipelineCtl {
                 count += 1;
 
                 // If we've colleced the slots available, then break.
-                if count == pipeline.spec.max_parallel {
+                if count == max_parallel {
                     break;
                 }
             }
