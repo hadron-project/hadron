@@ -183,13 +183,12 @@ message PipelineSubscribeRequest {
 message PipelineSubscribeResponse {
     // The name of the pipeline stage to which this delivery corresponds.
     string stage = 1;
-    // The source stream offset corresponding to this pipeline instance.
-    uint64 offset = 2;
+    // The root event which triggered this pipeline instance.
+    Event root_event = 2;
     // A mapping of pipeline stage inputs based on the definition of this pipeline stage.
     //
     // Every key will be the name of the corresponding pipeline stage output which has been declared
-    // as an input dependency for this stage, or the `root_event` if declared as a dependency for
-    // this stage.
+    // as an input dependency for this stage.
     map<string, Event> inputs = 3;
 }
 

@@ -28,7 +28,7 @@ use crate::stream::{PREFIX_STREAM_SUBS, PREFIX_STREAM_SUB_OFFSETS};
 use crate::utils;
 
 /// The default max batch size for subscription groups.
-const DEFAULT_MAX_BATCH_SIZE: u32 = 50;
+const DEFAULT_MAX_BATCH_SIZE: u32 = 1;
 
 /// The liveness stream type used by this controller.
 type SubLivenessStream = LivenessStream<RpcResult<StreamSubscribeResponse>, StreamSubscribeRequest>;
@@ -50,14 +50,14 @@ pub struct StreamSubCtl {
 
     /// Data on all subscriptions and active subscribers.
     subs: SubscriberInfo,
-    /// The parent stream's next offset.
-    next_offset: u64,
+    /// The parent stream's last written offset.
+    current_offset: u64,
 
     /// A channel of events to be processed by this controller.
     events_tx: mpsc::Sender<StreamSubCtlMsg>,
     /// A channel of events to be processed by this controller.
     events_rx: ReceiverStream<StreamSubCtlMsg>,
-    /// A signal from the parent stream on the stream's `next_offset` value.
+    /// A signal of the parent stream's last written offset.
     stream_offset: WatchStream<u64>,
     /// A stream of liveness checks on the active subscriber channels.
     liveness_checks: StreamMap<Uuid, SubLivenessStream>,
@@ -78,7 +78,7 @@ impl StreamSubCtl {
     pub fn new(
         config: Arc<Config>, db: Database, tree: Tree, tree_metadata: Tree, partition: u32, shutdown_tx: broadcast::Sender<()>,
         events_tx: mpsc::Sender<StreamSubCtlMsg>, events_rx: mpsc::Receiver<StreamSubCtlMsg>, stream_offset: watch::Receiver<u64>,
-        subs: Vec<(Subscription, u64)>, next_offset: u64,
+        subs: Vec<(Subscription, u64)>, current_offset: u64,
     ) -> Self {
         let subs = SubscriberInfo::new(subs);
         Self {
@@ -88,7 +88,7 @@ impl StreamSubCtl {
             tree_metadata,
             partition,
             subs,
-            next_offset,
+            current_offset,
             events_tx,
             events_rx: ReceiverStream::new(events_rx),
             stream_offset: WatchStream::new(stream_offset),
@@ -140,7 +140,7 @@ impl StreamSubCtl {
     /// Handle an update of the stream's next offset, indicating that new data has been written.
     #[tracing::instrument(level = "trace", skip(self, offset))]
     async fn handle_offset_update(&mut self, offset: u64) {
-        self.next_offset = offset;
+        self.current_offset = offset;
         self.execute_delivery_pass().await;
     }
 
@@ -264,19 +264,18 @@ impl StreamSubCtl {
     async fn ensure_subscriber_record(&mut self, sub: &StreamSubscribeSetup) -> Result<&mut SubscriptionGroup> {
         // Get a handle to the group subscriber data, creating one if not present.
         let already_exists = self.subs.groups.contains_key(&sub.group_name);
-        let stream_current_offset = self.next_offset.saturating_sub(1);
         let offset = match &sub.starting_point {
             Some(StreamSubscribeSetupStartingPoint::Beginning(_empty)) => 0,
-            Some(StreamSubscribeSetupStartingPoint::Latest(_empty)) => stream_current_offset,
+            Some(StreamSubscribeSetupStartingPoint::Latest(_empty)) => self.current_offset,
             Some(StreamSubscribeSetupStartingPoint::Offset(offset)) => {
                 let offset = if *offset == 0 { 0 } else { offset - 1 };
-                if offset > stream_current_offset {
-                    stream_current_offset
+                if offset > self.current_offset {
+                    self.current_offset
                 } else {
                     offset
                 }
             }
-            None => stream_current_offset,
+            None => self.current_offset,
         };
         let entry = self.subs.groups.entry(sub.group_name.clone())
             // Ensure the subscription model exists.
@@ -325,7 +324,6 @@ impl StreamSubCtl {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn execute_delivery_pass(&mut self) {
         // Execute a delivery pass.
-        let stream_current_offset = self.next_offset.saturating_sub(1);
         for (_name, group) in self.subs.groups.iter_mut() {
             // If the gruop has no active channels, then skip it.
             if group.active_channels.is_empty() {
@@ -346,7 +344,7 @@ impl StreamSubCtl {
             }
 
             // If the group is at the head of the stream, then skip it.
-            if group.offset >= stream_current_offset {
+            if group.offset >= self.current_offset {
                 continue;
             }
 

@@ -19,7 +19,7 @@ use crate::grpc::stream::stream_subscribe_setup::StartingPoint;
 use crate::grpc::stream::{StreamSubscribeRequest, StreamSubscribeResponse, StreamSubscribeSetup};
 use crate::handler::StreamHandler;
 
-const DEFAULT_MAX_BATCH_SIZE: u32 = 50;
+const DEFAULT_MAX_BATCH_SIZE: u32 = 1;
 
 type StreamTask = Task<StreamSubscribeResponse, StreamSubscribeRequest>;
 

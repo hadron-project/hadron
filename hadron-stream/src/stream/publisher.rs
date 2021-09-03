@@ -35,7 +35,7 @@ impl StreamCtl {
     /// Publish a frame of data to the target stream, returning the offset of the last entry written.
     #[tracing::instrument(level = "trace", skip(self, req))]
     async fn publish_data_frame(&mut self, req: StreamPublishRequest) -> Result<u64> {
-        tracing::debug!(self.next_offset, "writing data to stream");
+        tracing::debug!("writing data to stream");
         if req.batch.is_empty() {
             bail!(AppError::InvalidInput("entries batch was empty, no-op".into()));
         }
@@ -43,8 +43,9 @@ impl StreamCtl {
         // Assign an offset to each entry in the payload and write as a batch.
         let mut batch = sled::Batch::default();
         for new_event in req.batch {
+            self.current_offset += 1;
             let entry = utils::encode_model(&Event {
-                id: self.next_offset,
+                id: self.current_offset,
                 source: self.source.clone(),
                 specversion: utils::CLOUD_EVENTS_SPEC_VERSION.into(),
                 r#type: new_event.r#type,
@@ -53,8 +54,7 @@ impl StreamCtl {
                 data: new_event.data,
             })
             .context("error encoding stream event record for storage")?;
-            batch.insert(&utils::encode_u64(self.next_offset), entry.as_slice());
-            self.next_offset += 1;
+            batch.insert(&utils::encode_u64(self.current_offset), entry.as_slice());
         }
         self.tree
             .apply_batch(batch)
@@ -70,8 +70,8 @@ impl StreamCtl {
                 .map_err(ShutdownError::from)?;
         }
 
-        tracing::debug!(self.next_offset, "finished writing data to stream");
-        let _ = self.offset_signal.send(self.next_offset);
-        Ok(self.next_offset - 1)
+        tracing::debug!(self.current_offset, "finished writing data to stream");
+        let _ = self.offset_signal.send(self.current_offset);
+        Ok(self.current_offset)
     }
 }

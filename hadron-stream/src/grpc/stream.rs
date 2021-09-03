@@ -201,14 +201,13 @@ pub struct PipelineSubscribeResponse {
     /// The name of the pipeline stage to which this delivery corresponds.
     #[prost(string, tag = "1")]
     pub stage: ::prost::alloc::string::String,
-    /// The source stream offset corresponding to this pipeline instance.
-    #[prost(uint64, tag = "2")]
-    pub offset: u64,
+    /// The root event which triggered this pipeline instance.
+    #[prost(message, optional, tag = "2")]
+    pub root_event: ::core::option::Option<Event>,
     /// A mapping of pipeline stage inputs based on the definition of this pipeline stage.
     ///
     /// Every key will be the name of the corresponding pipeline stage output which has been declared
-    /// as an input dependency for this stage, or the `root_event` if declared as a dependency for
-    /// this stage.
+    /// as an input dependency for this stage.
     #[prost(map = "string, message", tag = "3")]
     pub inputs: ::std::collections::HashMap<::prost::alloc::string::String, Event>,
 }
