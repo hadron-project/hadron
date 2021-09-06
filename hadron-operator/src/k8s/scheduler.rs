@@ -456,6 +456,11 @@ impl Controller {
             match_labels: Some(labels.clone()),
             ..Default::default()
         };
+        let rust_log = if stream.spec.debug {
+            "error,hadron_stream=debug"
+        } else {
+            "error,hadron_stream=info"
+        };
         spec.template = PodTemplateSpec {
             metadata: Some(ObjectMeta { labels: Some(labels), ..Default::default() }),
             spec: Some(PodSpec {
@@ -485,7 +490,7 @@ impl Controller {
                     env: Some(vec![
                         EnvVar {
                             name: "RUST_LOG".into(),
-                            value: Some("error,hadron_stream=info".into()),
+                            value: Some(rust_log.into()),
                             ..Default::default()
                         },
                         EnvVar {

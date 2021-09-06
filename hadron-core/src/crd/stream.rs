@@ -23,6 +23,7 @@ pub type Stream = StreamCRD; // Mostly to resolve a Rust Analyzer issue.
     printcolumn = r#"{"name":"Cluster Name","type":"string","jsonPath":".spec.cluster_name"}"#,
     printcolumn = r#"{"name":"Partitions","type":"number","jsonPath":".spec.partitions"}"#,
     printcolumn = r#"{"name":"TTL","type":"number","jsonPath":".spec.ttl"}"#,
+    printcolumn = r#"{"name":"Debug","type":"boolean","jsonPath":".spec.debug"}"#,
     printcolumn = r#"{"name":"PVC Volume Size","type":"string","jsonPath":".spec.pvc_volume_size"}"#,
     printcolumn = r#"{"name":"PVC Access Modes","type":"string","jsonPath":".spec.pvc_access_modes"}"#,
     printcolumn = r#"{"name":"PVC Storage Class","type":"string","jsonPath":".spec.pvc_storage_class"}"#
@@ -47,6 +48,9 @@ pub struct StreamSpec {
     /// restart of the stream's StatefulSet.
     #[serde(default)]
     pub ttl: u64,
+    /// Enable debug mode for the Stream's StatefulSet pods.
+    #[serde(default)]
+    pub debug: bool,
 
     /// Force an exact image to be used for the backing StatefulSet.
     ///

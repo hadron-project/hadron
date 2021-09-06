@@ -24,6 +24,9 @@ spec:
         - jsonPath: ".spec.ttl"
           name: TTL
           type: number
+        - jsonPath: ".spec.debug"
+          name: Debug
+          type: boolean
         - jsonPath: ".spec.pvc_volume_size"
           name: PVC Volume Size
           type: string
@@ -44,6 +47,10 @@ spec:
                 cluster_name:
                   description: "The CloudEvents root `source` of all events of this cluster.\n\nThis value is used as the prefix of the `source` field of all events published to this stream, formatted as `{cluster_name}/{stream}/{partition}`.\n\nThis value can be re-used for any number of streams."
                   type: string
+                debug:
+                  default: false
+                  description: "Enable debug mode for the Stream's StatefulSet pods."
+                  type: boolean
                 image:
                   description: "Force an exact image to be used for the backing StatefulSet.\n\nNormally this will should not be set, and the Operator will ensure that the most recent semver compatible image is being used."
                   type: string
