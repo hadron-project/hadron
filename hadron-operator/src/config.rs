@@ -1,11 +1,12 @@
 //! Runtime configuration.
 
-// TODO: finish up TLS config.
+use std::io::BufReader;
 
 use anyhow::{Context, Result};
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer};
+use tokio_rustls::rustls::{internal::pemfile, Certificate, PrivateKey};
 
 /// Runtime configuration data.
 #[derive(Clone, Debug, Deserialize)]
@@ -37,17 +38,14 @@ pub struct Config {
     /// The JWT decoding key, along with its original base64 encoded form.
     #[serde(deserialize_with = "Config::parse_decoding_key")]
     pub jwt_decoding_key: (DecodingKey<'static>, String),
-}
 
-// /// Cluster TLS mode.
-// #[derive(Clone, Debug, Deserialize)]
-// #[serde(rename_all = "UPPERCASE")]
-// pub enum TlsMode {
-//     /// TLS is disabled throughout the cluster.
-//     None,
-//     /// TLS is required for all connections throughout the cluster.
-//     Required,
-// }
+    /// The webhook server's TLS certificate, PEM encoded.
+    #[serde(deserialize_with = "Config::parse_webhook_cert")]
+    pub webhook_cert: (Vec<Certificate>, String),
+    /// The webhook server's TLS private key, PEM encoded.
+    #[serde(deserialize_with = "Config::parse_webhook_key")]
+    pub webhook_key: (PrivateKey, String),
+}
 
 impl Config {
     /// Create a new config instance.
@@ -80,5 +78,29 @@ impl Config {
             .map_err(|err| DeError::custom(err.to_string()))
             .map(|val| val.into_static())?;
         Ok((key, b64_bytes))
+    }
+
+    /// Parse the given base64 encoded webhook cert.
+    fn parse_webhook_cert<'de, D: Deserializer<'de>>(val: D) -> Result<(Vec<Certificate>, String), D::Error> {
+        let pem_cert: String = Deserialize::deserialize(val).map_err(|err| DeError::custom(format!("error parsing WEBHOOK_CERT: {}", err)))?;
+        let certs = pemfile::certs(&mut BufReader::new(pem_cert.as_bytes())).map_err(|_err| DeError::custom("error parsing WEBHOOK_CERT"))?;
+        if certs.is_empty() {
+            Err(DeError::custom("no valid certs found in WEBHOOK_CERT"))
+        } else {
+            Ok((certs, pem_cert))
+        }
+    }
+
+    /// Parse the given base64 encoded webhook key.
+    fn parse_webhook_key<'de, D: Deserializer<'de>>(val: D) -> Result<(PrivateKey, String), D::Error> {
+        let pem_key: String = Deserialize::deserialize(val).map_err(|err| DeError::custom(format!("error parsing WEBHOOK_KEY: {}", err)))?;
+
+        let mut keys = pemfile::rsa_private_keys(&mut BufReader::new(pem_key.as_bytes()))
+            .or_else(|_err| pemfile::pkcs8_private_keys(&mut BufReader::new(pem_key.as_bytes())))
+            .map_err(|_err| DeError::custom("could not parse WEBHOOK_KEY as PKCS#1 or PKCS#8"))?;
+        match keys.pop() {
+            Some(key) => Ok((key, pem_key)),
+            None => Err(DeError::custom("no private keys found in WEBHOOK_KEY")),
+        }
     }
 }

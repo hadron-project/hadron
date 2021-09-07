@@ -18,6 +18,7 @@ envy = "0.4"
 futures = "0.3"
 hadron-core = { path = "../hadron-core" }
 http = "0.2"
+hyper = { version = "0.14", default-features = false, features = ["http1", "http2", "server", "runtime"] }
 jsonwebtoken = "7.2"
 k8s-openapi = { version = "0.13", default-features = false, features = ["api", "v1_18"] }
 kube = { version = "0.59", default-features = false, features = ["admission", "derive", "gzip", "jsonpatch", "rustls-tls", "ws"] }
@@ -29,11 +30,12 @@ tokio = { version = "1", default-features = false, features = [
     # See https://docs.rs/tokio/latest/tokio/#feature-flags
     "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs",
 ]}
+tokio-rustls = "0.22.0"
 tokio-stream = { version = "0.1", default-features = false, features = ["time", "net", "signal", "sync"] }
 tonic = "0.5"
+tower-http = "0.1.1"
 tracing = { version = "0.1", features = ["attributes", "release_max_level_trace"] }
 tracing-subscriber = "0.2"
-trust-dns-resolver = "0.20"
 
 [build-dependencies]
 anyhow = "1"

@@ -1,4 +1,4 @@
-apiVersion: hadron.rs/v1
+apiVersion: hadron.rs/v1beta1
 kind: Stream
 metadata:
   name: events
@@ -14,7 +14,7 @@ spec:
   - ReadWriteOnce
 
 ---
-apiVersion: hadron.rs/v1
+apiVersion: hadron.rs/v1beta1
 kind: Pipeline
 metadata:
   name: service-creation
@@ -44,7 +44,7 @@ spec:
         - email-customer
 
 ---
-apiVersion: hadron.rs/v1
+apiVersion: hadron.rs/v1beta1
 kind: Token
 metadata:
   name: hadron-full-access
@@ -53,7 +53,7 @@ spec:
   all: true
 
 ---
-apiVersion: hadron.rs/v1
+apiVersion: hadron.rs/v1beta1
 kind: Token
 metadata:
   name: hadron-read-only
@@ -64,7 +64,7 @@ spec:
     sub: ["events"]
 
 ---
-apiVersion: hadron.rs/v1
+apiVersion: hadron.rs/v1beta1
 kind: Token
 metadata:
   name: hadron-read-write

@@ -23,7 +23,7 @@ pub type Token = TokenCRD; // Mostly to resolve a Rust Analyzer issue.
     struct = "TokenCRD",
     status = "TokenStatus",
     group = "hadron.rs",
-    version = "v1",
+    version = "v1beta1",
     kind = "Token",
     namespaced,
     derive = "PartialEq",

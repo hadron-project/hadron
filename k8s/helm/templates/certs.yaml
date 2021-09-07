@@ -1,0 +1,31 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hadron-webhooks
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | indent 4 }}
+spec:
+  ## This secret name is referenced directly by the operator to mount the TLS components.
+  secretName: hadron-webhooks
+  secretTemplate:
+    labels:
+      {{- include "chart.labels" . | indent 6 }}
+  dnsNames:
+  - hadron-operator-webhooks.{{ .Values.namespace | default .Release.Namespace }}
+  - hadron-operator-webhooks.{{ .Values.namespace | default .Release.Namespace }}.svc
+  - hadron-operator-webhooks.{{ .Values.namespace | default .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    name: hadron-webhooks
+
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: hadron-webhooks
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | indent 4 }}
+spec:
+  selfSigned: {}

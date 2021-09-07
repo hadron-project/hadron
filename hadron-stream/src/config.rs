@@ -1,7 +1,5 @@
 //! Runtime configuration.
 
-// TODO: finish up TLS config.
-
 use anyhow::{Context, Result};
 use jsonwebtoken::DecodingKey;
 use serde::de::Error as DeError;
@@ -45,16 +43,6 @@ pub struct Config {
     pub jwt_decoding_key: DecodingKey<'static>,
 }
 
-// /// Cluster TLS mode.
-// #[derive(Clone, Debug, Deserialize)]
-// #[serde(rename_all = "UPPERCASE")]
-// pub enum TlsMode {
-//     /// TLS is disabled throughout the cluster.
-//     None,
-//     /// TLS is required for all connections throughout the cluster.
-//     Required,
-// }
-
 impl Config {
     /// Create a new config instance.
     ///
@@ -72,11 +60,6 @@ impl Config {
             .context("invalid pod name, expected offset suffix at the end of the name")?;
         Ok(config)
     }
-
-    // /// The cluster's TLS config, if any.
-    // pub fn tls_config(&self) -> Option<()> {
-    //     None
-    // }
 
     /// Parse the decoding key from the config source.
     fn parse_decoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<DecodingKey<'static>, D::Error> {

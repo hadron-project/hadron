@@ -4,13 +4,13 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: hadron-operator
-  namespace: {{.Values.namespace | default .Release.Namespace}}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
     {{- include "chart.labels" . | indent 4 }}
 subjects:
 - kind: ServiceAccount
   name: hadron-operator
-  namespace: {{.Values.namespace | default .Release.Namespace}}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
 roleRef:
   kind: Role
   name: hadron-operator
@@ -22,13 +22,13 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: hadron-stream
-  namespace: {{.Values.namespace | default .Release.Namespace}}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
     {{- include "chart.labels" . | indent 4 }}
 subjects:
 - kind: ServiceAccount
   name: hadron-stream
-  namespace: {{.Values.namespace | default .Release.Namespace}}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
 roleRef:
   kind: Role
   name: hadron-stream

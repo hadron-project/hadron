@@ -1,10 +1,5 @@
 //! The Hadron CLI.
 
-/* TODO:
-- [ ] create a CLI endpoint for batch publishing.
-- [ ] docs, docs, docs!
-*/
-
 mod client;
 mod cmd;
 

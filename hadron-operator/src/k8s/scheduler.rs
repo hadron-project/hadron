@@ -46,14 +46,20 @@ use hadron_core::auth::TokenClaims;
 use hadron_core::crd::RequiredMetadata;
 use hadron_core::crd::{Pipeline, Stream, Token};
 
-/// The secret key used for storing a generated JWT.
-const SECRET_KEY_TOKEN: &str = "token";
 /// The default timeout to use for API calls.
 const API_TIMEOUT: Duration = Duration::from_secs(5);
 /// The pod container name of the Hadron Stream.
 ///
 /// NOTE WELL: do not change the name of this container. It will cause breaking changes.
 const CONTAINER_NAME_HADRON_STREAM: &str = "hadron-stream";
+/// The canonical K8s label used for identifying a StatefulSet pod name.
+const LABEL_K8S_STS_POD_NAME: &str = "statefulset.kubernetes.io/pod-name";
+/// The canonical Hadron label identifying a Stream.
+const LABEL_HADRON_RS_STREAM: &str = "hadron.rs/stream";
+/// The canonical Hadron label identifying a StatefulSet.
+const LABEL_HADRON_RS_STS: &str = "hadron.rs/statefulset";
+/// The secret key used for storing a generated JWT.
+const SECRET_KEY_TOKEN: &str = "token";
 /// The location where stream controllers place their data.
 const STREAM_DATA_PATH: &str = "/usr/local/hadron-stream/data";
 
@@ -121,13 +127,19 @@ impl Controller {
 //////////////////////////////////////////////////////////////////////////////
 // Secret Reconciliation /////////////////////////////////////////////////////
 impl Controller {
-    #[tracing::instrument(level = "debug", skip(self, _name))]
-    async fn scheduler_secret_updated(&self, _name: Arc<String>) {
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn scheduler_secret_updated(&self, name: Arc<String>) {
         tracing::debug!("handling scheduler secret updated");
-        // TODO: if this objects parent (Token) does not exist, then delete this object.
+        // If this object's parent Token does not exist, then delete this object.
+        if !self.tokens.contains_key(&name) {
+            if let Err(err) = self.delete_token_secret(name.clone()).await {
+                tracing::error!(error = ?err, "error while deleting backing secret for token");
+                self.spawn_scheduler_task(SchedulerTask::SecretUpdated(name), true);
+            }
+        }
 
-        // If a secret enters into a bad state due to being manually manipulated, then delete it,
-        // and the operator will re-create it as needed.
+        // NOTE: If a secret enters into a bad state due to being manually manipulated,
+        // then delete it, and the operator will re-create it as needed.
     }
 
     #[tracing::instrument(level = "debug", skip(self, name, secret))]
@@ -146,10 +158,17 @@ impl Controller {
 //////////////////////////////////////////////////////////////////////////////
 // Service Reconciliation ////////////////////////////////////////////////////
 impl Controller {
-    #[tracing::instrument(level = "debug", skip(self, _name))]
-    async fn scheduler_service_updated(&self, _name: Arc<String>) {
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn scheduler_service_updated(&self, name: Arc<String>) {
         tracing::debug!("handling scheduler service updated");
-        // TODO: if this objects parent (Stream/Stream Replicas) does not exist, then delete this object.
+        let _service = match self.services.get(&name) {
+            Some(service) => service,
+            None => return,
+        };
+
+        // If this object's parent STS or STS Pod does not exist, then delete this object.
+        // let is_pod_svc = service.metadata.annotations.map(|anns| anns.contains_key(LABEL_K8S_STS_POD_NAME)).unwrap_or(false);
+        // TODO: if sts does not exist, or if STS Pod doesn't exist for a pod service, then delete this object.
 
         // If a service enters into a bad state due to being manually manipulated, then delete it,
         // and the operator will re-create it as needed.
@@ -171,7 +190,7 @@ impl Controller {
     #[tracing::instrument(level = "debug", skip(self, _name))]
     async fn scheduler_sts_updated(&self, _name: Arc<String>) {
         tracing::debug!("handling scheduler statefulset updated");
-        // TODO: if this objects parent (Stream) does not exist, then delete this object.
+        // TODO: if this object's parent (Stream) does not exist, then delete this object.
         // TODO: create any needed services, ingresses &c for this object.
     }
 
@@ -267,7 +286,7 @@ impl Controller {
         let mut service = Service::default();
         let labels = service.meta_mut().labels.get_or_insert_with(Default::default);
         set_cannonical_labels(labels);
-        labels.insert("hadron.rs/statefulset".into(), stream.name().into());
+        labels.insert(LABEL_HADRON_RS_STS.into(), stream.name().into());
         service.meta_mut().namespace = self.config.namespace.clone().into();
         service.meta_mut().name = stream.name().to_string().into();
 
@@ -275,7 +294,7 @@ impl Controller {
         let spec = service.spec.get_or_insert_with(Default::default);
         let selector = spec.selector.get_or_insert_with(Default::default);
         set_cannonical_labels(selector);
-        selector.insert("hadron.rs/stream".into(), stream.name().into());
+        selector.insert(LABEL_HADRON_RS_STREAM.into(), stream.name().into());
         spec.ports = Some(vec![
             ServicePort {
                 name: Some("client-port".into()),
@@ -329,7 +348,7 @@ impl Controller {
         let mut service = Service::default();
         let labels = service.meta_mut().labels.get_or_insert_with(Default::default);
         set_cannonical_labels(labels);
-        labels.insert("hadron.rs/statefulset".into(), stream.name().into());
+        labels.insert(LABEL_HADRON_RS_STS.into(), stream.name().into());
         service.meta_mut().namespace = self.config.namespace.clone().into();
         service.meta_mut().name = Some(service_name.clone());
 
@@ -337,8 +356,8 @@ impl Controller {
         let spec = service.spec.get_or_insert_with(Default::default);
         let selector = spec.selector.get_or_insert_with(Default::default);
         set_cannonical_labels(selector);
-        selector.insert("hadron.rs/stream".into(), stream.name().into());
-        selector.insert("statefulset.kubernetes.io/pod-name".into(), service_name);
+        selector.insert(LABEL_HADRON_RS_STREAM.into(), stream.name().into());
+        selector.insert(LABEL_K8S_STS_POD_NAME.into(), service_name);
         spec.ports = Some(vec![
             ServicePort {
                 name: Some("client-port".into()),
@@ -440,7 +459,7 @@ impl Controller {
         let mut sts = StatefulSet::default();
         let labels = sts.meta_mut().labels.get_or_insert_with(Default::default);
         set_cannonical_labels(labels);
-        labels.insert("hadron.rs/stream".into(), stream.name().into());
+        labels.insert(LABEL_HADRON_RS_STREAM.into(), stream.name().into());
         let labels = labels.clone(); // Used below.
         sts.meta_mut().namespace = self.config.namespace.clone().into();
         sts.meta_mut().name = stream.name().to_string().into();

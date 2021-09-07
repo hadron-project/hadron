@@ -2,11 +2,29 @@
 //!
 //! The code here is used to generate the actual CRD used in K8s. See examples/crd.rs.
 
+use std::collections::BTreeSet;
+
 use kube::CustomResource;
+use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::crd::RequiredMetadata;
+
 pub type Pipeline = PipelineCRD; // Mostly to resolve a Rust Analyzer issue.
+
+lazy_static::lazy_static! {
+    /// The regex used to validate RFC 1123 label names going into K8s.
+    static ref NAME_1123_LABEL_RE: Regex = Regex::new("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$").expect("error initializing NAME_1123_LABEL_RE regex");
+}
+
+/// The annotation which allows for a pipeline to be updated destructively.
+const ANNOTATION_ALLOW_DESTRUCTIVE: &str = "hadron.rs/allow-destructive-update";
+/// Max length of a RFC 1123 label name allowed.
+const NAME_1123_LABEL_LEN: usize = 63;
+/// Error message for a RFC 1123 label name.
+const NAME_1123_LABEL_MSG: &str =
+    "must be a RFC 1123 label consisting of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character";
 
 /// CRD spec for the Pipeline resource.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, CustomResource, JsonSchema)]
@@ -14,7 +32,7 @@ pub type Pipeline = PipelineCRD; // Mostly to resolve a Rust Analyzer issue.
     struct = "PipelineCRD",
     status = "PipelineStatus",
     group = "hadron.rs",
-    version = "v1",
+    version = "v1beta1",
     kind = "Pipeline",
     namespaced,
     derive = "PartialEq",
@@ -33,7 +51,9 @@ pub struct PipelineSpec {
     /// - An empty list will match any event.
     /// - Hierarchies may be matched using the `.` to match different segments.
     /// - Wildcards `*` and `>` may be used. The `*` will match any segment, and `>` will match
-    /// one or more following segments.
+    /// one or more following segments. Wildcards will only be treated as wildcards when they
+    /// appear as the only character of a segment, else they will be treated as a literal of the
+    /// segment.
     #[serde(default)]
     pub triggers: Vec<String>,
     /// The stages of this pipeline.
@@ -144,6 +164,135 @@ impl PipelineCRD {
             true
         })
     }
+
+    /// Validate this object, ensuring that it conforms to application requirements.
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        // Validate source stream name. K8s already validates stream names when they are crated,
+        // and we don't have any additional validation to add. Skip for now.
+
+        // Validate triggers, and dedup. Given CloudEvents 1.0 spec (https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type)
+        // there is really no invalid trigger that could be presented. The only thing we can really
+        // do here is dedup the set of triggers.
+        let mut triggers = BTreeSet::new();
+        for trigger in self.spec.triggers.iter() {
+            if !triggers.insert(trigger) {
+                errors.push(format!(
+                    "trigger '{}' of pipeline '{}' is a duplicate and must be removed",
+                    trigger,
+                    self.name()
+                ));
+            }
+        }
+
+        // Validate stages name basics and build graph nodes.
+        use petgraph::{graphmap::GraphMap, Directed};
+        let mut graph = GraphMap::<_, (), Directed>::new();
+        for stage in self.spec.stages.iter() {
+            if !NAME_1123_LABEL_RE.is_match(stage.name.as_str()) {
+                errors.push(format!(
+                    "stage '{}' of pipeline {} {}",
+                    stage.name.as_str(),
+                    self.name(),
+                    NAME_1123_LABEL_MSG
+                ));
+            }
+            if stage.name.len() > NAME_1123_LABEL_LEN {
+                errors.push(format!(
+                    "stage name '{}' of pipeline {} may not exceed {} characters",
+                    stage.name.as_str(),
+                    self.name(),
+                    NAME_1123_LABEL_LEN,
+                ));
+            }
+            graph.add_node(stage.name.as_str());
+        }
+
+        // Validate graph edges & ensure graph is acyclic.
+        let mut has_entrypoint = false;
+        for stage in self.spec.stages.iter() {
+            if stage.dependencies.is_empty() && stage.after.is_empty() {
+                has_entrypoint = true;
+            }
+            for dep in stage.dependencies.iter() {
+                if !graph.contains_node(dep.as_str()) {
+                    errors.push(format!(
+                        "stage '{}' depends upon stage '{}' which does not exist in pipeline {}",
+                        stage.name,
+                        dep,
+                        self.name()
+                    ));
+                }
+                graph.add_edge(dep.as_str(), stage.name.as_str(), ());
+            }
+            for after in stage.after.iter() {
+                if !graph.contains_node(after.as_str()) {
+                    errors.push(format!(
+                        "stage '{}' must execute after stage '{}' which does not exist in pipeline {}",
+                        stage.name,
+                        after,
+                        self.name()
+                    ));
+                }
+                graph.add_edge(after.as_str(), stage.name.as_str(), ());
+            }
+        }
+        if let Err(cycle_err) = petgraph::algo::toposort(&graph, None) {
+            errors.push(format!(
+                "stage '{}' of pipeline {} creates a cycle and pipelines must be acyclic",
+                cycle_err.node_id(),
+                self.name()
+            ));
+        }
+        if !has_entrypoint {
+            errors.push(format!(
+                "pipeline {} has no entrypoint stage with no `dependencies` and no `after` stages",
+                self.name()
+            ));
+        }
+
+        // Ensure max_parallel is > 0.
+        if self.spec.max_parallel == 0 {
+            errors.push(format!("max_parallel of pipeline {} must be > 0", self.name()));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Validate this object, ensuring that it is compatible with the given "old" version of this object.
+    pub fn validate_compatibility(&self, old: &Self) -> Result<(), Vec<String>> {
+        let mut new_stages = BTreeSet::new();
+        for stage in self.spec.stages.iter() {
+            new_stages.insert(stage.name.as_str());
+        }
+        let mut deleted = vec![];
+        for stage in old.spec.stages.iter() {
+            if !new_stages.contains(stage.name.as_str()) {
+                deleted.push(stage.name.as_str());
+            }
+        }
+        let allow_destructive = self
+            .metadata
+            .annotations
+            .as_ref()
+            .map(|ann| ann.contains_key(ANNOTATION_ALLOW_DESTRUCTIVE))
+            .unwrap_or(false);
+        if !deleted.is_empty() && !allow_destructive {
+            Err(vec![format!(
+                "pipeline {} would incur data loss if stages {:?} are removed, set annotation {} to allow this change",
+                self.name(),
+                deleted,
+                ANNOTATION_ALLOW_DESTRUCTIVE
+            )])
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -185,4 +334,23 @@ mod test {
     matcher_test!(match_with_wildcard_matchone_4, &["*.*.v1"], "domain.event.v1", true);
 
     matcher_test!(no_match_with_wildcard_matchone_and_event_type_too_long, &["*"], "domain.event", false);
+
+    macro_rules! rfc_1123_labe_test {
+        ($name:ident, $pat:literal, $expect:literal) => {
+            #[test]
+            fn $name() {
+                let output = NAME_1123_LABEL_RE.is_match($pat);
+                assert!(
+                    $expect == output,
+                    "match for pattern {} expected to be {} but got {}",
+                    $pat,
+                    $expect,
+                    output,
+                );
+            }
+        };
+    }
+
+    rfc_1123_labe_test!(basic_match, "my-stage", true);
+    rfc_1123_labe_test!(basic_mismatch, "my_stage", false);
 }

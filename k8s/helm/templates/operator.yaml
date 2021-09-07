@@ -1,3 +1,14 @@
+## Required values:
+## {{ required "required value .Values.container.image.repo" .Values.container.image.repo }}
+## {{ required "required value .Values.container.image.tag" .Values.container.image.tag }}
+## {{ required "required value .Values.container.clientPort" .Values.container.clientPort }}
+## {{ required "required value .Values.container.httpPort" .Values.container.httpPort }}
+## {{ required "required value .Values.container.env.logging" .Values.container.env.logging }}
+## {{ required "required value .Values.container.env.lease.durationSeconds" .Values.container.env.lease.durationSeconds }}
+## {{ required "required value .Values.container.env.lease.renewSeconds" .Values.container.env.lease.renewSeconds }}
+## {{ required "required value .Values.container.env.jwt.encodingKey" .Values.container.env.jwt.encodingKey }}
+## {{ required "required value .Values.container.env.jwt.decodingKey" .Values.container.env.jwt.decodingKey }}
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,15 +57,15 @@ spec:
 
       containers:
         - name: hadron-operator
-          image: {{ required "required value .Values.container.image.repo" .Values.container.image.repo }}:{{ required "required value .Values.container.image.tag" .Values.container.image.tag }}
+          image: {{ .Values.container.image.repo }}:{{ .Values.container.image.tag }}
           imagePullPolicy: {{ .Values.container.image.pullPolicy | default "IfNotPresent" }}
           ports:
-            - containerPort: {{ required "required value .Values.container.clientPort" .Values.container.clientPort }}
-            - containerPort: {{ required "required value .Values.container.httpPort" .Values.container.httpPort }}
+            - containerPort: {{ .Values.container.clientPort }}
+            - containerPort: {{ .Values.container.httpPort }}
 
           env:
           - name: RUST_LOG
-            value: {{ required "required value .Values.container.env.logging" .Values.container.env.logging }}
+            value: {{ .Values.container.env.logging }}
           - name: CLIENT_PORT
             value: {{ .Values.container.clientPort | quote }}
           - name: HTTP_PORT
@@ -70,19 +81,32 @@ spec:
                 fieldPath: "metadata.name"
 
           - name: LEASE_DURATION_SECONDS
-            value: {{ required "required value .Values.container.env.lease.durationSeconds" .Values.container.env.lease.durationSeconds | quote }}
+            value: {{ .Values.container.env.lease.durationSeconds | quote }}
           - name: LEASE_RENEW_SECONDS
-            value: {{ required "required value .Values.container.env.lease.renewSeconds" .Values.container.env.lease.renewSeconds | quote }}
+            value: {{ .Values.container.env.lease.renewSeconds | quote }}
 
           - name: JWT_ENCODING_KEY
-{{ required "required value .Values.container.env.jwt.encodingKey" .Values.container.env.jwt.encodingKey | toYaml | indent 12 }}
+{{ .Values.container.env.jwt.encodingKey | toYaml | indent 12 }}
           - name: JWT_DECODING_KEY
-{{ required "required value .Values.container.env.jwt.decodingKey" .Values.container.env.jwt.decodingKey | toYaml | indent 12 }}
+{{ .Values.container.env.jwt.decodingKey | toYaml | indent 12 }}
+
+          # These values correspond to the `Certificate` defined in `certs.yaml`.
+          - name: WEBHOOK_CERT
+            valueFrom:
+              secretKeyRef:
+                name: hadron-webhooks
+                key: tls.crt
+          - name: WEBHOOK_KEY
+            valueFrom:
+              secretKeyRef:
+                name: hadron-webhooks
+                key: tls.key
 
           resources: {{ .Values.container.resources | toJson }}
 
           livenessProbe:
             httpGet:
+              scheme: HTTPS
               path: /health
               port: {{ .Values.container.httpPort }}
             initialDelaySeconds: 10
@@ -90,6 +114,7 @@ spec:
 
           readinessProbe:
             httpGet:
+              scheme: HTTPS
               path: /health
               port: {{ .Values.container.httpPort }}
             initialDelaySeconds: 10

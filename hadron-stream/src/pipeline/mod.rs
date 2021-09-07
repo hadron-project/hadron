@@ -243,9 +243,16 @@ impl PipelineCtl {
     ///
     /// ## Changing Dependencies
     /// - No expected negative side-effects here given the assumption of a valid pipeline object.
+    ///
+    /// ## Removing Stages
+    /// - Data loss will be incurred when stages are removed. The VAW blocks this unless it is
+    /// expressly requested by the user.
+    /// - When a stage is removed, we will prune the corresponding subscription group for that stage.
     #[tracing::instrument(level = "trace", skip(self, new))]
     fn handle_pipeline_updated(&mut self, new: Arc<Pipeline>) {
-        self.pipeline = new;
+        self.pipeline = new.clone();
+        self.stage_subs
+            .retain(|group, _| new.spec.stages.iter().any(|stage| stage.name.as_str() == group.as_str()));
     }
 
     #[tracing::instrument(level = "trace", skip(self, new))]
@@ -311,10 +318,11 @@ impl PipelineCtl {
         }
 
         // Add the new stage subscriber to its corresponding group.
+        let stage_name = Arc::new(stage_name.clone());
         let group = self
             .stage_subs
-            .entry(Arc::new(stage_name.clone()))
-            .or_insert_with(|| SubscriptionGroup::new(&stage_name));
+            .entry(stage_name.clone())
+            .or_insert_with(|| SubscriptionGroup::new(stage_name.clone()));
 
         // Roll a new ID for the channel & add it to the group's active channels.
         let id = Uuid::new_v4();
@@ -324,7 +332,7 @@ impl PipelineCtl {
             LivenessStream {
                 chan: Some((tx, rx)),
                 chan_id: id,
-                group: Arc::new(stage_name),
+                group: stage_name,
             },
         );
         self.execute_delivery_pass().await;
@@ -357,6 +365,10 @@ impl PipelineCtl {
                 }
                 // Skip stages which do not have all dependencies met.
                 if !stage.dependencies.iter().all(|dep| inst.outputs.contains_key(dep)) {
+                    continue;
+                }
+                // Skip stages which must be ordered later.
+                if !stage.after.iter().all(|dep| inst.outputs.contains_key(dep)) {
                     continue;
                 }
                 // Get a handle to the stage subs.
@@ -520,7 +532,13 @@ impl PipelineCtl {
 
         // Finally, if this was the last outstanding stage of the pipeline instance, then remove
         // it from the active instances set.
-        if inst.outputs.len() == self.pipeline.spec.stages.len() {
+        if self
+            .pipeline
+            .spec
+            .stages
+            .iter()
+            .all(|stage| inst.outputs.contains_key(&stage.name))
+        {
             self.active_pipelines.remove(&offset);
         }
 
@@ -770,11 +788,8 @@ struct SubscriptionGroup {
 
 impl SubscriptionGroup {
     /// Create a new instance.
-    pub fn new(group_name: &str) -> Self {
-        Self {
-            stage_name: Arc::new(group_name.into()),
-            active_channels: Default::default(),
-        }
+    pub fn new(stage_name: Arc<String>) -> Self {
+        Self { stage_name, active_channels: Default::default() }
     }
 }
 
