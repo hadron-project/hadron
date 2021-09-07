@@ -36,7 +36,7 @@ spec:
         - jsonPath: ".spec.pvc_storage_class"
           name: PVC Storage Class
           type: string
-      name: v1
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: "Auto-generated derived type for StreamSpec via `CustomResource`"

@@ -1,9 +1,8 @@
+mod webhook;
+
 use std::sync::Arc;
 
-use anyhow::Result;
-use axum::handler::get;
-use axum::http::StatusCode;
-use axum::{Router, Server as AxumServer};
+use anyhow::{Context, Result};
 use futures::future::FusedFuture;
 use futures::prelude::*;
 use tokio::sync::broadcast;
@@ -13,6 +12,7 @@ use tonic::Request;
 
 use crate::config::Config;
 use crate::grpc;
+use crate::server::webhook::WebhookServer;
 use hadron_core::auth;
 use hadron_core::error::AppError;
 
@@ -31,19 +31,19 @@ impl AppServer {
         Self { config, shutdown }
     }
 
-    /// Spawn this controller which also creates the client gRPC server.
-    pub fn spawn(self) -> Result<JoinHandle<()>> {
+    /// Spawn this controller.
+    ///
+    /// This call does not block, but does asynchronously spawn all other network servers used
+    /// by the system.
+    pub async fn spawn(self) -> Result<JoinHandle<()>> {
         // Spawn the HTTP server for webhooks & healthcheck.
-        let shutdown = self.shutdown.clone();
-        let mut http_shutdown_rx = self.shutdown.subscribe();
-        let app = Router::new().route("/health", get(|| async { StatusCode::OK }));
-        let http_server = AxumServer::bind(&([0, 0, 0, 0], self.config.http_port).into())
-            .serve(app.into_make_service())
-            .with_graceful_shutdown(async move {
-                let _res = http_shutdown_rx.recv().await;
-            });
+        let http_server = WebhookServer::new(self.config.clone(), self.shutdown.clone())
+            .await
+            .context("error building webhook server")?
+            .spawn();
 
         // Spawn the gRPC server.
+        let shutdown = self.shutdown.clone();
         let grpc_addr = ([0, 0, 0, 0], self.config.client_port);
         let mut grpc_shutdown_rx = self.shutdown.subscribe();
         let service = grpc::OperatorServer::new(self);
@@ -101,3 +101,30 @@ impl AppServer {
 
 #[tonic::async_trait]
 impl grpc::Operator for AppServer {}
+
+// use axum::http::StatusCode;
+// use axum::{body::Body, http::Response};
+
+// /// A result type used to work seamlessly with axum.
+// type ServerResult<T> = std::result::Result<T, ServerError>;
+
+// /// A newtype to make anyhow errors work with axum.
+// struct ServerError(pub anyhow::Error);
+
+// impl From<anyhow::Error> for ServerError {
+//     fn from(src: anyhow::Error) -> Self {
+//         ServerError(src)
+//     }
+// }
+
+// impl axum::response::IntoResponse for ServerError {
+//     type Body = axum::body::Body;
+//     type BodyError = <Self::Body as axum::body::HttpBody>::Error;
+
+//     fn into_response(self) -> Response<Self::Body> {
+//         tracing::error!(error = ?self.0, "error handling request");
+//         let mut res = Response::new(Body::empty());
+//         *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+//         res
+//     }
+// }

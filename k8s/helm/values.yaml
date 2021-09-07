@@ -4,7 +4,7 @@ service:
     annotations: {}
     labels: {}
     port: 7000
-  vaw:
+  webhooks:
     annotations: {}
     labels: {}
     port: 7001

@@ -14,7 +14,7 @@ pub type Stream = StreamCRD; // Mostly to resolve a Rust Analyzer issue.
     struct = "StreamCRD",
     status = "StreamStatus",
     group = "hadron.rs",
-    version = "v1",
+    version = "v1beta1",
     kind = "Stream",
     namespaced,
     derive = "PartialEq",

@@ -4,7 +4,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: hadron-operator
-  namespace: {{.Values.namespace | default .Release.Namespace}}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
     {{- include "chart.labels" . | indent 4 }}
 rules:
@@ -35,7 +35,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: hadron-stream
-  namespace: {{.Values.namespace | default .Release.Namespace}}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
     {{- include "chart.labels" . | indent 4 }}
 rules:

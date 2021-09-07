@@ -24,7 +24,7 @@ spec:
         - jsonPath: ".spec.maxParallel"
           name: Max Parallel
           type: number
-      name: v1
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: "Auto-generated derived type for PipelineSpec via `CustomResource`"

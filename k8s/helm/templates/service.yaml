@@ -1,44 +1,24 @@
----
-kind: Service
-apiVersion: v1
-metadata:
-  name: hadron-operator
-  namespace: {{.Values.namespace | default .Release.Namespace}}
-  {{- if .Values.service.client.annotations}}
-  annotations:
-{{toYaml .Values.service.client.annotations | indent 4}}
-  {{- end}}
-  labels:
-    {{- include "chart.labels" . | indent 4 }}
-    {{- if .Values.service.client.labels}}
-{{toYaml .Values.service.client.labels | indent 4}}
-    {{- end}}
-spec:
-  type: ClusterIP
-  selector:
-    app: hadron
-    hadron.rs/component: operator
-  ports:
-    - name: http
-      port: {{required "required value .Values.service.client.port" .Values.service.client.port}}
-      protocol: TCP
-      targetPort: {{required "required value .Values.container.clientPort" .Values.container.clientPort}}
+## Required values:
+## {{ required "required value .Values.service.client.port" .Values.service.client.port }}
+## {{ required "required value .Values.container.clientPort" .Values.container.clientPort }}
+## {{ required "required value .Values.service.webhooks.port" .Values.service.webhooks.port }}
+## {{ required "required value .Values.container.httpPort" .Values.container.httpPort }}
 
 ---
 kind: Service
 apiVersion: v1
 metadata:
-  name: hadron-operator-vaw
-  namespace: {{.Values.namespace | default .Release.Namespace}}
-  {{- if .Values.service.vaw.annotations}}
+  name: hadron-operator
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  {{- if .Values.service.client.annotations }}
   annotations:
-{{toYaml .Values.service.vaw.annotations | indent 4}}
+{{ toYaml .Values.service.client.annotations | indent 4 }}
   {{- end}}
   labels:
     {{- include "chart.labels" . | indent 4 }}
-    {{- if .Values.service.vaw.labels}}
-{{toYaml .Values.service.vaw.labels | indent 4}}
-    {{- end}}
+    {{- if .Values.service.client.labels }}
+{{ toYaml .Values.service.client.labels | indent 4 }}
+    {{- end }}
 spec:
   type: ClusterIP
   selector:
@@ -46,6 +26,32 @@ spec:
     hadron.rs/component: operator
   ports:
     - name: http
-      port: {{required "required value .Values.service.vaw.port" .Values.service.vaw.port}}
+      port: {{ .Values.service.client.port }}
       protocol: TCP
-      targetPort: {{required "required value .Values.container.httpPort" .Values.container.httpPort}}
+      targetPort: {{ .Values.container.clientPort }}
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: hadron-operator-webhooks
+  namespace: {{.Values.namespace | default .Release.Namespace}}
+  {{- if .Values.service.webhooks.annotations }}
+  annotations:
+{{ toYaml .Values.service.webhooks.annotations | indent 4 }}
+  {{- end }}
+  labels:
+    {{- include "chart.labels" . | indent 4 }}
+    {{- if .Values.service.webhooks.labels }}
+{{ toYaml .Values.service.webhooks.labels | indent 4 }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    app: hadron
+    hadron.rs/component: operator
+  ports:
+    - name: http
+      port: {{ .Values.service.webhooks.port }}
+      protocol: TCP
+      targetPort: {{ .Values.container.httpPort }}

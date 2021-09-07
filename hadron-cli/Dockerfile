@@ -3,7 +3,7 @@
 ## NOTE WELL: this Dockerfile assumes a context from the root of this repo.
 
 # syntax=docker/dockerfile:1.3
-ARG RUST_TAG=1.54.0
+ARG RUST_TAG=1.55.0
 ARG ALPINE_TAG=3.14
 FROM rust:${RUST_TAG}-alpine${ALPINE_TAG} as builder
 

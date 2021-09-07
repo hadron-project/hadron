@@ -84,3 +84,9 @@ applyExample:
 # Generate Hadron CRDs.
 genCrds:
     cd hadron-core && cargo run --example crd
+
+# Setup cert-manager for use in kind development cluster.
+upCertManager:
+    helm repo add jetstack https://charts.jetstack.io
+    helm --kube-context="kind-hadron" upgrade cert-manager jetstack/cert-manager --install \
+        --version v1.5.3 --set installCRDs=true

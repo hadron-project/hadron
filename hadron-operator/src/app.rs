@@ -42,6 +42,7 @@ impl App {
         // Spawn various core tasks.
         let server = AppServer::new(config.clone(), shutdown_tx.clone())
             .spawn()
+            .await
             .context("error setting up client gRPC server")?;
 
         let controller = Controller::new(client, config.clone(), shutdown_tx.clone())?.spawn();

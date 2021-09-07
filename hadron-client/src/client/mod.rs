@@ -160,7 +160,6 @@ async fn diff_and_update_endpoints(
             Mode::Internal => partition.internal.as_str(),
             Mode::External => partition.external.as_str(),
         };
-        // TODO: TLS support.
         let endpoint = match Endpoint::from_shared(format!("http://{}", new_endpoint_str)) {
             Ok(endpoint) => endpoint,
             Err(err) => {

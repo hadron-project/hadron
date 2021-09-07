@@ -21,7 +21,7 @@ spec:
         - jsonPath: ".status.token_id"
           name: Token ID
           type: string
-      name: v1
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: "Auto-generated derived type for TokenSpec via `CustomResource`"

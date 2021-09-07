@@ -1,27 +1,65 @@
-# TODO: finish this up when VAW is implemented in operator.
-# apiVersion: admissionregistration.k8s.io/v1
-# kind: ValidatingWebhookConfiguration
-# metadata:
-#   name: cr.validations.hadron.rs
-#   TODO: add labels & annotations.
-# webhooks:
-# - name: cr.validations.hadron.rs
-#   rules:
-#   - apiGroups:   ["hadron.rs"]
-#     apiVersions: ["*"]
-#     operations:  ["CREATE", "UPDATE"]
-#     resources:
-#     - "streams"
-#     - "streams/status"
-#     - "pipelines"
-#     - "pipelines/status"
-#     - "tokens"
-#     - "tokens/status"
-#     scope: Namespaced
-#   clientConfig:
-#     service:
-#       namespace: {{.Values.namespace | default .Release.Namespace}}
-#       name: hadron-operator-vaw
-#   admissionReviewVersions: ["v1"]
-#   sideEffects: None
-#   timeoutSeconds: 5
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validations-hadron-rs
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | indent 4 }}
+  annotations:
+    ## This injects the `caBundle` from the `Certificate` defined in `./certs.yaml`.
+    ##
+    ## This depends upon a running cert-manager deployment.
+    cert-manager.io/inject-ca-from: "{{ .Values.namespace | default .Release.Namespace }}/hadron-webhooks"
+webhooks:
+- name: pipelines.validations.hadron.rs
+  rules:
+  - apiGroups:   ["hadron.rs"]
+    apiVersions: ["v1beta1"]
+    operations:  ["CREATE", "UPDATE"]
+    resources: ["pipelines"]
+    scope: Namespaced
+  clientConfig:
+    service:
+      namespace: {{ .Values.namespace | default .Release.Namespace }}
+      name: hadron-operator-webhooks
+      path: /k8s/admissions/vaw/pipelines
+      port: {{ .Values.service.webhooks.port }}
+    caBundle: ""
+  admissionReviewVersions: ["v1beta1"]
+  sideEffects: None
+  timeoutSeconds: 15
+- name: streams.validations.hadron.rs
+  rules:
+  - apiGroups:   ["hadron.rs"]
+    apiVersions: ["v1beta1"]
+    operations:  ["CREATE", "UPDATE"]
+    resources: ["streams"]
+    scope: Namespaced
+  clientConfig:
+    service:
+      namespace: {{ .Values.namespace | default .Release.Namespace }}
+      name: hadron-operator-webhooks
+      path: /k8s/admissions/vaw/streams
+      port: {{ .Values.service.webhooks.port }}
+    caBundle: ""
+  admissionReviewVersions: ["v1beta1"]
+  sideEffects: None
+  timeoutSeconds: 15
+- name: tokens.validations.hadron.rs
+  rules:
+  - apiGroups:   ["hadron.rs"]
+    apiVersions: ["v1beta1"]
+    operations:  ["CREATE", "UPDATE"]
+    resources: ["tokens"]
+    scope: Namespaced
+  clientConfig:
+    service:
+      namespace: {{ .Values.namespace | default .Release.Namespace }}
+      name: hadron-operator-webhooks
+      path: /k8s/admissions/vaw/tokens
+      port: {{ .Values.service.webhooks.port }}
+    caBundle: ""
+  admissionReviewVersions: ["v1beta1"]
+  sideEffects: None
+  timeoutSeconds: 15
