@@ -31,7 +31,7 @@ use k8s_openapi::api::apps::v1::{StatefulSet, StatefulSetUpdateStrategy};
 use k8s_openapi::api::coordination::v1::Lease;
 use k8s_openapi::api::core::v1::{
     Container, ContainerPort, EnvVar, EnvVarSource, ObjectFieldSelector, PersistentVolumeClaim, PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec,
-    ResourceRequirements, Secret, Service, ServicePort, VolumeMount,
+    Probe, ResourceRequirements, Secret, Service, ServicePort, TCPSocketAction, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
@@ -52,6 +52,7 @@ const API_TIMEOUT: Duration = Duration::from_secs(5);
 ///
 /// NOTE WELL: do not change the name of this container. It will cause breaking changes.
 const CONTAINER_NAME_HADRON_STREAM: &str = "hadron-stream";
+
 /// The canonical K8s label used for identifying a StatefulSet pod name.
 const LABEL_K8S_STS_POD_NAME: &str = "statefulset.kubernetes.io/pod-name";
 /// The canonical Hadron label identifying a Stream.
@@ -62,6 +63,10 @@ const LABEL_HADRON_RS_STS: &str = "hadron.rs/statefulset";
 const SECRET_KEY_TOKEN: &str = "token";
 /// The location where stream controllers place their data.
 const STREAM_DATA_PATH: &str = "/usr/local/hadron-stream/data";
+/// The port used by clients to connect to Stream StatefulSets.
+const STREAM_PORT_CLIENT: i32 = 7000;
+/// The port used by server peers to connect to Stream StatefulSets.
+const STREAM_PORT_SERVER: i32 = 7001;
 
 /// A scheduling task to be performed.
 #[derive(Debug)]
@@ -485,16 +490,16 @@ impl Controller {
         spec.ports = Some(vec![
             ServicePort {
                 name: Some("client-port".into()),
-                port: 7000,
+                port: STREAM_PORT_CLIENT,
                 protocol: Some("TCP".into()),
-                target_port: Some(IntOrString::Int(7000)),
+                target_port: Some(IntOrString::Int(STREAM_PORT_CLIENT)),
                 ..Default::default()
             },
             ServicePort {
                 name: Some("server-port".into()),
-                port: 7001,
+                port: STREAM_PORT_SERVER,
                 protocol: Some("TCP".into()),
-                target_port: Some(IntOrString::Int(7001)),
+                target_port: Some(IntOrString::Int(STREAM_PORT_SERVER)),
                 ..Default::default()
             },
         ]);
@@ -552,16 +557,16 @@ impl Controller {
         spec.ports = Some(vec![
             ServicePort {
                 name: Some("client-port".into()),
-                port: 7000,
+                port: STREAM_PORT_CLIENT,
                 protocol: Some("TCP".into()),
-                target_port: Some(IntOrString::Int(7000)),
+                target_port: Some(IntOrString::Int(STREAM_PORT_CLIENT)),
                 ..Default::default()
             },
             ServicePort {
                 name: Some("server-port".into()),
-                port: 7001,
+                port: STREAM_PORT_SERVER,
                 protocol: Some("TCP".into()),
-                target_port: Some(IntOrString::Int(7001)),
+                target_port: Some(IntOrString::Int(STREAM_PORT_SERVER)),
                 ..Default::default()
             },
         ]);
@@ -629,13 +634,13 @@ impl Controller {
                     ports: Some(vec![
                         ContainerPort {
                             name: Some("client-port".into()),
-                            container_port: 7000,
+                            container_port: STREAM_PORT_CLIENT,
                             protocol: Some("TCP".into()),
                             ..Default::default()
                         },
                         ContainerPort {
                             name: Some("server-port".into()),
-                            container_port: 7001,
+                            container_port: STREAM_PORT_SERVER,
                             protocol: Some("TCP".into()),
                             ..Default::default()
                         },
@@ -648,12 +653,12 @@ impl Controller {
                         },
                         EnvVar {
                             name: "CLIENT_PORT".into(),
-                            value: Some("7000".into()),
+                            value: Some(format!("{}", STREAM_PORT_CLIENT)),
                             ..Default::default()
                         },
                         EnvVar {
                             name: "SERVER_PORT".into(),
-                            value: Some("7001".into()),
+                            value: Some(format!("{}", STREAM_PORT_SERVER)),
                             ..Default::default()
                         },
                         EnvVar {
@@ -709,6 +714,24 @@ impl Controller {
                         mount_path: STREAM_DATA_PATH.into(),
                         ..Default::default()
                     }]),
+                    readiness_probe: Some(Probe {
+                        initial_delay_seconds: Some(5),
+                        period_seconds: Some(10),
+                        tcp_socket: Some(TCPSocketAction {
+                            port: IntOrString::Int(STREAM_PORT_CLIENT),
+                            host: None,
+                        }),
+                        ..Default::default()
+                    }),
+                    liveness_probe: Some(Probe {
+                        initial_delay_seconds: Some(15),
+                        period_seconds: Some(20),
+                        tcp_socket: Some(TCPSocketAction {
+                            port: IntOrString::Int(STREAM_PORT_CLIENT),
+                            host: None,
+                        }),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }],
                 ..Default::default()
