@@ -36,7 +36,7 @@ use k8s_openapi::api::core::v1::{
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-use kube::api::{Api, ObjectMeta, Patch, PatchParams};
+use kube::api::{Api, ListParams, ObjectMeta, Patch, PatchParams};
 use kube::Resource;
 use tokio::time::timeout;
 
@@ -161,43 +161,210 @@ impl Controller {
     #[tracing::instrument(level = "debug", skip(self, name))]
     async fn scheduler_service_updated(&self, name: Arc<String>) {
         tracing::debug!("handling scheduler service updated");
-        let _service = match self.services.get(&name) {
+        let service = match self.services.get(&name) {
             Some(service) => service,
             None => return,
         };
 
-        // If this object's parent STS or STS Pod does not exist, then delete this object.
-        // let is_pod_svc = service.metadata.annotations.map(|anns| anns.contains_key(LABEL_K8S_STS_POD_NAME)).unwrap_or(false);
-        // TODO: if sts does not exist, or if STS Pod doesn't exist for a pod service, then delete this object.
+        // Extract the STS name from the service using canonical labels.
+        let sts_name = match service
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|labels| labels.get(LABEL_HADRON_RS_STS))
+        {
+            Some(sts_name) => sts_name,
+            // If the service object does not correspond to a STS, then there is nothing to do here.
+            None => return,
+        };
 
-        // If a service enters into a bad state due to being manually manipulated, then delete it,
-        // and the operator will re-create it as needed.
+        // If this object's parent STS does not exist, then delete this object.
+        let sts = match self.statefulsets.get(sts_name) {
+            Some(sts) => sts,
+            None => {
+                if let Err(err) = self.delete_service(name.as_str()).await {
+                    tracing::error!(error = ?err, service = %name, "error deleting service for Stream");
+                    self.spawn_scheduler_task(SchedulerTask::ServiceUpdated(name), true);
+                }
+                return;
+            }
+        };
+
+        // Else, if this is a service fronting a STS pod, and the pod no longer exists, then delete this object.
+        let sts_pod_offset_opt = service
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|labels| labels.get(LABEL_K8S_STS_POD_NAME))
+            .and_then(|name| name.split('-').last()) // Split the pod name on '-' taking the last slice.
+            .map(|offset| offset.parse::<u32>().ok()) // Parse a u8, transposing to none on error.
+            .flatten();
+        let offset = match sts_pod_offset_opt {
+            Some(offset) => offset,
+            // If we don't have an offset here, then it simply means that the service was not for an STS pod.
+            None => return,
+        };
+        let replicas = match sts.spec.as_ref().and_then(|spec| spec.replicas) {
+            Some(replicas) => replicas,
+            // It would not be structural (K8s wouldn't do it) for an STS to not have this field,
+            // but we account for it gracefully by simply returning.
+            None => return,
+        };
+        if (offset.saturating_add(1) as i32) < replicas {
+            if let Err(err) = self.delete_service(name.as_str()).await {
+                tracing::error!(error = ?err, service = %name, "error deleting service for Stream");
+                self.spawn_scheduler_task(SchedulerTask::ServiceUpdated(name), true);
+            }
+        }
+
+        // NOTE: If a service enters into a bad state due to being manually manipulated,
+        // then delete it, and the operator will re-create it as needed.
     }
 
-    #[tracing::instrument(level = "debug", skip(self, _name, _service))]
-    async fn scheduler_service_deleted(&self, _name: Arc<String>, _service: Service) {
+    #[tracing::instrument(level = "debug", skip(self, name, service))]
+    async fn scheduler_service_deleted(&self, name: Arc<String>, service: Service) {
         tracing::debug!("handling scheduler service deleted");
-        // TODO:
-        // - check the service's labels to see if it corresponds to a STS or a STS pod.
-        // - once determined, check to see if the corresponding object still exists.
-        // - if still exists, then re-create the service, else no-op.
+
+        // Extract the STS name from the service using canonical labels.
+        let sts_name = match service
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|labels| labels.get(LABEL_HADRON_RS_STS))
+        {
+            Some(sts_name) => sts_name,
+            // If the service object does not correspond to a STS, then there is nothing to do here.
+            None => return,
+        };
+
+        // If this object's parent STS does not exist, then the deletion is expected, so return.
+        let sts = match self.statefulsets.get(sts_name) {
+            Some(sts) => sts,
+            None => return,
+        };
+        // If the root stream object doesn't exist, then the deletion is expected, so return.
+        let stream = match self.streams.get(sts_name) {
+            Some(stream) => stream,
+            None => return,
+        };
+        // We have the corresponding STS, but we need to check if this is for a pod; extract the pod offset.
+        let sts_pod_offset_opt = service
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|labels| labels.get(LABEL_K8S_STS_POD_NAME))
+            .and_then(|name| name.split('-').last()) // Split the pod name on '-' taking the last slice.
+            .map(|offset| offset.parse::<u32>().ok()) // Parse a u8, transposing to none on error.
+            .flatten();
+        let offset = match sts_pod_offset_opt {
+            Some(offset) => offset,
+            // If we don't have an offset here, then it simply means that the service was not for an STS pod,
+            // it was for a STS itself. As such, we must re-create the service.
+            None => {
+                let service = self.build_sts_service(stream);
+                if let Err(err) = self.create_service(&service).await {
+                    tracing::error!(error = ?err, service = %name, "error re-creating frontend Service for Stream StatefulSet");
+                    self.spawn_scheduler_task(SchedulerTask::ServiceDeleted(name, service), true);
+                }
+                return;
+            }
+        };
+        let replicas = match sts.spec.as_ref().and_then(|spec| spec.replicas) {
+            Some(replicas) => replicas,
+            // It would not be structural (K8s wouldn't do it) for an STS to not have this field,
+            // but we account for it gracefully by simply returning.
+            None => return,
+        };
+        if (offset.saturating_add(1) as i32) >= replicas {
+            let service = self.build_sts_pod_service(stream, name.as_ref().clone());
+            if let Err(err) = self.create_service(&service).await {
+                tracing::error!(error = ?err, service = %name, "error re-creating frontend Service for Stream StatefulSet Pod");
+                self.spawn_scheduler_task(SchedulerTask::ServiceDeleted(name, service), true);
+            }
+        }
+    }
+
+    /// Delete the given service object from K8s.
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn delete_service(&self, name: &str) -> Result<()> {
+        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        self.fence().await?;
+        let res = timeout(API_TIMEOUT, api.delete(name, &Default::default()))
+            .await
+            .context("timeout while deleting service")?;
+        match res {
+            Ok(_val) => Ok(()),
+            Err(err) => match err {
+                kube::Error::Api(api_err) if api_err.code == http::StatusCode::NOT_FOUND => Ok(()),
+                _ => Err(err).context("error deleting service"),
+            },
+        }
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////
 // StatefulSet Reconciliation ////////////////////////////////////////////////
 impl Controller {
-    #[tracing::instrument(level = "debug", skip(self, _name))]
-    async fn scheduler_sts_updated(&self, _name: Arc<String>) {
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn scheduler_sts_updated(&self, name: Arc<String>) {
         tracing::debug!("handling scheduler statefulset updated");
-        // TODO: if this object's parent (Stream) does not exist, then delete this object.
-        // TODO: create any needed services, ingresses &c for this object.
+
+        // If this object's parent Stream does not exist, then delete this object.
+        let stream = match self.streams.get(name.as_ref()) {
+            Some(stream) => stream,
+            None => {
+                if let Err(err) = self.delete_statefulset(name.as_str()).await {
+                    tracing::error!(error = ?err, stream = %name, "error deleting backing StatefulSet for Stream");
+                    self.spawn_scheduler_task(SchedulerTask::StatefulSetUpdated(name), true);
+                }
+                return;
+            }
+        };
+
+        // Ensure the STS Service exists.
+        let mut needs_retry = false;
+        if let Err(err) = self.ensure_sts_service(&name, stream).await {
+            needs_retry = true;
+            tracing::error!(error = ?err, stream = %name, "error ensuring StatefulSet Service for updated Stream");
+        }
+        // Ensure the STS Services exist for StatefulSet pod replicas.
+        if let Err(err) = self.ensure_sts_pods_services(&name, stream).await {
+            needs_retry = true;
+            tracing::error!(error = ?err, stream = %name, "error ensuring StatefulSet Pod Services for updated Stream");
+        }
+
+        // NOTE: once we implement the ingress integration, this is where we will create the ingress objects.
+
+        // Spawn a retry if needed.
+        if needs_retry {
+            self.spawn_scheduler_task(SchedulerTask::StatefulSetUpdated(name), true);
+        }
     }
 
-    #[tracing::instrument(level = "debug", skip(self, _name, _sts))]
-    async fn scheduler_sts_deleted(&self, _name: Arc<String>, _sts: StatefulSet) {
+    #[tracing::instrument(level = "debug", skip(self, name, sts))]
+    async fn scheduler_sts_deleted(&self, name: Arc<String>, sts: StatefulSet) {
         tracing::debug!("handling scheduler statefulset deleted");
-        // TODO: clean-up any associated services, ingresses &c for this object.
+
+        // If stream still exists for this object, recreate STS.
+        match self.streams.get(name.as_ref()) {
+            None => (),
+            Some(stream) => {
+                let new_sts = self.build_stream_statefulset(&stream);
+                if let Err(err) = self.create_statefulset(new_sts).await {
+                    tracing::error!(error = ?err, stream = %name, "error re-creating backing StatefulSet for Stream");
+                    self.spawn_scheduler_task(SchedulerTask::StatefulSetDeleted(name, sts), true);
+                }
+                return;
+            }
+        }
+
+        // Clean-up any associated services, ingresses &c for this object.
+        if let Err(err) = self.delete_sts_services(name.as_str()).await {
+            tracing::error!(error = ?err, statefulset = %name, "error deleting StatefulSet Services for Stream");
+            self.spawn_scheduler_task(SchedulerTask::StatefulSetDeleted(name, sts), true);
+        }
+
+        // NOTE: once we implement the ingress integration, we will also need to clean those up here.
     }
 }
 
@@ -213,7 +380,6 @@ impl Controller {
         };
 
         // Check to see if we need to create a StatefulSet for this stream.
-        let mut needs_retry = false;
         let sts_res = if let Some(sts) = self.statefulsets.get(name.as_ref()) {
             self.reconcile_stream_changes(stream, sts)
                 .await
@@ -226,23 +392,7 @@ impl Controller {
                 .map(|_sts| ())
         };
         if let Err(err) = sts_res {
-            needs_retry = true;
             tracing::error!(error = ?err, stream = %name, "error reconciling StatefulSet for updated Stream");
-        }
-
-        // Ensure the STS Service exists.
-        if let Err(err) = self.ensure_sts_service(&name, stream).await {
-            needs_retry = true;
-            tracing::error!(error = ?err, stream = %name, "error ensuring StatefulSet Service for updated Stream");
-        }
-        // Ensure the STS Services exist for StatefulSet pod replicas.
-        if let Err(err) = self.ensure_sts_pods_services(&name, stream).await {
-            needs_retry = true;
-            tracing::error!(error = ?err, stream = %name, "error ensuring StatefulSet Pod Services for updated Stream");
-        }
-
-        // Spawn a retry if needed.
-        if needs_retry {
             self.spawn_scheduler_task(SchedulerTask::StreamUpdated(name), true);
         }
 
@@ -269,12 +419,20 @@ impl Controller {
 
         // Service does not exist in cache, so create it.
         let service = self.build_sts_service(stream);
+        self.create_service(&service)
+            .await
+            .context("error creating frontend Service for Stream StatefulSet")
+    }
+
+    /// Create the given K8s service object.
+    #[tracing::instrument(level = "debug", skip(self, service))]
+    async fn create_service(&self, service: &Service) -> Result<()> {
         let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
         self.fence().await?;
-        timeout(API_TIMEOUT, api.create(&Default::default(), &service))
+        timeout(API_TIMEOUT, api.create(&Default::default(), service))
             .await
-            .context("timeout while creating frontend Service for Stream StatefulSet")?
-            .context("error creating frontend Service for Stream StatefulSet")?;
+            .context("timeout while creating Service")?
+            .context("error creating Service")?;
         Ok(())
     }
 
@@ -287,6 +445,7 @@ impl Controller {
         let labels = service.meta_mut().labels.get_or_insert_with(Default::default);
         set_cannonical_labels(labels);
         labels.insert(LABEL_HADRON_RS_STS.into(), stream.name().into());
+        labels.insert(LABEL_HADRON_RS_STREAM.into(), stream.name().into());
         service.meta_mut().namespace = self.config.namespace.clone().into();
         service.meta_mut().name = stream.name().to_string().into();
 
@@ -330,11 +489,8 @@ impl Controller {
 
         // Service does not exist in cache, so create it.
         for service in pod_services {
-            let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
-            self.fence().await?;
-            timeout(API_TIMEOUT, api.create(&Default::default(), &service))
+            self.create_service(&service)
                 .await
-                .context("timeout while creating frontend Service for Stream StatefulSet Pod")?
                 .context("error creating frontend Service for Stream StatefulSet Pod")?;
         }
         Ok(())
@@ -349,6 +505,8 @@ impl Controller {
         let labels = service.meta_mut().labels.get_or_insert_with(Default::default);
         set_cannonical_labels(labels);
         labels.insert(LABEL_HADRON_RS_STS.into(), stream.name().into());
+        labels.insert(LABEL_HADRON_RS_STREAM.into(), stream.name().into());
+        labels.insert(LABEL_K8S_STS_POD_NAME.into(), service_name.clone());
         service.meta_mut().namespace = self.config.namespace.clone().into();
         service.meta_mut().name = Some(service_name.clone());
 
@@ -393,6 +551,22 @@ impl Controller {
                 _ => Err(err).context("error deleting backing secret for token"),
             },
         }
+    }
+
+    /// Delete all Services associated with the given StatefulSet.
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn delete_sts_services(&self, name: &str) -> Result<()> {
+        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        self.fence().await?;
+        let lp = ListParams {
+            label_selector: Some(format!("{}={}", LABEL_HADRON_RS_STS, name)),
+            ..Default::default()
+        };
+        timeout(API_TIMEOUT, api.delete_collection(&Default::default(), &lp))
+            .await
+            .context("timeout while deleting frontend Services for StatefulSet")?
+            .context("error deleting frontend Services for StatefulSet")?;
+        Ok(())
     }
 
     /// Update the given StatefulSet according to the state of the given Stream.

@@ -41,7 +41,7 @@ pub struct StreamSpec {
     /// This value can be dynamically scaled up and down and directly corresponds to the number of
     /// pods in the corresponding StatefulSet. Scaling down the number of partitions
     /// will cause the data of the removed partitions to be lost. Use with care.
-    pub partitions: u8,
+    pub partitions: u32,
     /// An optional TTL in seconds specifying how long records are to be kept on the stream.
     ///
     /// If `0`, then records will stay on the stream forever. Modifying this value will require a
