@@ -83,11 +83,7 @@ pub enum SchedulerTask {
 
 impl Controller {
     /// Handle scheduler tasks.
-    ///
-    /// **NOTE WELL:** we keep the receiver **immutable** to enforce a uni-directional data flow,
-    /// where the scheduler makes changes to the K8s API, and the watchers observe this data,
-    /// indexes it, and then produces additional reconciliation tasks as needed.
-    pub(super) async fn handle_scheduler_task(&self, task: SchedulerTask, state: LeaderState) {
+    pub(super) async fn handle_scheduler_task(&mut self, task: SchedulerTask, state: LeaderState) {
         if !matches!(state, LeaderState::Leading) {
             return;
         }
@@ -98,8 +94,8 @@ impl Controller {
             SchedulerTask::SecretDeleted(name, secret) => self.scheduler_secret_deleted(name, secret).await,
             SchedulerTask::ServiceUpdated(name) => self.scheduler_service_updated(name).await,
             SchedulerTask::ServiceDeleted(name, service) => self.scheduler_service_deleted(name, service).await,
-            SchedulerTask::StatefulSetUpdated(name) => self.scheduler_sts_updated(name).await,
-            SchedulerTask::StatefulSetDeleted(name, set) => self.scheduler_sts_deleted(name, set).await,
+            SchedulerTask::StatefulSetUpdated(name) => self.scheduler_statefulset_updated(name).await,
+            SchedulerTask::StatefulSetDeleted(name, set) => self.scheduler_statefulset_deleted(name, set).await,
             SchedulerTask::StreamUpdated(name) => self.scheduler_stream_updated(name).await,
             SchedulerTask::StreamDeleted(name, stream) => self.scheduler_stream_deleted(name, stream).await,
             SchedulerTask::TokenUpdated(name) => self.scheduler_token_updated(name).await,
@@ -128,14 +124,16 @@ impl Controller {
 // Secret Reconciliation /////////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn scheduler_secret_updated(&self, name: Arc<String>) {
+    async fn scheduler_secret_updated(&mut self, name: Arc<String>) {
         tracing::debug!("handling scheduler secret updated");
         // If this object's parent Token does not exist, then delete this object.
         if !self.tokens.contains_key(&name) {
-            if let Err(err) = self.delete_token_secret(name.clone()).await {
+            if let Err(err) = self.delete_secret(name.clone()).await {
                 tracing::error!(error = ?err, "error while deleting backing secret for token");
-                self.spawn_scheduler_task(SchedulerTask::SecretUpdated(name), true);
+                self.spawn_scheduler_task(SchedulerTask::SecretUpdated(name.clone()), true);
+                return;
             }
+            self.secrets.remove(&name);
         }
 
         // NOTE: If a secret enters into a bad state due to being manually manipulated,
@@ -143,15 +141,20 @@ impl Controller {
     }
 
     #[tracing::instrument(level = "debug", skip(self, name, secret))]
-    async fn scheduler_secret_deleted(&self, name: Arc<String>, secret: Secret) {
+    async fn scheduler_secret_deleted(&mut self, name: Arc<String>, secret: Secret) {
         tracing::debug!("handling scheduler secret deleted");
         if !self.tokens.contains_key(name.as_ref()) {
             return;
         }
-        if let Err(err) = self.ensure_token_secret(name.clone()).await {
-            tracing::error!(error = ?err, name = %name, "error creating backing secret for token");
-            self.spawn_scheduler_task(SchedulerTask::SecretDeleted(name, secret), true);
-        }
+        let secret = match self.ensure_token_secret(name.clone()).await {
+            Ok(secret) => secret,
+            Err(err) => {
+                tracing::error!(error = ?err, name = %name, "error creating backing secret for token");
+                self.spawn_scheduler_task(SchedulerTask::SecretDeleted(name, secret), true);
+                return;
+            }
+        };
+        self.secrets.insert(name, secret);
     }
 }
 
@@ -159,7 +162,7 @@ impl Controller {
 // Service Reconciliation ////////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn scheduler_service_updated(&self, name: Arc<String>) {
+    async fn scheduler_service_updated(&mut self, name: Arc<String>) {
         tracing::debug!("handling scheduler service updated");
         let service = match self.services.get(&name) {
             Some(service) => service,
@@ -182,10 +185,13 @@ impl Controller {
         let sts = match self.statefulsets.get(sts_name) {
             Some(sts) => sts,
             None => {
+                tracing::info!(service = name.as_str(), "deleting service because StatefulSet does not appear to exist");
                 if let Err(err) = self.delete_service(name.as_str()).await {
                     tracing::error!(error = ?err, service = %name, "error deleting service for Stream");
                     self.spawn_scheduler_task(SchedulerTask::ServiceUpdated(name), true);
+                    return;
                 }
+                self.services.remove(&name);
                 return;
             }
         };
@@ -210,11 +216,18 @@ impl Controller {
             // but we account for it gracefully by simply returning.
             None => return,
         };
-        if (offset.saturating_add(1) as i32) < replicas {
+        if (offset.saturating_add(1) as i32) > replicas {
+            tracing::info!(
+                service = name.as_str(),
+                replicas,
+                "deleting service because StatefulSet has fewer desired replicas"
+            );
             if let Err(err) = self.delete_service(name.as_str()).await {
                 tracing::error!(error = ?err, service = %name, "error deleting service for Stream");
                 self.spawn_scheduler_task(SchedulerTask::ServiceUpdated(name), true);
+                return;
             }
+            self.services.remove(&name);
         }
 
         // NOTE: If a service enters into a bad state due to being manually manipulated,
@@ -222,7 +235,7 @@ impl Controller {
     }
 
     #[tracing::instrument(level = "debug", skip(self, name, service))]
-    async fn scheduler_service_deleted(&self, name: Arc<String>, service: Service) {
+    async fn scheduler_service_deleted(&mut self, name: Arc<String>, service: Service) {
         tracing::debug!("handling scheduler service deleted");
 
         // Extract the STS name from the service using canonical labels.
@@ -261,11 +274,16 @@ impl Controller {
             // If we don't have an offset here, then it simply means that the service was not for an STS pod,
             // it was for a STS itself. As such, we must re-create the service.
             None => {
-                let service = self.build_sts_service(stream);
-                if let Err(err) = self.create_service(&service).await {
-                    tracing::error!(error = ?err, service = %name, "error re-creating frontend Service for Stream StatefulSet");
-                    self.spawn_scheduler_task(SchedulerTask::ServiceDeleted(name, service), true);
-                }
+                let mut service = self.build_sts_service(stream);
+                service = match self.create_service(&service).await {
+                    Ok(service) => service,
+                    Err(err) => {
+                        tracing::error!(error = ?err, service = %name, "error re-creating frontend Service for Stream StatefulSet");
+                        self.spawn_scheduler_task(SchedulerTask::ServiceDeleted(name, service), true);
+                        return;
+                    }
+                };
+                self.services.insert(name, service);
                 return;
             }
         };
@@ -275,29 +293,17 @@ impl Controller {
             // but we account for it gracefully by simply returning.
             None => return,
         };
-        if (offset.saturating_add(1) as i32) >= replicas {
-            let service = self.build_sts_pod_service(stream, name.as_ref().clone());
-            if let Err(err) = self.create_service(&service).await {
-                tracing::error!(error = ?err, service = %name, "error re-creating frontend Service for Stream StatefulSet Pod");
-                self.spawn_scheduler_task(SchedulerTask::ServiceDeleted(name, service), true);
-            }
-        }
-    }
-
-    /// Delete the given service object from K8s.
-    #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn delete_service(&self, name: &str) -> Result<()> {
-        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        self.fence().await?;
-        let res = timeout(API_TIMEOUT, api.delete(name, &Default::default()))
-            .await
-            .context("timeout while deleting service")?;
-        match res {
-            Ok(_val) => Ok(()),
-            Err(err) => match err {
-                kube::Error::Api(api_err) if api_err.code == http::StatusCode::NOT_FOUND => Ok(()),
-                _ => Err(err).context("error deleting service"),
-            },
+        if (offset.saturating_add(1) as i32) <= replicas {
+            let mut service = self.build_sts_pod_service(stream, name.as_ref().clone());
+            service = match self.create_service(&service).await {
+                Ok(service) => service,
+                Err(err) => {
+                    tracing::error!(error = ?err, service = %name, "error re-creating frontend Service for Stream StatefulSet Pod");
+                    self.spawn_scheduler_task(SchedulerTask::ServiceDeleted(name, service), true);
+                    return;
+                }
+            };
+            self.services.insert(name, service);
         }
     }
 }
@@ -306,31 +312,51 @@ impl Controller {
 // StatefulSet Reconciliation ////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn scheduler_sts_updated(&self, name: Arc<String>) {
+    async fn scheduler_statefulset_updated(&mut self, name: Arc<String>) {
         tracing::debug!("handling scheduler statefulset updated");
 
         // If this object's parent Stream does not exist, then delete this object.
         let stream = match self.streams.get(name.as_ref()) {
-            Some(stream) => stream,
+            Some(stream) => stream.clone(),
             None => {
                 if let Err(err) = self.delete_statefulset(name.as_str()).await {
                     tracing::error!(error = ?err, stream = %name, "error deleting backing StatefulSet for Stream");
                     self.spawn_scheduler_task(SchedulerTask::StatefulSetUpdated(name), true);
+                    return;
                 }
+                self.statefulsets.remove(&name);
                 return;
             }
         };
 
         // Ensure the STS Service exists.
         let mut needs_retry = false;
-        if let Err(err) = self.ensure_sts_service(&name, stream).await {
+        if let Err(err) = self.ensure_sts_service(&name, &stream).await {
             needs_retry = true;
             tracing::error!(error = ?err, stream = %name, "error ensuring StatefulSet Service for updated Stream");
         }
         // Ensure the STS Services exist for StatefulSet pod replicas.
-        if let Err(err) = self.ensure_sts_pods_services(&name, stream).await {
+        if let Err(err) = self.ensure_sts_pods_services(&name, &stream).await {
             needs_retry = true;
             tracing::error!(error = ?err, stream = %name, "error ensuring StatefulSet Pod Services for updated Stream");
+        }
+        // Emit update events for all Services related to this StatefulSet, ensuring proper reconciliation.
+        let services = self
+            .services
+            .iter()
+            .filter(|(_name, svc)| {
+                svc.metadata
+                    .labels
+                    .as_ref()
+                    .map(|labels| match labels.get(LABEL_HADRON_RS_STS) {
+                        Some(sts_name) => sts_name.as_str() == name.as_str(),
+                        None => false,
+                    })
+                    .unwrap_or(false)
+            })
+            .map(|(name, _svc)| name.clone());
+        for service in services {
+            self.spawn_scheduler_task(SchedulerTask::ServiceUpdated(service), false);
         }
 
         // NOTE: once we implement the ingress integration, this is where we will create the ingress objects.
@@ -342,24 +368,29 @@ impl Controller {
     }
 
     #[tracing::instrument(level = "debug", skip(self, name, sts))]
-    async fn scheduler_sts_deleted(&self, name: Arc<String>, sts: StatefulSet) {
+    async fn scheduler_statefulset_deleted(&mut self, name: Arc<String>, sts: StatefulSet) {
         tracing::debug!("handling scheduler statefulset deleted");
 
         // If stream still exists for this object, recreate STS.
         match self.streams.get(name.as_ref()) {
             None => (),
             Some(stream) => {
-                let new_sts = self.build_stream_statefulset(&stream);
-                if let Err(err) = self.create_statefulset(new_sts).await {
-                    tracing::error!(error = ?err, stream = %name, "error re-creating backing StatefulSet for Stream");
-                    self.spawn_scheduler_task(SchedulerTask::StatefulSetDeleted(name, sts), true);
-                }
+                let mut new_sts = self.build_stream_statefulset(&stream);
+                new_sts = match self.create_statefulset(new_sts).await {
+                    Ok(new_sts) => new_sts,
+                    Err(err) => {
+                        tracing::error!(error = ?err, stream = %name, "error re-creating backing StatefulSet for Stream");
+                        self.spawn_scheduler_task(SchedulerTask::StatefulSetDeleted(name, sts), true);
+                        return;
+                    }
+                };
+                self.statefulsets.insert(name, new_sts);
                 return;
             }
         }
 
         // Clean-up any associated services, ingresses &c for this object.
-        if let Err(err) = self.delete_sts_services(name.as_str()).await {
+        if let Err(err) = self.delete_statefulset_services(name.as_str()).await {
             tracing::error!(error = ?err, statefulset = %name, "error deleting StatefulSet Services for Stream");
             self.spawn_scheduler_task(SchedulerTask::StatefulSetDeleted(name, sts), true);
         }
@@ -372,7 +403,7 @@ impl Controller {
 // Stream Reconciliation /////////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn scheduler_stream_updated(&self, name: Arc<String>) {
+    async fn scheduler_stream_updated(&mut self, name: Arc<String>) {
         tracing::debug!("handling scheduler stream updated");
         let stream = match self.streams.get(name.as_ref()) {
             Some(stream) => stream,
@@ -389,12 +420,16 @@ impl Controller {
             self.create_statefulset(sts)
                 .await
                 .context("error creating new backing StatefulSet for Stream")
-                .map(|_sts| ())
         };
-        if let Err(err) = sts_res {
-            tracing::error!(error = ?err, stream = %name, "error reconciling StatefulSet for updated Stream");
-            self.spawn_scheduler_task(SchedulerTask::StreamUpdated(name), true);
-        }
+        let sts = match sts_res {
+            Ok(sts) => sts,
+            Err(err) => {
+                tracing::error!(error = ?err, stream = %name, "error reconciling StatefulSet for updated Stream");
+                self.spawn_scheduler_task(SchedulerTask::StreamUpdated(name), true);
+                return;
+            }
+        };
+        self.statefulsets.insert(name, sts);
 
         // NOTE: the creation/update of the StatefulSet above will trigger reconciliation events
         // which will be used to index the newly created object and to create the various
@@ -402,37 +437,30 @@ impl Controller {
     }
 
     #[tracing::instrument(level = "debug", skip(self, name, stream))]
-    async fn scheduler_stream_deleted(&self, name: Arc<String>, stream: Stream) {
+    async fn scheduler_stream_deleted(&mut self, name: Arc<String>, stream: Stream) {
         tracing::debug!("handling scheduler stream deleted");
         if let Err(err) = self.delete_statefulset(name.as_str()).await {
             tracing::error!(error = ?err, stream = %name, "error deleting backing StatefulSet for Stream");
             self.spawn_scheduler_task(SchedulerTask::StreamDeleted(name, stream), true);
+            return;
         }
+        self.statefulsets.remove(&name);
     }
 
     /// Ensure the K8s Service exists for the given Stream's StatefulSet.
     #[tracing::instrument(level = "debug", skip(self, name, stream))]
-    async fn ensure_sts_service(&self, name: &Arc<String>, stream: &Stream) -> Result<()> {
+    async fn ensure_sts_service(&mut self, name: &Arc<String>, stream: &Stream) -> Result<()> {
         if let Some(_service) = self.services.get(name) {
             return Ok(()); // No-op, service exists.
         }
 
         // Service does not exist in cache, so create it.
-        let service = self.build_sts_service(stream);
-        self.create_service(&service)
+        let mut service = self.build_sts_service(stream);
+        service = self
+            .create_service(&service)
             .await
-            .context("error creating frontend Service for Stream StatefulSet")
-    }
-
-    /// Create the given K8s service object.
-    #[tracing::instrument(level = "debug", skip(self, service))]
-    async fn create_service(&self, service: &Service) -> Result<()> {
-        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        self.fence().await?;
-        timeout(API_TIMEOUT, api.create(&Default::default(), service))
-            .await
-            .context("timeout while creating Service")?
-            .context("error creating Service")?;
+            .context("error creating frontend Service for Stream StatefulSet")?;
+        self.services.insert(name.clone(), service);
         Ok(())
     }
 
@@ -476,29 +504,34 @@ impl Controller {
 
     /// Ensure the K8s Services exists for the Pods of the given Stream's StatefulSet.
     #[tracing::instrument(level = "debug", skip(self, name, stream))]
-    async fn ensure_sts_pods_services(&self, name: &Arc<String>, stream: &Stream) -> Result<()> {
+    async fn ensure_sts_pods_services(&mut self, name: &Arc<String>, stream: &Stream) -> Result<()> {
         let mut pod_services = vec![];
         for replica in 0..stream.spec.partitions {
             let service_name = format!("{}-{}", name, replica);
             if let Some(_service) = self.services.get(&service_name) {
                 continue;
             }
-            let pod_service = self.build_sts_pod_service(stream, service_name);
-            pod_services.push(pod_service);
+            let pod_service = self.build_sts_pod_service(stream, service_name.clone());
+            pod_services.push((service_name, pod_service));
         }
 
         // Service does not exist in cache, so create it.
-        for service in pod_services {
-            self.create_service(&service)
-                .await
-                .context("error creating frontend Service for Stream StatefulSet Pod")?;
+        for (name, service) in pod_services {
+            let service = match self.create_service(&service).await {
+                Ok(service) => service,
+                Err(err) => {
+                    tracing::error!(error = ?err, "error creating frontend Service for Stream StatefulSet Pod");
+                    continue;
+                }
+            };
+            self.services.insert(Arc::new(name), service);
         }
         Ok(())
     }
 
     /// Build a frontend Service for a Stream StatefulSet Pod.
     fn build_sts_pod_service(&self, stream: &Stream, service_name: String) -> Service {
-        tracing::debug!(name = stream.name(), "creating a new service for stream statefulset pod");
+        tracing::debug!(stream = stream.name(), "building a new service for stream statefulset pod");
 
         // Build metadata.
         let mut service = Service::default();
@@ -536,92 +569,19 @@ impl Controller {
         service
     }
 
-    /// Delete the target StatefulSet.
-    #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn delete_statefulset(&self, name: &str) -> Result<()> {
-        let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        self.fence().await?;
-        let res = timeout(API_TIMEOUT, api.delete(name, &Default::default()))
-            .await
-            .context("timeout while deleting backing secret for token")?;
-        match res {
-            Ok(_val) => Ok(()),
-            Err(err) => match err {
-                kube::Error::Api(api_err) if api_err.code == http::StatusCode::NOT_FOUND => Ok(()),
-                _ => Err(err).context("error deleting backing secret for token"),
-            },
-        }
-    }
-
-    /// Delete all Services associated with the given StatefulSet.
-    #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn delete_sts_services(&self, name: &str) -> Result<()> {
-        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        self.fence().await?;
-        let lp = ListParams {
-            label_selector: Some(format!("{}={}", LABEL_HADRON_RS_STS, name)),
-            ..Default::default()
-        };
-        timeout(API_TIMEOUT, api.delete_collection(&Default::default(), &lp))
-            .await
-            .context("timeout while deleting frontend Services for StatefulSet")?
-            .context("error deleting frontend Services for StatefulSet")?;
-        Ok(())
-    }
-
     /// Update the given StatefulSet according to the state of the given Stream.
     #[tracing::instrument(level = "debug", skip(self, stream, sts))]
-    async fn reconcile_stream_changes(&self, stream: &Stream, sts: &StatefulSet) -> Result<()> {
+    async fn reconcile_stream_changes(&self, stream: &Stream, sts: &StatefulSet) -> Result<StatefulSet> {
         tracing::debug!("reconciling stream changes");
         // Construct an updated StatefulSet object, and if it differs from the currently recorded
         // StatefulSet, then issue an update.
         let mut updated_sts = self.build_stream_statefulset(stream);
         updated_sts.metadata = sts.metadata.clone();
         if updated_sts.spec != sts.spec {
-            let _updated_sts = self.patch_statefulset(updated_sts).await?;
+            self.patch_statefulset(updated_sts).await
+        } else {
+            Ok(updated_sts)
         }
-        Ok(())
-    }
-
-    /// Patch the given Stream in K8s using Server-Side Apply.
-    #[tracing::instrument(level = "debug", skip(self, stream))]
-    async fn patch_stream_cr(&self, mut stream: Stream) -> Result<Stream> {
-        self.fence().await?; // Ensure we still hold the lease.
-        let api: Api<Stream> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        let mut params = PatchParams::apply(APP_NAME);
-        params.force = true; // This will still be blocked by the server if we do not have the most up-to-date object info.
-        stream.metadata.managed_fields = None;
-        timeout(API_TIMEOUT, api.patch_status(stream.name(), &params, &Patch::Apply(&stream)))
-            .await
-            .context("timeout while updating stream")?
-            .context("error updating stream")
-    }
-
-    /// Patch the given StatefulSet in K8s using Server-Side Apply.
-    #[tracing::instrument(level = "debug", skip(self, sts))]
-    async fn patch_statefulset(&self, mut sts: StatefulSet) -> Result<StatefulSet> {
-        self.fence().await?; // Ensure we still hold the lease.
-        let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        let mut params = PatchParams::apply(APP_NAME);
-        params.force = true; // This will still be blocked by the server if we do not have the most up-to-date object info.
-        sts.metadata.managed_fields = None;
-        let name = sts.metadata.name.as_deref().unwrap_or("");
-        timeout(API_TIMEOUT, api.patch(name, &params, &Patch::Apply(&sts)))
-            .await
-            .context("timeout while updating StatefulSet for Stream")?
-            .context("error updating StatefulSet for Stream")
-    }
-
-    /// Create the given StatefulSet in K8s.
-    #[tracing::instrument(level = "debug", skip(self, sts))]
-    async fn create_statefulset(&self, sts: StatefulSet) -> Result<StatefulSet> {
-        let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        self.fence().await?;
-        let params = kube::api::PostParams::default();
-        timeout(API_TIMEOUT, api.create(&params, &sts))
-            .await
-            .context("timeout while creating backing StatefulSet for Stream")?
-            .context("error creating backing StatefulSet for Stream")
     }
 
     /// Build a new StatefulSet for the given stream.
@@ -784,54 +744,38 @@ impl Controller {
 // Token Reconciliation //////////////////////////////////////////////////////
 impl Controller {
     #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn scheduler_token_updated(&self, name: Arc<String>) {
+    async fn scheduler_token_updated(&mut self, name: Arc<String>) {
         tracing::debug!("handling scheduler token updated");
         if self.secrets.get(&name).is_none() {
-            if let Err(err) = self.ensure_token_secret(name.clone()).await {
-                tracing::error!(error = ?err, "error while ensuring backing secret for token");
-                self.spawn_scheduler_task(SchedulerTask::TokenUpdated(name), true);
-            }
+            let secret = match self.ensure_token_secret(name.clone()).await {
+                Ok(secret) => secret,
+                Err(err) => {
+                    tracing::error!(error = ?err, "error while ensuring backing secret for token");
+                    self.spawn_scheduler_task(SchedulerTask::TokenUpdated(name), true);
+                    return;
+                }
+            };
+            self.secrets.insert(name, secret);
         }
     }
 
     #[tracing::instrument(level = "debug", skip(self, name, token))]
-    async fn scheduler_token_deleted(&self, name: Arc<String>, token: Token) {
+    async fn scheduler_token_deleted(&mut self, name: Arc<String>, token: Token) {
         tracing::debug!("handling scheduler token deleted");
-        if let Err(err) = self.delete_token_secret(name.clone()).await {
+        if let Err(err) = self.delete_secret(name.clone()).await {
             tracing::error!(error = ?err, "error while deleting backing secret for token");
             self.spawn_scheduler_task(SchedulerTask::TokenDeleted(name, token), true);
+            return;
         }
-    }
-
-    /// Delete the target token secret.
-    #[tracing::instrument(level = "debug", skip(self, name))]
-    async fn delete_token_secret(&self, name: Arc<String>) -> Result<()> {
-        let api: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        self.fence().await?;
-        timeout(API_TIMEOUT, api.delete(name.as_str(), &Default::default()))
-            .await
-            .context("timeout while deleting backing secret for token")?
-            .context("error deleting backing secret for token")
-            .map(|_| ())
+        self.secrets.remove(&name);
     }
 
     /// Ensure the given secret exists.
     #[tracing::instrument(level = "debug", skip(self, name))]
     async fn ensure_token_secret(&self, name: Arc<String>) -> Result<Secret> {
         // Attempt to fetch the target secret.
-        let api: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        let secret_opt = timeout(API_TIMEOUT, api.get(name.as_str()))
-            .await
-            .context("timeout while fetching secret")?
-            .map(Some)
-            .or_else(|err| match err {
-                // If the object was not found, then treat it as an Option::None.
-                kube::Error::Api(err) if err.code == http::StatusCode::NOT_FOUND => Ok(None),
-                _ => Err(err),
-            })
-            .context("error fetching secret")?;
-        if let Some(secret) = secret_opt {
-            return Ok(secret);
+        if let Some(secret) = self.secrets.get(&name) {
+            return Ok(secret.clone());
         }
 
         // Secret does not exist. Mint a new JWT & create the backing secret.
@@ -850,12 +794,8 @@ impl Controller {
 
         let labels = secret.meta_mut().labels.get_or_insert_with(Default::default);
         set_cannonical_labels(labels);
-
-        self.fence().await?;
-        let params = kube::api::PostParams::default();
-        timeout(API_TIMEOUT, api.create(&params, &secret))
+        self.create_secret(&secret)
             .await
-            .context("timeout while creating backing secret for token")?
             .context("error creating backing secret for token")
     }
 }
@@ -863,6 +803,131 @@ impl Controller {
 //////////////////////////////////////////////////////////////////////////////
 // K8s API Methods ///////////////////////////////////////////////////////////
 impl Controller {
+    /// Create the given Secret in K8s.
+    #[tracing::instrument(level = "debug", skip(self, secret))]
+    async fn create_secret(&self, secret: &Secret) -> Result<Secret> {
+        self.fence().await?;
+        if let Some(name) = secret.metadata.name.as_ref() {
+            tracing::info!(%name, "creating Secret");
+        }
+        let api: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let params = kube::api::PostParams::default();
+        timeout(API_TIMEOUT, api.create(&params, &secret))
+            .await
+            .context("timeout while creating secret")?
+            .context("error creating secret")
+    }
+
+    /// Create the given Service in K8s.
+    #[tracing::instrument(level = "debug", skip(self, service))]
+    async fn create_service(&self, service: &Service) -> Result<Service> {
+        self.fence().await?;
+        if let Some(name) = service.metadata.name.as_ref() {
+            tracing::info!(service = %name, "creating service");
+        }
+        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        timeout(API_TIMEOUT, api.create(&Default::default(), service))
+            .await
+            .context("timeout while creating Service")?
+            .context("error creating Service")
+    }
+
+    /// Create the given StatefulSet in K8s.
+    #[tracing::instrument(level = "debug", skip(self, sts))]
+    async fn create_statefulset(&self, sts: StatefulSet) -> Result<StatefulSet> {
+        self.fence().await?;
+        if let Some(name) = sts.metadata.name.as_ref() {
+            tracing::info!(%name, "creating StatefulSet");
+        }
+        let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let params = kube::api::PostParams::default();
+        timeout(API_TIMEOUT, api.create(&params, &sts))
+            .await
+            .context("timeout while creating backing StatefulSet for Stream")?
+            .context("error creating backing StatefulSet for Stream")
+    }
+
+    /// Delete the target Secret from K8s.
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn delete_secret(&self, name: Arc<String>) -> Result<()> {
+        self.fence().await?;
+        tracing::info!(%name, "deleting Secret");
+        let api: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        timeout(API_TIMEOUT, api.delete(name.as_str(), &Default::default()))
+            .await
+            .context("timeout while deleting backing secret for token")?
+            .context("error deleting backing secret for token")
+            .map(|_| ())
+    }
+
+    /// Delete the given Service from K8s.
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn delete_service(&self, name: &str) -> Result<()> {
+        self.fence().await?;
+        tracing::info!(name, "deleting service");
+        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let res = timeout(API_TIMEOUT, api.delete(name, &Default::default()))
+            .await
+            .context("timeout while deleting service")?;
+        match res {
+            Ok(_val) => Ok(()),
+            Err(err) => match err {
+                kube::Error::Api(api_err) if api_err.code == http::StatusCode::NOT_FOUND => Ok(()),
+                _ => Err(err).context("error deleting service"),
+            },
+        }
+    }
+    /// Delete the target StatefulSet.
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn delete_statefulset(&self, name: &str) -> Result<()> {
+        self.fence().await?;
+        tracing::info!(name, "deleting StatefulSet");
+        let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let res = timeout(API_TIMEOUT, api.delete(name, &Default::default()))
+            .await
+            .context("timeout while deleting backing secret for token")?;
+        match res {
+            Ok(_val) => Ok(()),
+            Err(err) => match err {
+                kube::Error::Api(api_err) if api_err.code == http::StatusCode::NOT_FOUND => Ok(()),
+                _ => Err(err).context("error deleting backing secret for token"),
+            },
+        }
+    }
+
+    /// Delete all Services associated with the given StatefulSet.
+    #[tracing::instrument(level = "debug", skip(self, name))]
+    async fn delete_statefulset_services(&mut self, name: &str) -> Result<()> {
+        self.fence().await?;
+        tracing::info!(name, "deleting Services for StatefulSet");
+        let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let lp = ListParams {
+            label_selector: Some(format!("{}={}", LABEL_HADRON_RS_STS, name)),
+            ..Default::default()
+        };
+        let services = timeout(API_TIMEOUT, api.list(&lp))
+            .await
+            .context("timeout while listing frontend Services for StatefulSet")?
+            .context("error listing frontend Services for StatefulSet")?;
+        let mut error = None;
+        for service in services {
+            let name = match service.metadata.name.as_ref() {
+                Some(name) => name,
+                None => continue,
+            };
+            if let Err(err) = self.delete_service(name.as_str()).await {
+                tracing::error!(%name, "error deleting frontend Service for StatefulSet");
+                error = Some(err);
+                continue;
+            }
+            self.services.remove(name);
+        }
+        match error {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
     /// Ensure we have ownership of the lease, else return an error.
     #[tracing::instrument(level = "debug", skip(self))]
     async fn fence(&self) -> Result<()> {
@@ -884,6 +949,39 @@ impl Controller {
             bail!("lease is no longer held by this pod");
         }
         Ok(())
+    }
+
+    /// Patch the given Stream in K8s using Server-Side Apply.
+    #[tracing::instrument(level = "debug", skip(self, stream))]
+    async fn patch_stream_cr(&self, mut stream: Stream) -> Result<Stream> {
+        self.fence().await?;
+        tracing::info!(name = stream.name(), "patching stream CR");
+        let api: Api<Stream> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let mut params = PatchParams::apply(APP_NAME);
+        params.force = true; // This will still be blocked by the server if we do not have the most up-to-date object info.
+        stream.metadata.managed_fields = None;
+        timeout(API_TIMEOUT, api.patch_status(stream.name(), &params, &Patch::Apply(&stream)))
+            .await
+            .context("timeout while updating stream")?
+            .context("error updating stream")
+    }
+
+    /// Patch the given StatefulSet in K8s using Server-Side Apply.
+    #[tracing::instrument(level = "debug", skip(self, sts))]
+    async fn patch_statefulset(&self, mut sts: StatefulSet) -> Result<StatefulSet> {
+        self.fence().await?;
+        if let Some(name) = sts.metadata.name.as_ref() {
+            tracing::info!(%name, "patching StatefulSet");
+        }
+        let api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.config.namespace);
+        let mut params = PatchParams::apply(APP_NAME);
+        params.force = true; // This will still be blocked by the server if we do not have the most up-to-date object info.
+        sts.metadata.managed_fields = None;
+        let name = sts.metadata.name.as_deref().unwrap_or("");
+        timeout(API_TIMEOUT, api.patch(name, &params, &Patch::Apply(&sts)))
+            .await
+            .context("timeout while updating StatefulSet for Stream")?
+            .context("error updating StatefulSet for Stream")
     }
 }
 

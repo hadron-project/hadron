@@ -56,7 +56,7 @@ spec:
                   type: string
                 partitions:
                   description: "The number of partitions to be created for this stream.\n\nThis value can be dynamically scaled up and down and directly corresponds to the number of pods in the corresponding StatefulSet. Scaling down the number of partitions will cause the data of the removed partitions to be lost. Use with care."
-                  format: uint8
+                  format: uint32
                   minimum: 0.0
                   type: integer
                 pvc_access_modes:

@@ -63,9 +63,9 @@ impl Controller {
             Some(name_str) => name_str,
             None => return, // Not actually possible as K8s requires name.
         };
-        let (name, _pipeline) = match self.pipelines.remove_entry(name_str) {
+        let (name, pipeline) = match self.pipelines.remove_entry(name_str) {
             Some((name, pipeline)) => (name, pipeline),
-            None => return,
+            None => (Arc::new(name_str.clone()), pipeline),
         };
         self.spawn_scheduler_task(SchedulerTask::PipelineDeleted(name, pipeline), false);
     }
@@ -125,9 +125,9 @@ impl Controller {
             Some(name_str) => name_str,
             None => return, // Not actually possible as K8s requires name.
         };
-        let (name, _secret) = match self.secrets.remove_entry(name_str) {
+        let (name, secret) = match self.secrets.remove_entry(name_str) {
             Some((name, secret)) => (name, secret),
-            None => return,
+            None => (Arc::new(name_str.clone()), secret),
         };
         self.spawn_scheduler_task(SchedulerTask::SecretDeleted(name, secret), false);
     }
@@ -187,9 +187,9 @@ impl Controller {
             Some(name_str) => name_str,
             None => return, // Not actually possible as K8s requires name.
         };
-        let (name, _service) = match self.services.remove_entry(name_str) {
+        let (name, service) = match self.services.remove_entry(name_str) {
             Some((name, service)) => (name, service),
-            None => return,
+            None => (Arc::new(name_str.clone()), service),
         };
         self.spawn_scheduler_task(SchedulerTask::ServiceDeleted(name, service), false);
     }
@@ -249,9 +249,9 @@ impl Controller {
             Some(name_str) => name_str,
             None => return, // Not actually possible as K8s requires name.
         };
-        let (name, _set) = match self.statefulsets.remove_entry(name_str) {
+        let (name, set) = match self.statefulsets.remove_entry(name_str) {
             Some((name, set)) => (name, set),
-            None => return,
+            None => (Arc::new(name_str.clone()), set),
         };
         self.spawn_scheduler_task(SchedulerTask::StatefulSetDeleted(name, set), false);
     }
@@ -311,9 +311,9 @@ impl Controller {
             Some(name_str) => name_str,
             None => return, // Not actually possible as K8s requires name.
         };
-        let (name, _stream) = match self.streams.remove_entry(name_str) {
+        let (name, stream) = match self.streams.remove_entry(name_str) {
             Some((name, stream)) => (name, stream),
-            None => return,
+            None => (Arc::new(name_str.clone()), stream),
         };
         self.spawn_scheduler_task(SchedulerTask::StreamDeleted(name, stream), false);
     }
@@ -373,9 +373,9 @@ impl Controller {
             Some(name_str) => name_str,
             None => return, // Not actually possible as K8s requires name.
         };
-        let (name, _token) = match self.tokens.remove_entry(name_str) {
+        let (name, token) = match self.tokens.remove_entry(name_str) {
             Some((name, token)) => (name, token),
-            None => return,
+            None => (Arc::new(name_str.clone()), token),
         };
         self.spawn_scheduler_task(SchedulerTask::TokenDeleted(name, token), false);
     }
