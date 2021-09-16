@@ -8,6 +8,8 @@
 ## {{ required "required value .Values.container.env.lease.renewSeconds" .Values.container.env.lease.renewSeconds }}
 ## {{ required "required value .Values.container.env.jwt.encodingKey" .Values.container.env.jwt.encodingKey }}
 ## {{ required "required value .Values.container.env.jwt.decodingKey" .Values.container.env.jwt.decodingKey }}
+## {{ required "required value .Values.container.env.vaw.webhookCert" .Values.container.env.vaw.webhookCert }}
+## {{ required "required value .Values.container.env.vaw.webhookKey" .Values.container.env.vaw.webhookKey }}
 
 apiVersion: apps/v1
 kind: Deployment
@@ -90,17 +92,10 @@ spec:
           - name: JWT_DECODING_KEY
 {{ .Values.container.env.jwt.decodingKey | toYaml | indent 12 }}
 
-          # These values correspond to the `Certificate` defined in `certs.yaml`.
           - name: WEBHOOK_CERT
-            valueFrom:
-              secretKeyRef:
-                name: hadron-webhooks
-                key: tls.crt
+{{ .Values.container.env.vaw.webhookCert | toYaml | indent 12 }}
           - name: WEBHOOK_KEY
-            valueFrom:
-              secretKeyRef:
-                name: hadron-webhooks
-                key: tls.key
+{{ .Values.container.env.vaw.webhookKey | toYaml | indent 12 }}
 
           resources: {{ .Values.container.resources | toJson }}
 

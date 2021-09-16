@@ -1,3 +1,7 @@
+## Required values:
+## {{ required "required value .Values.certManager.enabled" .Values.certManager.enabled }}
+
+{{- if .Values.certManager.enabled }}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -29,3 +33,4 @@ metadata:
     {{- include "chart.labels" . | indent 4 }}
 spec:
   selfSigned: {}
+{{- end }}

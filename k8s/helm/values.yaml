@@ -82,3 +82,39 @@ container:
       ##       key: ecodingKey
       ## ```
       decodingKey: null
+
+    ## VAW Config
+    vaw:
+      ## The value to use for the VAW webhook cert. Will be inlined as YAML.
+      ## Should have a single key `value` or `valueFrom` as the default does.
+      ## The default value works with the cert-manager integration.
+      webhookCert:
+        valueFrom:
+          secretKeyRef:
+            name: hadron-webhooks
+            key: tls.crt
+      ## The value to use for the VAW webhook key. Will be inlined as YAML.
+      ## Should have a single key `value` or `valueFrom` as the default does.
+      ## The default value works with the cert-manager integration.
+      webhookKey:
+        valueFrom:
+          secretKeyRef:
+            name: hadron-webhooks
+            key: tls.key
+
+vaw:
+  ## The CA bundle used by the Validating Admissions Webhook.
+  ##
+  ## When using the cert-manager integration, this value should be left as an empty string, and
+  ## cert-manager will populate the field dynamically.
+  caBundle: ""
+
+## Optional cert-manager integrations.
+##
+## When enabled (default), this chart will generate a self-signing Issuer and a Certificate
+## generated from that Issuer. These will be used to secure the VAW's network interface which is
+## required by K8s.
+##
+## This will also inject the Certificate's corresponding CA bundle into the VAW webhook resource.
+certManager:
+  enabled: true
