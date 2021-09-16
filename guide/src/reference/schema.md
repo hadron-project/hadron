@@ -1,4 +1,5 @@
-Schema Management
+These docs are currently under construction.
+<!-- Schema Management
 =================
 All Hadron resources including Namespaces, Streams, Pipelines, RPC Endpoints, etc, are defined using the Hadron Schema Management system.
 
@@ -75,4 +76,4 @@ The Hadron Kubernetes Operator ships with the ability to handle all schema manag
 This is a work in progress, but here are a few of the design goals:
 - `HadronSchemaState` CRDs take the place of the `.hadron-state.yaml` files, declaring a branch name and recording the last applied schema file timestamp. The CRD will need to reference a secret containing a Hadron token which has permissions to make schema changes to the cluster.
 - `HadronSchemaFile` CRDs take the place of the standard schema files, and are associated with a parent `HadronSchemaState` CRD by label.
-- The operator will order `HadronSchemaFile`s when changes are detected, and then apply the latest changes in order, updating the `HadronSchemaState` CRD, which will probably back its state via ConfigMap.
+- The operator will order `HadronSchemaFile`s when changes are detected, and then apply the latest changes in order, updating the `HadronSchemaState` CRD, which will probably back its state via ConfigMap. -->

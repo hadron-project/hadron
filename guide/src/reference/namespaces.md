@@ -1,4 +1,5 @@
-Namespaces
+These docs are currently under construction.
+<!-- Namespaces
 ==========
 Namespaces are the central unit of resource grouping and access control in Hadron.
 
@@ -18,4 +19,4 @@ description: required string
 - Namepsace names must conform to the DNS subdomain naming standards. 1-63 characters, `[-a-zA-Z0-9]`, may not start or end with a hyphen.
 - Ephemeral Messaging Exchanges, RPC Endpoints, Streams & Pipelines all exist within namespaces.
 - A Namespace always has exactly one Ephemeral Messaging Exchange, and may have any number of RPC Endpoints, Streams and Pipelines.
-- Tokens are granted permissions on Namespaces which determine their level of access to those Namespaces and the resources they contain.
+- Tokens are granted permissions on Namespaces which determine their level of access to those Namespaces and the resources they contain. -->
