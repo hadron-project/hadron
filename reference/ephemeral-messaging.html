@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Ephemeral Messaging - Hadron | Distributed event streaming, event orchestration &amp; messaging platform</title>
+        <title>Ephemeral Messaging - Hadron | event streaming, workflow orchestration &amp; messaging</title>
         
         
 
@@ -13,7 +13,7 @@
 
 
         <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
-        <meta name="description" content="The Hadron user guide.">
+        <meta name="description" content="The Hadron user guide">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../index.html">Overview</a></li><li class="chapter-item expanded "><a href="../reference/schema.html"><strong aria-hidden="true">1.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="../reference/users-tokens.html"><strong aria-hidden="true">2.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="../reference/namespaces.html"><strong aria-hidden="true">3.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/ephemeral-messaging.html" class="active"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../reference/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded "><a href="../reference/config-management.html"><strong aria-hidden="true">8.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">9.</strong> Hadron CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Hadron</a></li><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/cloud-events.html"><strong aria-hidden="true">3.</strong> CloudEvents</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../overview/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded affix "><li class="part-title">Clients</li><li class="chapter-item expanded affix "><li class="part-title">CLI</li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/schema.html"><strong aria-hidden="true">8.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="../reference/users-tokens.html"><strong aria-hidden="true">9.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="../reference/namespaces.html"><strong aria-hidden="true">10.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/ephemeral-messaging.html" class="active"><strong aria-hidden="true">13.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../reference/rpc.html"><strong aria-hidden="true">14.</strong> RPC</a></li><li class="chapter-item expanded "><a href="../reference/config-management.html"><strong aria-hidden="true">15.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">16.</strong> Hadron CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -127,7 +127,7 @@
                         
                     </div>
 
-                    <h1 class="menu-title">Hadron | Distributed event streaming, event orchestration &amp; messaging platform</h1>
+                    <h1 class="menu-title">Hadron | event streaming, workflow orchestration &amp; messaging</h1>
 
                     <div class="right-buttons">
                         
@@ -163,39 +163,48 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#ephemeral-messaging" id="ephemeral-messaging">Ephemeral Messaging</a></h1>
-<p>A topic-based, at most once delivery messaging system, perfect for ephemeral data.</p>
-<ul>
-<li>Provides <strong>at most once delivery semantics.</strong></li>
-<li>Messages are published with &quot;topics&quot;, similar to AMQP-style topics. Defaults to an empty string. No ack or nack is used for ephemeral messages.</li>
-<li>Consumers may specify a &quot;topic&quot; matcher, which expresses interest in matching messages. Wildcard topic matchers are supported, similar to AMQP-style wildcards.</li>
-<li>If no consumer matches the topic of the message, it will be dropped.</li>
-<li>Consumers may form groups, where messages will be load balanced across healthy group members.</li>
-<li>Consumer group information is synchronously replicated to all nodes when the consumer group is formed and as members join and leave the group, but this information is only held in memory.</li>
-<li>Consumer group load balancing decisions are made by the node which received the message needing to be load balanced.</li>
-<li>Messages will be delivered once to each consumer group matching the message's topic.</li>
-<li>Ephemeral messaging exchanges are implicity created as part of a namespace. Namespaces have one and only one ephemeral messaging exchange.</li>
-</ul>
-<h3><a class="header" href="#topics" id="topics">Topics</a></h3>
-<p>Hadron enforces that message topics adhere to the following pattern <code>[-_A-Za-z0-9.]*</code>. In English, this could be read as &quot;all alpha-numeric characters, hyphen, underscore and period&quot;. Topics are case-sensitive and can not contain whitespace.</p>
-<h5><a class="header" href="#topic-hierarchies" id="topic-hierarchies">Topic Hierarchies</a></h5>
-<p>The <code>.</code> character is used to create a subject hierarchy. A volcanology team might define the following hierarchy for collecting sensor readings on volcanoes they are monitoring, where volcanoes are grouped by the region they are in, followed by the name of the volcano, then followed by the cardinal point where the sensor is stationed with respect to the center of the volcano.</p>
-<pre><code>volcanoes.usa
+                        <p>These docs are currently under construction.</p>
+<!-- Ephemeral Messaging
+===================
+A topic-based, at most once delivery messaging system, perfect for ephemeral data.
+
+- Provides **at most once delivery semantics.**
+- Messages are published with "topics", similar to AMQP-style topics. Defaults to an empty string. No ack or nack is used for ephemeral messages.
+- Consumers may specify a "topic" matcher, which expresses interest in matching messages. Wildcard topic matchers are supported, similar to AMQP-style wildcards.
+- If no consumer matches the topic of the message, it will be dropped.
+- Consumers may form groups, where messages will be load balanced across healthy group members.
+- Consumer group information is synchronously replicated to all nodes when the consumer group is formed and as members join and leave the group, but this information is only held in memory.
+- Consumer group load balancing decisions are made by the node which received the message needing to be load balanced.
+- Messages will be delivered once to each consumer group matching the message's topic.
+- Ephemeral messaging exchanges are implicity created as part of a namespace. Namespaces have one and only one ephemeral messaging exchange.
+
+### Topics
+Hadron enforces that message topics adhere to the following pattern `[-_A-Za-z0-9.]*`. In English, this could be read as "all alpha-numeric characters, hyphen, underscore and period". Topics are case-sensitive and can not contain whitespace.
+
+##### Topic Hierarchies
+The `.` character is used to create a subject hierarchy. A volcanology team might define the following hierarchy for collecting sensor readings on volcanoes they are monitoring, where volcanoes are grouped by the region they are in, followed by the name of the volcano, then followed by the cardinal point where the sensor is stationed with respect to the center of the volcano.
+
+```
+volcanoes.usa
 volcanoes.usa.atka
 volcanoes.usa.kahoolawe.north
 volcanoes.tanzania
 volcanoes.tanzania.meru
 volcanoes.tanzania.kilimanjaro.east
 volcanoes.tanzania.kilimanjaro.west
-</code></pre>
-<h3><a class="header" href="#wildcard-matchers" id="wildcard-matchers">Wildcard Matchers</a></h3>
-<p>There are two wildcard tokens available to subscribers for matching message topics. Subscribers can use these wildcards to listen to multiple topics with a single subscription but Publishers will always use a fully specified subject, without any wildcards (as the wildcard characters are not valid topic characters while publishing).</p>
-<h5><a class="header" href="#single-token-matching" id="single-token-matching">Single-Token Matching</a></h5>
-<p>The first wildcard is <code>*</code> which will match a single hierarchy token. If the volcanology team needs to build a consumer for monitoring everything from <code>Kilimanjaro</code>, it could subscribe to <code>volcanoes.tanzania.kilimanjaro.*</code>, which would match <code>volcanoes.tanzania.kilimanjaro.east</code> and <code>volcanoes.tanzania.kilimanjaro.west</code>.</p>
-<h5><a class="header" href="#multi-token-matching" id="multi-token-matching">Multi-Token matching</a></h5>
-<p>The second wildcard is <code>&gt;</code> which will match one or more hierachy tokens, and can only appear at the end of the topic. For example, <code>volcanoes.usa.&gt;</code> will match <code>volcanoes.usa.atka</code> and <code>volcanoes.usa.kahoolawe.north</code>, while <code>volcanoes.usa.*</code> would only match <code>volcanoes.usa.atka</code> since it can’t match more than one hierarchy token.</p>
-<h3><a class="header" href="#consumers" id="consumers">Consumers</a></h3>
-<p>Ephemeral message consumers specify a topic matcher and may optionally specify a queue group to begin consuming messages. Every consumer which is part of the same queue group will have messages load balanced across the group.</p>
+```
+
+### Wildcard Matchers
+There are two wildcard tokens available to subscribers for matching message topics. Subscribers can use these wildcards to listen to multiple topics with a single subscription but Publishers will always use a fully specified subject, without any wildcards (as the wildcard characters are not valid topic characters while publishing).
+
+##### Single-Token Matching
+The first wildcard is `*` which will match a single hierarchy token. If the volcanology team needs to build a consumer for monitoring everything from `Kilimanjaro`, it could subscribe to `volcanoes.tanzania.kilimanjaro.*`, which would match `volcanoes.tanzania.kilimanjaro.east` and `volcanoes.tanzania.kilimanjaro.west`.
+
+##### Multi-Token matching
+The second wildcard is `>` which will match one or more hierachy tokens, and can only appear at the end of the topic. For example, `volcanoes.usa.>` will match `volcanoes.usa.atka` and `volcanoes.usa.kahoolawe.north`, while `volcanoes.usa.*` would only match `volcanoes.usa.atka` since it can’t match more than one hierarchy token.
+
+### Consumers
+Ephemeral message consumers specify a topic matcher and may optionally specify a queue group to begin consuming messages. Every consumer which is part of the same queue group will have messages load balanced across the group. -->
 
                     </main>
 

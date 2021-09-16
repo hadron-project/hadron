@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Streams - Hadron | Distributed event streaming, event orchestration &amp; messaging platform</title>
+        <title>Streams - Hadron | event streaming, workflow orchestration &amp; messaging</title>
         
         
 
@@ -13,7 +13,7 @@
 
 
         <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
-        <meta name="description" content="The Hadron user guide.">
+        <meta name="description" content="The Hadron user guide">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../index.html">Overview</a></li><li class="chapter-item expanded "><a href="../reference/schema.html"><strong aria-hidden="true">1.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="../reference/users-tokens.html"><strong aria-hidden="true">2.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="../reference/namespaces.html"><strong aria-hidden="true">3.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="../reference/streams.html" class="active"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../reference/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded "><a href="../reference/config-management.html"><strong aria-hidden="true">8.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">9.</strong> Hadron CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Hadron</a></li><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/cloud-events.html"><strong aria-hidden="true">3.</strong> CloudEvents</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../overview/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded affix "><li class="part-title">Clients</li><li class="chapter-item expanded affix "><li class="part-title">CLI</li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/schema.html"><strong aria-hidden="true">8.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="../reference/users-tokens.html"><strong aria-hidden="true">9.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="../reference/namespaces.html"><strong aria-hidden="true">10.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="../reference/streams.html" class="active"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/ephemeral-messaging.html"><strong aria-hidden="true">13.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../reference/rpc.html"><strong aria-hidden="true">14.</strong> RPC</a></li><li class="chapter-item expanded "><a href="../reference/config-management.html"><strong aria-hidden="true">15.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">16.</strong> Hadron CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -127,7 +127,7 @@
                         
                     </div>
 
-                    <h1 class="menu-title">Hadron | Distributed event streaming, event orchestration &amp; messaging platform</h1>
+                    <h1 class="menu-title">Hadron | event streaming, workflow orchestration &amp; messaging</h1>
 
                     <div class="right-buttons">
                         
@@ -163,11 +163,16 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#streams" id="streams">Streams</a></h1>
-<p>Streams are append-only, immutable logs of data.</p>
-<h2><a class="header" href="#schema" id="schema">Schema</a></h2>
-<p>Streams are declared in YAML as part of the <a href="./schema.html">Schema Management system</a>. The schema for the <code>Stream</code> object is as follows:</p>
-<pre><code class="language-yaml">## The kind of object being defined. In this case, a stream.
+                        <p>These docs are currently under construction.</p>
+<!-- Streams
+=======
+Streams are append-only, immutable logs of data.
+
+## Schema
+Streams are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Stream` object is as follows:
+
+```yaml
+## The kind of object being defined. In this case, a stream.
 kind: Stream
 ## The namespace in which this stream is to be created.
 namespace: required string
@@ -182,34 +187,40 @@ partitions: required string
 ##
 ## If not specified, then records will stay on the stream forever.
 ttl: optional duration (default none)
-</code></pre>
-<p>Streams can be updated the same way all other Hadron DDL objects can be updated. See the <a href="./schema.html">Schema Management chapter</a> for more details.</p>
-<h3><a class="header" href="#details" id="details">Details</a></h3>
-<ul>
-<li>Stream names may be 1-100 characters long, containing only <code>[-_.a-zA-Z0-9]</code>. The <code>.</code> can be used to form hierarchies for authorization matching wildcards.</li>
-<li>Streams may have one or more partitions, which may be increased as needed. Horizontally scaling the Hadron cluster and adding more partitions to a stream will allow the write throughput of the stream to horizontally scale.</li>
-<li>Stream data is replicated across each partition's replica set.</li>
-<li>Streams must first be created via the Hadron schema system. See the <a href="./schema.html">Schema Management</a> chapter for more details.</li>
-</ul>
-<h2><a class="header" href="#subscriptions" id="subscriptions">Subscriptions</a></h2>
-<p>Subscriptions represent a client's interest to consume data from a stream. Subscriptions are created when a client submits a subscription request. Subscription requests must specify the target stream to subscribe to and a name to use for the subscription.</p>
-<p><strong>Consumers &amp; groups:</strong> clients which process records from a stream as part of a subscription are known as consumers. When multiple clients subscribe to the same stream using the same subscription name, this will dynamically form a consumer group and messages will be load-balanced across all members of the group. Consumers will receive all messages without any message level discrimination.</p>
-<p><strong>Durable:</strong> subscriptions are durable in the sense that the group's progress through the stream is stored on disk. Clients may disconnect at any time, and they will be automatically removed from the consumer group, and new consumers may be added to the group just as easily.</p>
-<p><strong>Starting point:</strong> when subscriptions are created, they may specify a starting point: first or latest. The starting point only affects the creation of the consumer group when a subscription is created.</p>
-<p><strong>Subscription Config:</strong> when creating a subscription, there are various configuration options which my be specified in order to control behavior.</p>
-<ul>
-<li><code>maxParallelConsumers</code> (default none): the maximum number of consumers allowed to process messages in parallel. If set to 1, then only one consumer is allowed to process messages at a time for the consumer group.</li>
-</ul>
-<p><strong>Consumer Config:</strong> each individual consumer within a group has its own isolated configuration options.</p>
-<ul>
-<li><code>batchSize</code> (default 100): the maximum number of messages which will be delivered to the consumer per batch.</li>
-<li><code>batchWaitMillis</code> (default 500): the amount of time in milliseconds which the consumer should delay for its batch to fill. This only applies when the consumer's batch has been partially filled.</li>
-</ul>
-<p>Subscriptions may be deleted using the <code>StreamUnsub</code> client API.</p>
-<h3><a class="header" href="#ack--nack" id="ack--nack">Ack &amp; Nack</a></h3>
-<p>Messages being consumed from a stream must be ack'ed. Once a message is ack'd, it will not be delivered again to the same consumer group.</p>
-<p>Messages may be nack'ed, which will cause immediate redelivery by default. A redelivery timeout may be specified, which will cause a timeout to be applied before redelivery of the message to a consumer. Redelivery timeouts are not durable, and are held in-memory by Hadron.</p>
-<p>If a client disconnects while it was processing unacknowledged messages, Hadron will redeliver those messages to other live consumers of the same subscription consumer group.</p>
+```
+
+Streams can be updated the same way all other Hadron DDL objects can be updated. See the [Schema Management chapter](./schema.md) for more details.
+
+### Details
+- Stream names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
+- Streams may have one or more partitions, which may be increased as needed. Horizontally scaling the Hadron cluster and adding more partitions to a stream will allow the write throughput of the stream to horizontally scale.
+- Stream data is replicated across each partition's replica set.
+- Streams must first be created via the Hadron schema system. See the [Schema Management](./schema.md) chapter for more details.
+
+## Subscriptions
+Subscriptions represent a client's interest to consume data from a stream. Subscriptions are created when a client submits a subscription request. Subscription requests must specify the target stream to subscribe to and a name to use for the subscription.
+
+**Consumers & groups:** clients which process records from a stream as part of a subscription are known as consumers. When multiple clients subscribe to the same stream using the same subscription name, this will dynamically form a consumer group and messages will be load-balanced across all members of the group. Consumers will receive all messages without any message level discrimination.
+
+**Durable:** subscriptions are durable in the sense that the group's progress through the stream is stored on disk. Clients may disconnect at any time, and they will be automatically removed from the consumer group, and new consumers may be added to the group just as easily.
+
+**Starting point:** when subscriptions are created, they may specify a starting point: first or latest. The starting point only affects the creation of the consumer group when a subscription is created.
+
+**Subscription Config:** when creating a subscription, there are various configuration options which my be specified in order to control behavior.
+- `maxParallelConsumers` (default none): the maximum number of consumers allowed to process messages in parallel. If set to 1, then only one consumer is allowed to process messages at a time for the consumer group.
+
+**Consumer Config:** each individual consumer within a group has its own isolated configuration options.
+- `batchSize` (default 100): the maximum number of messages which will be delivered to the consumer per batch.
+- `batchWaitMillis` (default 500): the amount of time in milliseconds which the consumer should delay for its batch to fill. This only applies when the consumer's batch has been partially filled.
+
+Subscriptions may be deleted using the `StreamUnsub` client API.
+
+### Ack & Nack
+Messages being consumed from a stream must be ack'ed. Once a message is ack'd, it will not be delivered again to the same consumer group.
+
+Messages may be nack'ed, which will cause immediate redelivery by default. A redelivery timeout may be specified, which will cause a timeout to be applied before redelivery of the message to a consumer. Redelivery timeouts are not durable, and are held in-memory by Hadron.
+
+If a client disconnects while it was processing unacknowledged messages, Hadron will redeliver those messages to other live consumers of the same subscription consumer group. -->
 
                     </main>
 

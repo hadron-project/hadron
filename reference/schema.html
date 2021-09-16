@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Schema Management - Hadron | Distributed event streaming, event orchestration &amp; messaging platform</title>
+        <title>Schema Management - Hadron | event streaming, workflow orchestration &amp; messaging</title>
         
         
 
@@ -13,7 +13,7 @@
 
 
         <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
-        <meta name="description" content="The Hadron user guide.">
+        <meta name="description" content="The Hadron user guide">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../index.html">Overview</a></li><li class="chapter-item expanded "><a href="../reference/schema.html" class="active"><strong aria-hidden="true">1.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="../reference/users-tokens.html"><strong aria-hidden="true">2.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="../reference/namespaces.html"><strong aria-hidden="true">3.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../reference/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded "><a href="../reference/config-management.html"><strong aria-hidden="true">8.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">9.</strong> Hadron CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Hadron</a></li><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/cloud-events.html"><strong aria-hidden="true">3.</strong> CloudEvents</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../overview/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded affix "><li class="part-title">Clients</li><li class="chapter-item expanded affix "><li class="part-title">CLI</li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/schema.html" class="active"><strong aria-hidden="true">8.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="../reference/users-tokens.html"><strong aria-hidden="true">9.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="../reference/namespaces.html"><strong aria-hidden="true">10.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/ephemeral-messaging.html"><strong aria-hidden="true">13.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../reference/rpc.html"><strong aria-hidden="true">14.</strong> RPC</a></li><li class="chapter-item expanded "><a href="../reference/config-management.html"><strong aria-hidden="true">15.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">16.</strong> Hadron CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -127,7 +127,7 @@
                         
                     </div>
 
-                    <h1 class="menu-title">Hadron | Distributed event streaming, event orchestration &amp; messaging platform</h1>
+                    <h1 class="menu-title">Hadron | event streaming, workflow orchestration &amp; messaging</h1>
 
                     <div class="right-buttons">
                         
@@ -163,24 +163,33 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#schema-management" id="schema-management">Schema Management</a></h1>
-<p>All Hadron resources including Namespaces, Streams, Pipelines, RPC Endpoints, etc, are defined using the Hadron Schema Management system.</p>
-<p>The guiding principals of the Hadron Schema Management system are as follows:</p>
-<ul>
-<li>Must be easy to use, convenient, and intuitive.</li>
-<li>Must be natively supported by the hadron CLI, no external tools needed.</li>
-<li>Must be explicit, clear, well-defined.</li>
-<li>Must be idempotent.</li>
-</ul>
-<p>The Hadron CLI is used for all aspects of schema management, and schema management files should be committed to one's code repository. Very importantly, Hadron schema management is designed to be idempotent, ensuring that the cluster does not end up in an unexpected state as teams roll changes for their applications.</p>
-<p>Hadron uses YAML for its schema language. Simply run <code>hadron schema init {branchName}</code> to create a new schema management directory. Here, we will use <code>service-xyz</code> as the value for <code>{branchName}</code> (more on this later). The Hadron CLI will use the directory <code>hadron-schema</code> by default, but this value may be overridden. This will give you a directory structure as follows:</p>
-<pre><code class="language-bash">hadron-schema/
+                        <p>These docs are currently under construction.</p>
+<!-- Schema Management
+=================
+All Hadron resources including Namespaces, Streams, Pipelines, RPC Endpoints, etc, are defined using the Hadron Schema Management system.
+
+The guiding principals of the Hadron Schema Management system are as follows:
+- Must be easy to use, convenient, and intuitive.
+- Must be natively supported by the hadron CLI, no external tools needed.
+- Must be explicit, clear, well-defined.
+- Must be idempotent.
+
+The Hadron CLI is used for all aspects of schema management, and schema management files should be committed to one's code repository. Very importantly, Hadron schema management is designed to be idempotent, ensuring that the cluster does not end up in an unexpected state as teams roll changes for their applications.
+
+Hadron uses YAML for its schema language. Simply run `hadron schema init {branchName}` to create a new schema management directory. Here, we will use `service-xyz` as the value for `{branchName}` (more on this later). The Hadron CLI will use the directory `hadron-schema` by default, but this value may be overridden. This will give you a directory structure as follows:
+
+```bash
+hadron-schema/
 ├── .hadron-state.yaml
 └── 1608743979-initial.yaml
-</code></pre>
-<p>Let's break down each of these files. The leading timestamp, generated at the time of the Hadron CLI invocation, will ensure that files stay sorted, and the Hadron CLI will execute them according to their timestamp order. The <code>initial</code> segment in the middle of the timestamped filename is generated by the Hadron CLI as part of generating the new schema management directory. And finally, the <code>.hadron-state.yaml</code> file holds state information related to this branch of schema changes, the last applied timestamp, and other info — which is always synchronized with the Hadron cluster. The state file should never be manually edited.</p>
-<p>Here are the internals of the <code>1608743979-initial.yaml</code> file:</p>
-<pre><code class="language-yaml"># Add your schema changes here. Each schema statement should be delimited by
+```
+
+Let's break down each of these files. The leading timestamp, generated at the time of the Hadron CLI invocation, will ensure that files stay sorted, and the Hadron CLI will execute them according to their timestamp order. The `initial` segment in the middle of the timestamped filename is generated by the Hadron CLI as part of generating the new schema management directory. And finally, the `.hadron-state.yaml` file holds state information related to this branch of schema changes, the last applied timestamp, and other info — which is always synchronized with the Hadron cluster. The state file should never be manually edited.
+
+Here are the internals of the `1608743979-initial.yaml` file:
+
+```yaml
+# Add your schema changes here. Each schema statement should be delimited by
 # a line with the text `---` which indicates the start of a new YAML object.
 #
 # All of the schema statements in this file will be transactionally applied
@@ -193,46 +202,53 @@ name: example
 description: This is just an example namespace.
 
 # See the docs at https://docs.hadron.rs/guide/reference/schema.html
-</code></pre>
-<p>This is a schema file. In Hadron, schema files declare a set of schema statements to be applied to the Hadron cluster. The Hadron CLI ensures that all schema file names are prefixed with a valid timestamp, which is used to order the statements before attempting to apply them to the cluster.</p>
-<p>And the internals of <code>.hadron-state.yaml</code>:</p>
-<pre><code class="language-yaml"># NOTE: this file was generated by the Hadron CLI. Do not edit.
+```
+
+This is a schema file. In Hadron, schema files declare a set of schema statements to be applied to the Hadron cluster. The Hadron CLI ensures that all schema file names are prefixed with a valid timestamp, which is used to order the statements before attempting to apply them to the cluster.
+
+And the internals of `.hadron-state.yaml`:
+
+```yaml
+# NOTE: this file was generated by the Hadron CLI. Do not edit.
 branch: service-xyz
-</code></pre>
-<p>This is the state management file. This file declares the provided branch name, establishing a link between all schema files in the respective directory. This file is managed by the Hadron CLI itself, and should not be manually modified. As schema files are applied to the cluster, their timestamps are record in this file under the <code>lastAppliedTimestamp</code> key. If a schema file's timestamp is earlier than the <code>lastAppliedTimestamp</code>, then it will not be applied.</p>
-<p>Simply run the following command <code>hadron schema apply</code> to apply any outstanding schema files in this directory to the cluster. The Hadron cluster stores the last applied timestamp per branch, and the Hadron CLI refreshes this data before every attempt to apply schema changes.</p>
-<h3><a class="header" href="#new-schema-files" id="new-schema-files">New Schema Files</a></h3>
-<p>New schema files can be added to the schema management directory with the following command: <code>hadron schema new {fileName}</code>. This will create a new schema file in the schema management directory. The Hadron CLI will automatically prefix the new file with the current timestamp.</p>
-<h3><a class="header" href="#idempotent-workflow--compaction" id="idempotent-workflow--compaction">Idempotent Workflow &amp; Compaction</a></h3>
-<p>The Hadron schema management system is designed to be idempotent based on the simple concepts of branch name and timestamp. This helps to ensure that the cluster does not get into an undesired state due to accidentally applying old changes. This systems has no concept of &quot;rollbacks&quot;. We take the fail-forward approach.</p>
-<p>Over time, it will be common that a large number of schema files will build up within a schema management directory. Run the <code>hadron schema compact</code> command to combine all schema statements into the latest schema file, deleting the old schema files once it is safe to do so.</p>
-<ul>
-<li>Ordering of all schema statements is strictly preserved during compaction of schema files.</li>
-<li>Hadron will only compact schema files which are older than the <code>lastAppliedTimestamp</code>.</li>
-</ul>
-<h3><a class="header" href="#schema-statements" id="schema-statements">Schema Statements</a></h3>
-<p>The following is a list of accepted schema statements by <code>kind</code>, along with links to their full schema spec.</p>
-<ul>
-<li><a href="./namespaces.html#schema"><code>Namespace</code></a></li>
-<li><a href="./streams.html#schema"><code>Stream</code></a></li>
-<li><a href="./pipelines.html#schema"><code>Pipeline</code></a></li>
-<li><a href="./rpc.html#schema"><code>Endpoint</code></a></li>
-</ul>
-<h3><a class="header" href="#kubernetes-operator-schema-management" id="kubernetes-operator-schema-management">Kubernetes Operator Schema Management</a></h3>
-<p>The Hadron Kubernetes Operator ships with the ability to handle all schema management based on CRDs.</p>
-<p>This is a work in progress, but here are a few of the design goals:</p>
-<ul>
-<li><code>HadronSchemaState</code> CRDs take the place of the <code>.hadron-state.yaml</code> files, declaring a branch name and recording the last applied schema file timestamp. The CRD will need to reference a secret containing a Hadron token which has permissions to make schema changes to the cluster.</li>
-<li><code>HadronSchemaFile</code> CRDs take the place of the standard schema files, and are associated with a parent <code>HadronSchemaState</code> CRD by label.</li>
-<li>The operator will order <code>HadronSchemaFile</code>s when changes are detected, and then apply the latest changes in order, updating the <code>HadronSchemaState</code> CRD, which will probably back its state via ConfigMap.</li>
-</ul>
+```
+
+This is the state management file. This file declares the provided branch name, establishing a link between all schema files in the respective directory. This file is managed by the Hadron CLI itself, and should not be manually modified. As schema files are applied to the cluster, their timestamps are record in this file under the `lastAppliedTimestamp` key. If a schema file's timestamp is earlier than the `lastAppliedTimestamp`, then it will not be applied.
+
+Simply run the following command `hadron schema apply` to apply any outstanding schema files in this directory to the cluster. The Hadron cluster stores the last applied timestamp per branch, and the Hadron CLI refreshes this data before every attempt to apply schema changes.
+
+### New Schema Files
+New schema files can be added to the schema management directory with the following command: `hadron schema new {fileName}`. This will create a new schema file in the schema management directory. The Hadron CLI will automatically prefix the new file with the current timestamp.
+
+### Idempotent Workflow & Compaction
+The Hadron schema management system is designed to be idempotent based on the simple concepts of branch name and timestamp. This helps to ensure that the cluster does not get into an undesired state due to accidentally applying old changes. This systems has no concept of "rollbacks". We take the fail-forward approach.
+
+Over time, it will be common that a large number of schema files will build up within a schema management directory. Run the `hadron schema compact` command to combine all schema statements into the latest schema file, deleting the old schema files once it is safe to do so.
+- Ordering of all schema statements is strictly preserved during compaction of schema files.
+- Hadron will only compact schema files which are older than the `lastAppliedTimestamp`.
+
+### Schema Statements
+The following is a list of accepted schema statements by `kind`, along with links to their full schema spec.
+
+- [`Namespace`](./namespaces.md#schema)
+- [`Stream`](./streams.md#schema)
+- [`Pipeline`](./pipelines.md#schema)
+- [`Endpoint`](./rpc.md#schema)
+
+### Kubernetes Operator Schema Management
+The Hadron Kubernetes Operator ships with the ability to handle all schema management based on CRDs.
+
+This is a work in progress, but here are a few of the design goals:
+- `HadronSchemaState` CRDs take the place of the `.hadron-state.yaml` files, declaring a branch name and recording the last applied schema file timestamp. The CRD will need to reference a secret containing a Hadron token which has permissions to make schema changes to the cluster.
+- `HadronSchemaFile` CRDs take the place of the standard schema files, and are associated with a parent `HadronSchemaState` CRD by label.
+- The operator will order `HadronSchemaFile`s when changes are detected, and then apply the latest changes in order, updating the `HadronSchemaState` CRD, which will probably back its state via ConfigMap. -->
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../index.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../overview/rpc.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
@@ -250,7 +266,7 @@ branch: service-xyz
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../index.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../overview/rpc.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 

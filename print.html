@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Hadron | Distributed event streaming, event orchestration &amp; messaging platform</title>
+        <title>Hadron | event streaming, workflow orchestration &amp; messaging</title>
         
         <meta name="robots" content="noindex" />
         
@@ -15,7 +15,7 @@
 
 
         <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
-        <meta name="description" content="The Hadron user guide.">
+        <meta name="description" content="The Hadron user guide">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
@@ -97,7 +97,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="index.html">Overview</a></li><li class="chapter-item expanded "><a href="reference/schema.html"><strong aria-hidden="true">1.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="reference/users-tokens.html"><strong aria-hidden="true">2.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="reference/namespaces.html"><strong aria-hidden="true">3.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="reference/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="reference/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="reference/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="reference/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded "><a href="reference/config-management.html"><strong aria-hidden="true">8.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">9.</strong> Hadron CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="index.html"><strong aria-hidden="true">1.</strong> Hadron</a></li><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="overview/cloud-events.html"><strong aria-hidden="true">3.</strong> CloudEvents</a></li><li class="chapter-item expanded "><a href="overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="overview/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="overview/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded affix "><li class="part-title">Clients</li><li class="chapter-item expanded affix "><li class="part-title">CLI</li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/schema.html"><strong aria-hidden="true">8.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="reference/users-tokens.html"><strong aria-hidden="true">9.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="reference/namespaces.html"><strong aria-hidden="true">10.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="reference/ephemeral-messaging.html"><strong aria-hidden="true">13.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="reference/rpc.html"><strong aria-hidden="true">14.</strong> RPC</a></li><li class="chapter-item expanded "><a href="reference/config-management.html"><strong aria-hidden="true">15.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">16.</strong> Hadron CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -129,7 +129,7 @@
                         
                     </div>
 
-                    <h1 class="menu-title">Hadron | Distributed event streaming, event orchestration &amp; messaging platform</h1>
+                    <h1 class="menu-title">Hadron | event streaming, workflow orchestration &amp; messaging</h1>
 
                     <div class="right-buttons">
                         
@@ -166,33 +166,82 @@
                 <div id="content" class="content">
                     <main>
                         <h1><a class="header" href="#hadron" id="hadron">Hadron</a></h1>
-<p>The Hadron distributed event streaming, event orchestration &amp; messaging platform.</p>
-<p>Hadron is built around three core primitives: ephemeral messaging, RPC messaging &amp; durable streams. Ephemeral messaging offers topic based publish/subscribe patterns with wildcards, fanout, load balancing queue groups, and more. RPC messaging offers request/response patterns for service-oriented architectures. Durable streams offer configurable durability, and robust consumer patterns.</p>
+<p>Hadron is the Kubernetes native and CloudEvents native distributed event streaming, event orchestration &amp; messaging platform.</p>
+<p>Hadron is built around three core primitives: durable streams, ephemeral messaging &amp; RPC messaging. Durable streams offer configurable durability, and robust consumer patterns. Ephemeral messaging offers topic based publish/subscribe patterns with wildcards, fanout, load balancing queue groups, and more. RPC messaging offers request/response patterns for service-oriented architectures.</p>
 <p>Hadron builds upon these core primitives to offer piplines. Pipelines are pre-defined multi-stage data workflows, structured as a graph. Pipelines provide transactional guarantees over ack'ing a stage's work and the delivery of the next stage's data. With Pipelines, Hadron provides a platform with better features, and greater guarantees for building distributed architectures.</p>
 <p>Older AMQP style systems were great, but fall short of Kafka-like streaming capabilities, specifically message persistence. Kafka-like systems lack ephemeral &amp; RPC messaging. More recent blends of the technologies, offer a nice combination, but lack many of the core features needed from both domains. Hadron offers the best of all of these paradigms, adds Pipelines for more powerful architectures, and is shipped as a single binary, written in Rust, with blazing speed, safety, and reliability.</p>
-<p>Hadron also features a very simple wire protocol based on protocol buffers for client-server communication, but also ships with a powerful Rust client library for native use in Rust, or for use in any other language supporting C FFI. Language specific wrappers are (will be) maintained in various languages to smooth out any FFI roughness.</p>
+<p>Hadron also features a very simple wire protocol based on protocol buffers for client-server communication. Hadron also ships with a powerful Rust client library for native use in Rust, or for use in any other language supporting C FFI. Language specific wrappers are (will be) maintained in various languages built around the core Rust implementation.</p>
 <h3><a class="header" href="#learn" id="learn">Learn</a></h3>
 <p>Head over to the <a href="https://hadron-project.github.io/hadron/">Hadron Guide</a> to learn more.</p>
 <h3><a class="header" href="#license" id="license">LICENSE</a></h3>
 <p>Unless otherwise noted, the Hadron source files are distributed under the Apache Version 2.0 license found in the LICENSE file.</p>
-<h1><a class="header" href="#schema-management" id="schema-management">Schema Management</a></h1>
-<p>All Hadron resources including Namespaces, Streams, Pipelines, RPC Endpoints, etc, are defined using the Hadron Schema Management system.</p>
-<p>The guiding principals of the Hadron Schema Management system are as follows:</p>
-<ul>
-<li>Must be easy to use, convenient, and intuitive.</li>
-<li>Must be natively supported by the hadron CLI, no external tools needed.</li>
-<li>Must be explicit, clear, well-defined.</li>
-<li>Must be idempotent.</li>
-</ul>
-<p>The Hadron CLI is used for all aspects of schema management, and schema management files should be committed to one's code repository. Very importantly, Hadron schema management is designed to be idempotent, ensuring that the cluster does not end up in an unexpected state as teams roll changes for their applications.</p>
-<p>Hadron uses YAML for its schema language. Simply run <code>hadron schema init {branchName}</code> to create a new schema management directory. Here, we will use <code>service-xyz</code> as the value for <code>{branchName}</code> (more on this later). The Hadron CLI will use the directory <code>hadron-schema</code> by default, but this value may be overridden. This will give you a directory structure as follows:</p>
-<pre><code class="language-bash">hadron-schema/
+<h1><a class="header" href="#hadron--kubernetes" id="hadron--kubernetes">Hadron &amp; Kubernetes</a></h1>
+<blockquote>
+<p>Kubernetes, also known as K8s, is an open-source system for automating deployment, scaling, and management of containerized applications.
+<br/><small><i>~ <a href="https://kubernetes.io/">kubernetes.io</a></i></small></p>
+</blockquote>
+<p>Kubernetes has become a cornerstone of the modern cloud ecosystem, and Hadron is purpose built for the Kubernetes platform. Hadron is native to Kubernetes. It was born here and it knows the ins and outs.</p>
+<p>Hadron is designed from the ground up to take full advantage of Kubernetes and its rich API for deploying and running applications. Building upon this foundation has enabled Hadron to achieve an operational model with a simple setup, which removes performance bottlenecks, simplifies clustering and consensus, provides predictable and clear scalability, and positions Hadron for seamless and intuitive integration with user applications and infrastructure.</p>
+<p>Each of the above points merits deeper discussion, all of which are covered in further detail throughout the reference section of this guide. Here are the highlights.</p>
+<h3><a class="header" href="#simple-setup" id="simple-setup">Simple Setup</a></h3>
+<p>Most usage of Hadron will start with the Hadron Helm chart. The chart installs the Hadron Operator along with various other resource. Everything related to Hadron operations is handled by the Operator and is driven via Kubernetes configuration files. Provisioning, auto-scaling, networking, access control, all of this is controlled through a few lines of YAML which can be versioned in source control and reviewed as code.</p>
+<p>The entire lifecycle of Hadron clusters is handled by the Operator. Upgrading a cluster to a new version of Hadron, horizontally scaling a cluster, adding credentials and access control, all of this and more is declarative and fully managed, which means no operational headaches for users.</p>
+<h3><a class="header" href="#removing-performance-bottlenecks" id="removing-performance-bottlenecks">Removing Performance Bottlenecks</a></h3>
+<p>Kubernetes offers deployment models which allow Hadron to completely remove the need for its own distributed consensus algorithms in many cases, especially in the write path of publishing data to streams. Without this overhead, Hadron is able to optimize write throughput, replication, and other performance criteria in ways which would not otherwise be feasible.</p>
+<p>These wins come with no downsides. Horizontally scaling a cluster is still fully dynamic, clients are still able to detect cluster topology changes in real-time as they take place, but most importantly: the path which data takes from the moment of publication to the moment it is persisted to disk is direct and simple. No extra network hops. No overhead. Just an HTTP2 data stream directly from the client to the Hadron internal function which writes data to disk. All with absolute ordering per partition.</p>
+<h3><a class="header" href="#clustering-and-consensus" id="clustering-and-consensus">Clustering and Consensus</a></h3>
+<p>Hadron clusters are dynamic, but never contend over leadership. Even as cluster topology changes, there is never any overhead on consensus. Without this overhead, Hadron is able to achieve an excellent performance profile.</p>
+<h3><a class="header" href="#seamless-and-intuitive-integration" id="seamless-and-intuitive-integration">Seamless and Intuitive Integration</a></h3>
+<p>Hadron clusters are exposed for application and infrastructure integration using canonical Kubernetes patterns for networking and access. Clients receive a stream of cluster metadata and can react in real-time to topology changes to maximize use of horizontal scaling and high-availability.</p>
+<p>If your applications are already running in Kubernetes, then integration couldn't be more simple.</p>
+<h1><a class="header" href="#cloudevents" id="cloudevents">CloudEvents</a></h1>
+<blockquote>
+<p>A specification for describing event data in a common way
+<br/><small><i>~ <a href="https://cloudevents.io/">cloudevents.io</a></i></small></p>
+</blockquote>
+<p>Events are everywhere. Everything is an event. As humans have continued to work with event-driven data streams, we've accumulated many best practices on how to model our data in a reliable, extensible, and intuitive way. CloudEvents is at the heart of this movement, and also happens to be at the very core of Hadron.</p>
+<p>Everything in Hadron is an event, a CloudEvents 1.0 event. Streams, Pipelines and all of their inputs and outputs for workflow orchestration, ephemeral messages, everything in Hadron is built around the CloudEvents model.</p>
+<h3><a class="header" href="#clear" id="clear">Clear</a></h3>
+<p>Hadron events are clear, easy to analyze, and prime for automation and application usage.</p>
+<h3><a class="header" href="#interoperable" id="interoperable">Interoperable</a></h3>
+<p>Hadron is positioned from the very beginning to integrate seamlessly with the greater event-driven ecosystem.</p>
+<h3><a class="header" href="#ready-to-go" id="ready-to-go">Ready to Go</a></h3>
+<p>Hadron clients speak CloudEvents fluently. Publishing data to, and consuming data from Hadron is clear, concise, and has broad general purpose application.</p>
+<h1><a class="header" href="#streams" id="streams">Streams</a></h1>
+<p>These docs are currently under construction.</p>
+<h1><a class="header" href="#pipelines" id="pipelines">Pipelines</a></h1>
+<p>These docs are currently under construction.</p>
+<h1><a class="header" href="#ephemeral-messaging" id="ephemeral-messaging">Ephemeral Messaging</a></h1>
+<p>These docs are currently under construction.</p>
+<h1><a class="header" href="#rpc" id="rpc">RPC</a></h1>
+<p>These docs are currently under construction.</p>
+<p>These docs are currently under construction.</p>
+<!-- Schema Management
+=================
+All Hadron resources including Namespaces, Streams, Pipelines, RPC Endpoints, etc, are defined using the Hadron Schema Management system.
+
+The guiding principals of the Hadron Schema Management system are as follows:
+- Must be easy to use, convenient, and intuitive.
+- Must be natively supported by the hadron CLI, no external tools needed.
+- Must be explicit, clear, well-defined.
+- Must be idempotent.
+
+The Hadron CLI is used for all aspects of schema management, and schema management files should be committed to one's code repository. Very importantly, Hadron schema management is designed to be idempotent, ensuring that the cluster does not end up in an unexpected state as teams roll changes for their applications.
+
+Hadron uses YAML for its schema language. Simply run `hadron schema init {branchName}` to create a new schema management directory. Here, we will use `service-xyz` as the value for `{branchName}` (more on this later). The Hadron CLI will use the directory `hadron-schema` by default, but this value may be overridden. This will give you a directory structure as follows:
+
+```bash
+hadron-schema/
 ├── .hadron-state.yaml
 └── 1608743979-initial.yaml
-</code></pre>
-<p>Let's break down each of these files. The leading timestamp, generated at the time of the Hadron CLI invocation, will ensure that files stay sorted, and the Hadron CLI will execute them according to their timestamp order. The <code>initial</code> segment in the middle of the timestamped filename is generated by the Hadron CLI as part of generating the new schema management directory. And finally, the <code>.hadron-state.yaml</code> file holds state information related to this branch of schema changes, the last applied timestamp, and other info — which is always synchronized with the Hadron cluster. The state file should never be manually edited.</p>
-<p>Here are the internals of the <code>1608743979-initial.yaml</code> file:</p>
-<pre><code class="language-yaml"># Add your schema changes here. Each schema statement should be delimited by
+```
+
+Let's break down each of these files. The leading timestamp, generated at the time of the Hadron CLI invocation, will ensure that files stay sorted, and the Hadron CLI will execute them according to their timestamp order. The `initial` segment in the middle of the timestamped filename is generated by the Hadron CLI as part of generating the new schema management directory. And finally, the `.hadron-state.yaml` file holds state information related to this branch of schema changes, the last applied timestamp, and other info — which is always synchronized with the Hadron cluster. The state file should never be manually edited.
+
+Here are the internals of the `1608743979-initial.yaml` file:
+
+```yaml
+# Add your schema changes here. Each schema statement should be delimited by
 # a line with the text `---` which indicates the start of a new YAML object.
 #
 # All of the schema statements in this file will be transactionally applied
@@ -205,108 +254,110 @@ name: example
 description: This is just an example namespace.
 
 # See the docs at https://docs.hadron.rs/guide/reference/schema.html
-</code></pre>
-<p>This is a schema file. In Hadron, schema files declare a set of schema statements to be applied to the Hadron cluster. The Hadron CLI ensures that all schema file names are prefixed with a valid timestamp, which is used to order the statements before attempting to apply them to the cluster.</p>
-<p>And the internals of <code>.hadron-state.yaml</code>:</p>
-<pre><code class="language-yaml"># NOTE: this file was generated by the Hadron CLI. Do not edit.
+```
+
+This is a schema file. In Hadron, schema files declare a set of schema statements to be applied to the Hadron cluster. The Hadron CLI ensures that all schema file names are prefixed with a valid timestamp, which is used to order the statements before attempting to apply them to the cluster.
+
+And the internals of `.hadron-state.yaml`:
+
+```yaml
+# NOTE: this file was generated by the Hadron CLI. Do not edit.
 branch: service-xyz
-</code></pre>
-<p>This is the state management file. This file declares the provided branch name, establishing a link between all schema files in the respective directory. This file is managed by the Hadron CLI itself, and should not be manually modified. As schema files are applied to the cluster, their timestamps are record in this file under the <code>lastAppliedTimestamp</code> key. If a schema file's timestamp is earlier than the <code>lastAppliedTimestamp</code>, then it will not be applied.</p>
-<p>Simply run the following command <code>hadron schema apply</code> to apply any outstanding schema files in this directory to the cluster. The Hadron cluster stores the last applied timestamp per branch, and the Hadron CLI refreshes this data before every attempt to apply schema changes.</p>
-<h3><a class="header" href="#new-schema-files" id="new-schema-files">New Schema Files</a></h3>
-<p>New schema files can be added to the schema management directory with the following command: <code>hadron schema new {fileName}</code>. This will create a new schema file in the schema management directory. The Hadron CLI will automatically prefix the new file with the current timestamp.</p>
-<h3><a class="header" href="#idempotent-workflow--compaction" id="idempotent-workflow--compaction">Idempotent Workflow &amp; Compaction</a></h3>
-<p>The Hadron schema management system is designed to be idempotent based on the simple concepts of branch name and timestamp. This helps to ensure that the cluster does not get into an undesired state due to accidentally applying old changes. This systems has no concept of &quot;rollbacks&quot;. We take the fail-forward approach.</p>
-<p>Over time, it will be common that a large number of schema files will build up within a schema management directory. Run the <code>hadron schema compact</code> command to combine all schema statements into the latest schema file, deleting the old schema files once it is safe to do so.</p>
-<ul>
-<li>Ordering of all schema statements is strictly preserved during compaction of schema files.</li>
-<li>Hadron will only compact schema files which are older than the <code>lastAppliedTimestamp</code>.</li>
-</ul>
-<h3><a class="header" href="#schema-statements" id="schema-statements">Schema Statements</a></h3>
-<p>The following is a list of accepted schema statements by <code>kind</code>, along with links to their full schema spec.</p>
-<ul>
-<li><a href="reference/./namespaces.html#schema"><code>Namespace</code></a></li>
-<li><a href="reference/./streams.html#schema"><code>Stream</code></a></li>
-<li><a href="reference/./pipelines.html#schema"><code>Pipeline</code></a></li>
-<li><a href="reference/./rpc.html#schema"><code>Endpoint</code></a></li>
-</ul>
-<h3><a class="header" href="#kubernetes-operator-schema-management" id="kubernetes-operator-schema-management">Kubernetes Operator Schema Management</a></h3>
-<p>The Hadron Kubernetes Operator ships with the ability to handle all schema management based on CRDs.</p>
-<p>This is a work in progress, but here are a few of the design goals:</p>
-<ul>
-<li><code>HadronSchemaState</code> CRDs take the place of the <code>.hadron-state.yaml</code> files, declaring a branch name and recording the last applied schema file timestamp. The CRD will need to reference a secret containing a Hadron token which has permissions to make schema changes to the cluster.</li>
-<li><code>HadronSchemaFile</code> CRDs take the place of the standard schema files, and are associated with a parent <code>HadronSchemaState</code> CRD by label.</li>
-<li>The operator will order <code>HadronSchemaFile</code>s when changes are detected, and then apply the latest changes in order, updating the <code>HadronSchemaState</code> CRD, which will probably back its state via ConfigMap.</li>
-</ul>
-<h1><a class="header" href="#users--tokens" id="users--tokens">Users &amp; Tokens</a></h1>
-<p>Hadron uses a simple but effective permissions model. There are users and there are tokens. Users represent administrators of the Hadron cluster, while tokens represent access grants to specific Hadron resources for use in application code and automation tools.</p>
-<p>There are a few different user roles:</p>
-<ul>
-<li><code>Owner</code>: this user has full control over the cluster, all namespaces and all resources.</li>
-<li><code>Admin</code>: admins are the same as owners, except that admin permissions may be revoked by other admins and owners, but admins can not revoked the permissions of an owner.</li>
-<li><code>Viewer</code>: viewers are read-only. They may view any of ther resources of the cluster, but may not modify them.</li>
-</ul>
-<p>Users are not allowed to directly use the resources of Hadron, that is what tokens are for. Tokens represent a set of permissions for the bearer of that token. The token ID is retained within Hadron and the token may be deleted, which revokes that token's access to the cluster. Tokens come in a few forms:</p>
-<ul>
-<li><code>All</code>: a permissions grant on all resources in the system.</li>
-<li><code>Namespaced</code>: a set of permissions granted on namespace scoped resources.</li>
-<li><code>Metrics</code>: A permissions grant on only the cluster metrics system.</li>
-</ul>
-<p>Namespace grants come in two different forms:</p>
-<ul>
-<li><code>Full</code>: a grant of full permissons on the target namespace.
-<ul>
-<li><code>namespace</code>: the namespace to which the grant pertains.</li>
-</ul>
-</li>
-<li><code>Limited</code>: a grant of limited access to specific resources within the target namespace.
-<ul>
-<li><code>namespace</code>: the namespace to which the grant pertains.</li>
-<li><code>messaging</code>: an optional <code>pub/sub/all</code> enum value indicating access to the namespace's ephemeral messaging exchange.</li>
-<li><code>endpoints</code>: a list of endpoint permissions with the following structure:
-<ul>
-<li><code>matcher</code>: the endpoint name matcher to use. May include a wildcard to match endpoint hierarchies. Same wildcard rules apply as described in the <a href="reference/./ephemeral-messaging.html">ephemeral messaging chapter</a>.</li>
-<li><code>access</code>: a <code>pub/sub/all</code> enum value.</li>
-</ul>
-</li>
-<li><code>streams</code>: a list of stream permissions with the following structure:
-<ul>
-<li><code>matcher</code>: the stream name matcher to use. May include a wildcard to match streams hierarchically. Same wildcard rules apply as described in the ephemeral messaging chapter.</li>
-<li><code>access</code>: a <code>pub/sub/all</code> enum value.</li>
-</ul>
-</li>
-<li><code>schema</code>: a boolean indicating if the token has permissions to modify the schema of the namespace.</li>
-</ul>
-</li>
-</ul>
-<p>In addition to the above:</p>
-<ul>
-<li>Hadron clusters are initialized with a default <code>root:root</code> user bearing the <code>Owner</code> role. It is expected that cluster admins will use the root credentials to initialize any other users for the system, and it is expected that the root password will be changed and stored securely or removed in favor of other credentials.</li>
-<li>User &amp; token management is performed via the Hadron CLI.</li>
-</ul>
-<h1><a class="header" href="#namespaces" id="namespaces">Namespaces</a></h1>
-<p>Namespaces are the central unit of resource grouping and access control in Hadron.</p>
-<h2><a class="header" href="#schema" id="schema">Schema</a></h2>
-<p>Namespaces are declared in YAML as part of the <a href="reference/./schema.html">Schema Management system</a>. The schema for the <code>Namespace</code> object is as follows:</p>
-<pre><code class="language-yaml">## The kind of object being defined. In this case, a namespace.
+```
+
+This is the state management file. This file declares the provided branch name, establishing a link between all schema files in the respective directory. This file is managed by the Hadron CLI itself, and should not be manually modified. As schema files are applied to the cluster, their timestamps are record in this file under the `lastAppliedTimestamp` key. If a schema file's timestamp is earlier than the `lastAppliedTimestamp`, then it will not be applied.
+
+Simply run the following command `hadron schema apply` to apply any outstanding schema files in this directory to the cluster. The Hadron cluster stores the last applied timestamp per branch, and the Hadron CLI refreshes this data before every attempt to apply schema changes.
+
+### New Schema Files
+New schema files can be added to the schema management directory with the following command: `hadron schema new {fileName}`. This will create a new schema file in the schema management directory. The Hadron CLI will automatically prefix the new file with the current timestamp.
+
+### Idempotent Workflow & Compaction
+The Hadron schema management system is designed to be idempotent based on the simple concepts of branch name and timestamp. This helps to ensure that the cluster does not get into an undesired state due to accidentally applying old changes. This systems has no concept of "rollbacks". We take the fail-forward approach.
+
+Over time, it will be common that a large number of schema files will build up within a schema management directory. Run the `hadron schema compact` command to combine all schema statements into the latest schema file, deleting the old schema files once it is safe to do so.
+- Ordering of all schema statements is strictly preserved during compaction of schema files.
+- Hadron will only compact schema files which are older than the `lastAppliedTimestamp`.
+
+### Schema Statements
+The following is a list of accepted schema statements by `kind`, along with links to their full schema spec.
+
+- [`Namespace`](./namespaces.md#schema)
+- [`Stream`](./streams.md#schema)
+- [`Pipeline`](./pipelines.md#schema)
+- [`Endpoint`](./rpc.md#schema)
+
+### Kubernetes Operator Schema Management
+The Hadron Kubernetes Operator ships with the ability to handle all schema management based on CRDs.
+
+This is a work in progress, but here are a few of the design goals:
+- `HadronSchemaState` CRDs take the place of the `.hadron-state.yaml` files, declaring a branch name and recording the last applied schema file timestamp. The CRD will need to reference a secret containing a Hadron token which has permissions to make schema changes to the cluster.
+- `HadronSchemaFile` CRDs take the place of the standard schema files, and are associated with a parent `HadronSchemaState` CRD by label.
+- The operator will order `HadronSchemaFile`s when changes are detected, and then apply the latest changes in order, updating the `HadronSchemaState` CRD, which will probably back its state via ConfigMap. -->
+<p>These docs are currently under construction.</p>
+<!-- Users & Tokens
+==============
+Hadron uses a simple but effective permissions model. There are users and there are tokens. Users represent administrators of the Hadron cluster, while tokens represent access grants to specific Hadron resources for use in application code and automation tools.
+
+There are a few different user roles:
+- `Owner`: this user has full control over the cluster, all namespaces and all resources.
+- `Admin`: admins are the same as owners, except that admin permissions may be revoked by other admins and owners, but admins can not revoked the permissions of an owner.
+- `Viewer`: viewers are read-only. They may view any of ther resources of the cluster, but may not modify them.
+
+Users are not allowed to directly use the resources of Hadron, that is what tokens are for. Tokens represent a set of permissions for the bearer of that token. The token ID is retained within Hadron and the token may be deleted, which revokes that token's access to the cluster. Tokens come in a few forms:
+- `All`: a permissions grant on all resources in the system.
+- `Namespaced`: a set of permissions granted on namespace scoped resources.
+- `Metrics`: A permissions grant on only the cluster metrics system.
+
+Namespace grants come in two different forms:
+- `Full`: a grant of full permissons on the target namespace.
+    - `namespace`: the namespace to which the grant pertains.
+- `Limited`: a grant of limited access to specific resources within the target namespace.
+    - `namespace`: the namespace to which the grant pertains.
+    - `messaging`: an optional `pub/sub/all` enum value indicating access to the namespace's ephemeral messaging exchange.
+    - `endpoints`: a list of endpoint permissions with the following structure:
+        - `matcher`: the endpoint name matcher to use. May include a wildcard to match endpoint hierarchies. Same wildcard rules apply as described in the [ephemeral messaging chapter](./ephemeral-messaging.md).
+        - `access`: a `pub/sub/all` enum value.
+    - `streams`: a list of stream permissions with the following structure:
+        - `matcher`: the stream name matcher to use. May include a wildcard to match streams hierarchically. Same wildcard rules apply as described in the ephemeral messaging chapter.
+        - `access`: a `pub/sub/all` enum value.
+    - `schema`: a boolean indicating if the token has permissions to modify the schema of the namespace.
+
+In addition to the above:
+- Hadron clusters are initialized with a default `root:root` user bearing the `Owner` role. It is expected that cluster admins will use the root credentials to initialize any other users for the system, and it is expected that the root password will be changed and stored securely or removed in favor of other credentials.
+- User & token management is performed via the Hadron CLI. -->
+<p>These docs are currently under construction.</p>
+<!-- Namespaces
+==========
+Namespaces are the central unit of resource grouping and access control in Hadron.
+
+## Schema
+Namespaces are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Namespace` object is as follows:
+
+```yaml
+## The kind of object being defined. In this case, a namespace.
 kind: Namespace
 ## The name of the namespace. Each namespace must have a unique name.
 name: required string
 ## A description of this namespace.
 description: required string
-</code></pre>
-<h3><a class="header" href="#details" id="details">Details</a></h3>
-<ul>
-<li>Namepsace names must conform to the DNS subdomain naming standards. 1-63 characters, <code>[-a-zA-Z0-9]</code>, may not start or end with a hyphen.</li>
-<li>Ephemeral Messaging Exchanges, RPC Endpoints, Streams &amp; Pipelines all exist within namespaces.</li>
-<li>A Namespace always has exactly one Ephemeral Messaging Exchange, and may have any number of RPC Endpoints, Streams and Pipelines.</li>
-<li>Tokens are granted permissions on Namespaces which determine their level of access to those Namespaces and the resources they contain.</li>
-</ul>
-<h1><a class="header" href="#streams" id="streams">Streams</a></h1>
-<p>Streams are append-only, immutable logs of data.</p>
-<h2><a class="header" href="#schema-1" id="schema-1">Schema</a></h2>
-<p>Streams are declared in YAML as part of the <a href="reference/./schema.html">Schema Management system</a>. The schema for the <code>Stream</code> object is as follows:</p>
-<pre><code class="language-yaml">## The kind of object being defined. In this case, a stream.
+```
+
+### Details
+- Namepsace names must conform to the DNS subdomain naming standards. 1-63 characters, `[-a-zA-Z0-9]`, may not start or end with a hyphen.
+- Ephemeral Messaging Exchanges, RPC Endpoints, Streams & Pipelines all exist within namespaces.
+- A Namespace always has exactly one Ephemeral Messaging Exchange, and may have any number of RPC Endpoints, Streams and Pipelines.
+- Tokens are granted permissions on Namespaces which determine their level of access to those Namespaces and the resources they contain. -->
+<p>These docs are currently under construction.</p>
+<!-- Streams
+=======
+Streams are append-only, immutable logs of data.
+
+## Schema
+Streams are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Stream` object is as follows:
+
+```yaml
+## The kind of object being defined. In this case, a stream.
 kind: Stream
 ## The namespace in which this stream is to be created.
 namespace: required string
@@ -321,39 +372,50 @@ partitions: required string
 ##
 ## If not specified, then records will stay on the stream forever.
 ttl: optional duration (default none)
-</code></pre>
-<p>Streams can be updated the same way all other Hadron DDL objects can be updated. See the <a href="reference/./schema.html">Schema Management chapter</a> for more details.</p>
-<h3><a class="header" href="#details-1" id="details-1">Details</a></h3>
-<ul>
-<li>Stream names may be 1-100 characters long, containing only <code>[-_.a-zA-Z0-9]</code>. The <code>.</code> can be used to form hierarchies for authorization matching wildcards.</li>
-<li>Streams may have one or more partitions, which may be increased as needed. Horizontally scaling the Hadron cluster and adding more partitions to a stream will allow the write throughput of the stream to horizontally scale.</li>
-<li>Stream data is replicated across each partition's replica set.</li>
-<li>Streams must first be created via the Hadron schema system. See the <a href="reference/./schema.html">Schema Management</a> chapter for more details.</li>
-</ul>
-<h2><a class="header" href="#subscriptions" id="subscriptions">Subscriptions</a></h2>
-<p>Subscriptions represent a client's interest to consume data from a stream. Subscriptions are created when a client submits a subscription request. Subscription requests must specify the target stream to subscribe to and a name to use for the subscription.</p>
-<p><strong>Consumers &amp; groups:</strong> clients which process records from a stream as part of a subscription are known as consumers. When multiple clients subscribe to the same stream using the same subscription name, this will dynamically form a consumer group and messages will be load-balanced across all members of the group. Consumers will receive all messages without any message level discrimination.</p>
-<p><strong>Durable:</strong> subscriptions are durable in the sense that the group's progress through the stream is stored on disk. Clients may disconnect at any time, and they will be automatically removed from the consumer group, and new consumers may be added to the group just as easily.</p>
-<p><strong>Starting point:</strong> when subscriptions are created, they may specify a starting point: first or latest. The starting point only affects the creation of the consumer group when a subscription is created.</p>
-<p><strong>Subscription Config:</strong> when creating a subscription, there are various configuration options which my be specified in order to control behavior.</p>
-<ul>
-<li><code>maxParallelConsumers</code> (default none): the maximum number of consumers allowed to process messages in parallel. If set to 1, then only one consumer is allowed to process messages at a time for the consumer group.</li>
-</ul>
-<p><strong>Consumer Config:</strong> each individual consumer within a group has its own isolated configuration options.</p>
-<ul>
-<li><code>batchSize</code> (default 100): the maximum number of messages which will be delivered to the consumer per batch.</li>
-<li><code>batchWaitMillis</code> (default 500): the amount of time in milliseconds which the consumer should delay for its batch to fill. This only applies when the consumer's batch has been partially filled.</li>
-</ul>
-<p>Subscriptions may be deleted using the <code>StreamUnsub</code> client API.</p>
-<h3><a class="header" href="#ack--nack" id="ack--nack">Ack &amp; Nack</a></h3>
-<p>Messages being consumed from a stream must be ack'ed. Once a message is ack'd, it will not be delivered again to the same consumer group.</p>
-<p>Messages may be nack'ed, which will cause immediate redelivery by default. A redelivery timeout may be specified, which will cause a timeout to be applied before redelivery of the message to a consumer. Redelivery timeouts are not durable, and are held in-memory by Hadron.</p>
-<p>If a client disconnects while it was processing unacknowledged messages, Hadron will redeliver those messages to other live consumers of the same subscription consumer group.</p>
-<h1><a class="header" href="#pipelines" id="pipelines">Pipelines</a></h1>
-<p>Pipelines are multi-stage data workflows, composed of multiple streams, structured as a directed acyclic graph (DAG). Pipelines provide transactional guarantees for multi-stage asynchronous workflows. Pipelines orchestrate the delivery of events to specific pipeline stages, collect outputs from pipeline stages, and enforce stage execution order. Pipelines provide a source of truth for codifying asynchronous event-driven architectures.</p>
-<h2><a class="header" href="#schema-2" id="schema-2">Schema</a></h2>
-<p>Pipelines are declared in YAML as part of the <a href="reference/./schema.html">Schema Management system</a>. The schema for the <code>Pipeline</code> object is as follows:</p>
-<pre><code class="language-yaml">## The kind of object being defined. In this case, a pipeline.
+```
+
+Streams can be updated the same way all other Hadron DDL objects can be updated. See the [Schema Management chapter](./schema.md) for more details.
+
+### Details
+- Stream names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
+- Streams may have one or more partitions, which may be increased as needed. Horizontally scaling the Hadron cluster and adding more partitions to a stream will allow the write throughput of the stream to horizontally scale.
+- Stream data is replicated across each partition's replica set.
+- Streams must first be created via the Hadron schema system. See the [Schema Management](./schema.md) chapter for more details.
+
+## Subscriptions
+Subscriptions represent a client's interest to consume data from a stream. Subscriptions are created when a client submits a subscription request. Subscription requests must specify the target stream to subscribe to and a name to use for the subscription.
+
+**Consumers & groups:** clients which process records from a stream as part of a subscription are known as consumers. When multiple clients subscribe to the same stream using the same subscription name, this will dynamically form a consumer group and messages will be load-balanced across all members of the group. Consumers will receive all messages without any message level discrimination.
+
+**Durable:** subscriptions are durable in the sense that the group's progress through the stream is stored on disk. Clients may disconnect at any time, and they will be automatically removed from the consumer group, and new consumers may be added to the group just as easily.
+
+**Starting point:** when subscriptions are created, they may specify a starting point: first or latest. The starting point only affects the creation of the consumer group when a subscription is created.
+
+**Subscription Config:** when creating a subscription, there are various configuration options which my be specified in order to control behavior.
+- `maxParallelConsumers` (default none): the maximum number of consumers allowed to process messages in parallel. If set to 1, then only one consumer is allowed to process messages at a time for the consumer group.
+
+**Consumer Config:** each individual consumer within a group has its own isolated configuration options.
+- `batchSize` (default 100): the maximum number of messages which will be delivered to the consumer per batch.
+- `batchWaitMillis` (default 500): the amount of time in milliseconds which the consumer should delay for its batch to fill. This only applies when the consumer's batch has been partially filled.
+
+Subscriptions may be deleted using the `StreamUnsub` client API.
+
+### Ack & Nack
+Messages being consumed from a stream must be ack'ed. Once a message is ack'd, it will not be delivered again to the same consumer group.
+
+Messages may be nack'ed, which will cause immediate redelivery by default. A redelivery timeout may be specified, which will cause a timeout to be applied before redelivery of the message to a consumer. Redelivery timeouts are not durable, and are held in-memory by Hadron.
+
+If a client disconnects while it was processing unacknowledged messages, Hadron will redeliver those messages to other live consumers of the same subscription consumer group. -->
+<p>These docs are currently under construction.</p>
+<!-- Pipelines
+=========
+Pipelines are multi-stage data workflows, composed of multiple streams, structured as a directed acyclic graph (DAG). Pipelines provide transactional guarantees for multi-stage asynchronous workflows. Pipelines orchestrate the delivery of events to specific pipeline stages, collect outputs from pipeline stages, and enforce stage execution order. Pipelines provide a source of truth for codifying asynchronous event-driven architectures.
+
+## Schema
+Pipelines are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Pipeline` object is as follows:
+
+```yaml
+## The kind of object being defined. In this case, a pipeline.
 kind: Pipeline
 ## The namespace in which this pipeline is to be created.
 namespace: required string
@@ -373,7 +435,7 @@ inputStream: required string
 triggers:
   - string
 
-## `optional array of &lt;stage&gt;`: An array all stages of which this pipeline is
+## `optional array of <stage>`: An array all stages of which this pipeline is
 ## composed. Pipelines are composed of one or more stages.
 stages:
   ## The name of the stage. Each stage has a unique name per pipeline.
@@ -402,60 +464,74 @@ stages:
       ## The name of a stage from this pipeline, or the special name
       ## `root_event` which refers to the root event of a pipeline instance.
       - required string
-</code></pre>
-<h3><a class="header" href="#details-2" id="details-2">Details</a></h3>
-<ul>
-<li>Pipelines can be updated the same way all other Hadron schema objects can be updated. See the <a href="reference/./schema.html">Schema Management</a> chapter for more details.</li>
-<li>Pipeline names may be 1-100 characters long, containing only <code>[-_.a-zA-Z0-9]</code>. The <code>.</code> can be used to form hierarchies for authorization matching wildcards.</li>
-<li>Pipelines may be composed of 1 or more stages (nodes of the graph).</li>
-<li>The flow of data through the pipeline — inputs and outputs — are the edges of the graph.</li>
-<li>Pipelines may have more than one initial stage. All initial stages of a pipeline will receive a copy of the event which triggered the pipeline.</li>
-<li>Pipelines are exclusive. They represent a single type of action to be taken over the data moving through the pipeline. All consumers of pipeline stages will be treated as being part of the same consumer group and messages will be load balanced across all consumers.</li>
-<li>Pipelines have unique names.</li>
-<li>Pipelines are directed acyclic graphs, cycles are not allowed.</li>
-<li>Hadron ensures that the output of a stage is delivered to all downstream stages with a connected edge, and that the message is <code>ack</code>'ed transactionally along with the delivery of that output. This greatly reduces the overhead of error handling and minimizes the difficulties of modelling idempotent workflows.</li>
-<li>Pipeline stages may execute in parallel when stages are children of the same parent stage in the graph, or in serial order when stages are ordered one after another in the graph. The <code>dependencies</code> &amp; <code>after</code> keywords control this behavior.</li>
-</ul>
-<h2><a class="header" href="#consumers" id="consumers">Consumers</a></h2>
-<p>Pipeline stages must each be individually subscribed to useing the pipelines subscription API. The pipelines subscription API is uniform for all stages, and allows consumers to think purely in terms of reciving inputs and producing outputs. Hadron consumers are channel based, and multiple channels may exist per network connection to the Hadron cluster.</p>
-<h1><a class="header" href="#ephemeral-messaging" id="ephemeral-messaging">Ephemeral Messaging</a></h1>
-<p>A topic-based, at most once delivery messaging system, perfect for ephemeral data.</p>
-<ul>
-<li>Provides <strong>at most once delivery semantics.</strong></li>
-<li>Messages are published with &quot;topics&quot;, similar to AMQP-style topics. Defaults to an empty string. No ack or nack is used for ephemeral messages.</li>
-<li>Consumers may specify a &quot;topic&quot; matcher, which expresses interest in matching messages. Wildcard topic matchers are supported, similar to AMQP-style wildcards.</li>
-<li>If no consumer matches the topic of the message, it will be dropped.</li>
-<li>Consumers may form groups, where messages will be load balanced across healthy group members.</li>
-<li>Consumer group information is synchronously replicated to all nodes when the consumer group is formed and as members join and leave the group, but this information is only held in memory.</li>
-<li>Consumer group load balancing decisions are made by the node which received the message needing to be load balanced.</li>
-<li>Messages will be delivered once to each consumer group matching the message's topic.</li>
-<li>Ephemeral messaging exchanges are implicity created as part of a namespace. Namespaces have one and only one ephemeral messaging exchange.</li>
-</ul>
-<h3><a class="header" href="#topics" id="topics">Topics</a></h3>
-<p>Hadron enforces that message topics adhere to the following pattern <code>[-_A-Za-z0-9.]*</code>. In English, this could be read as &quot;all alpha-numeric characters, hyphen, underscore and period&quot;. Topics are case-sensitive and can not contain whitespace.</p>
-<h5><a class="header" href="#topic-hierarchies" id="topic-hierarchies">Topic Hierarchies</a></h5>
-<p>The <code>.</code> character is used to create a subject hierarchy. A volcanology team might define the following hierarchy for collecting sensor readings on volcanoes they are monitoring, where volcanoes are grouped by the region they are in, followed by the name of the volcano, then followed by the cardinal point where the sensor is stationed with respect to the center of the volcano.</p>
-<pre><code>volcanoes.usa
+```
+
+### Details
+- Pipelines can be updated the same way all other Hadron schema objects can be updated. See the [Schema Management](./schema.md) chapter for more details.
+- Pipeline names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
+- Pipelines may be composed of 1 or more stages (nodes of the graph).
+- The flow of data through the pipeline — inputs and outputs — are the edges of the graph.
+- Pipelines may have more than one initial stage. All initial stages of a pipeline will receive a copy of the event which triggered the pipeline.
+- Pipelines are exclusive. They represent a single type of action to be taken over the data moving through the pipeline. All consumers of pipeline stages will be treated as being part of the same consumer group and messages will be load balanced across all consumers.
+- Pipelines have unique names.
+- Pipelines are directed acyclic graphs, cycles are not allowed.
+- Hadron ensures that the output of a stage is delivered to all downstream stages with a connected edge, and that the message is `ack`'ed transactionally along with the delivery of that output. This greatly reduces the overhead of error handling and minimizes the difficulties of modelling idempotent workflows.
+- Pipeline stages may execute in parallel when stages are children of the same parent stage in the graph, or in serial order when stages are ordered one after another in the graph. The `dependencies` & `after` keywords control this behavior.
+
+## Consumers
+Pipeline stages must each be individually subscribed to useing the pipelines subscription API. The pipelines subscription API is uniform for all stages, and allows consumers to think purely in terms of reciving inputs and producing outputs. Hadron consumers are channel based, and multiple channels may exist per network connection to the Hadron cluster. -->
+<p>These docs are currently under construction.</p>
+<!-- Ephemeral Messaging
+===================
+A topic-based, at most once delivery messaging system, perfect for ephemeral data.
+
+- Provides **at most once delivery semantics.**
+- Messages are published with "topics", similar to AMQP-style topics. Defaults to an empty string. No ack or nack is used for ephemeral messages.
+- Consumers may specify a "topic" matcher, which expresses interest in matching messages. Wildcard topic matchers are supported, similar to AMQP-style wildcards.
+- If no consumer matches the topic of the message, it will be dropped.
+- Consumers may form groups, where messages will be load balanced across healthy group members.
+- Consumer group information is synchronously replicated to all nodes when the consumer group is formed and as members join and leave the group, but this information is only held in memory.
+- Consumer group load balancing decisions are made by the node which received the message needing to be load balanced.
+- Messages will be delivered once to each consumer group matching the message's topic.
+- Ephemeral messaging exchanges are implicity created as part of a namespace. Namespaces have one and only one ephemeral messaging exchange.
+
+### Topics
+Hadron enforces that message topics adhere to the following pattern `[-_A-Za-z0-9.]*`. In English, this could be read as "all alpha-numeric characters, hyphen, underscore and period". Topics are case-sensitive and can not contain whitespace.
+
+##### Topic Hierarchies
+The `.` character is used to create a subject hierarchy. A volcanology team might define the following hierarchy for collecting sensor readings on volcanoes they are monitoring, where volcanoes are grouped by the region they are in, followed by the name of the volcano, then followed by the cardinal point where the sensor is stationed with respect to the center of the volcano.
+
+```
+volcanoes.usa
 volcanoes.usa.atka
 volcanoes.usa.kahoolawe.north
 volcanoes.tanzania
 volcanoes.tanzania.meru
 volcanoes.tanzania.kilimanjaro.east
 volcanoes.tanzania.kilimanjaro.west
-</code></pre>
-<h3><a class="header" href="#wildcard-matchers" id="wildcard-matchers">Wildcard Matchers</a></h3>
-<p>There are two wildcard tokens available to subscribers for matching message topics. Subscribers can use these wildcards to listen to multiple topics with a single subscription but Publishers will always use a fully specified subject, without any wildcards (as the wildcard characters are not valid topic characters while publishing).</p>
-<h5><a class="header" href="#single-token-matching" id="single-token-matching">Single-Token Matching</a></h5>
-<p>The first wildcard is <code>*</code> which will match a single hierarchy token. If the volcanology team needs to build a consumer for monitoring everything from <code>Kilimanjaro</code>, it could subscribe to <code>volcanoes.tanzania.kilimanjaro.*</code>, which would match <code>volcanoes.tanzania.kilimanjaro.east</code> and <code>volcanoes.tanzania.kilimanjaro.west</code>.</p>
-<h5><a class="header" href="#multi-token-matching" id="multi-token-matching">Multi-Token matching</a></h5>
-<p>The second wildcard is <code>&gt;</code> which will match one or more hierachy tokens, and can only appear at the end of the topic. For example, <code>volcanoes.usa.&gt;</code> will match <code>volcanoes.usa.atka</code> and <code>volcanoes.usa.kahoolawe.north</code>, while <code>volcanoes.usa.*</code> would only match <code>volcanoes.usa.atka</code> since it can’t match more than one hierarchy token.</p>
-<h3><a class="header" href="#consumers-1" id="consumers-1">Consumers</a></h3>
-<p>Ephemeral message consumers specify a topic matcher and may optionally specify a queue group to begin consuming messages. Every consumer which is part of the same queue group will have messages load balanced across the group.</p>
-<h1><a class="header" href="#rpc-endpoints" id="rpc-endpoints">RPC Endpoints</a></h1>
-<p>RPC Endpoints provide a service-oriented request/response system, akin to traditional REST APIs or other RPC systems like gRPC.</p>
-<h2><a class="header" href="#schema-3" id="schema-3">Schema</a></h2>
-<p>RPC Endpoints are declared in YAML as part of the <a href="reference/./schema.html">Schema Management system</a>. The schema for the <code>Endpoint</code> object is as follows:</p>
-<pre><code class="language-yaml">## The kind of object being defined. In this case, a pipeline.
+```
+
+### Wildcard Matchers
+There are two wildcard tokens available to subscribers for matching message topics. Subscribers can use these wildcards to listen to multiple topics with a single subscription but Publishers will always use a fully specified subject, without any wildcards (as the wildcard characters are not valid topic characters while publishing).
+
+##### Single-Token Matching
+The first wildcard is `*` which will match a single hierarchy token. If the volcanology team needs to build a consumer for monitoring everything from `Kilimanjaro`, it could subscribe to `volcanoes.tanzania.kilimanjaro.*`, which would match `volcanoes.tanzania.kilimanjaro.east` and `volcanoes.tanzania.kilimanjaro.west`.
+
+##### Multi-Token matching
+The second wildcard is `>` which will match one or more hierachy tokens, and can only appear at the end of the topic. For example, `volcanoes.usa.>` will match `volcanoes.usa.atka` and `volcanoes.usa.kahoolawe.north`, while `volcanoes.usa.*` would only match `volcanoes.usa.atka` since it can’t match more than one hierarchy token.
+
+### Consumers
+Ephemeral message consumers specify a topic matcher and may optionally specify a queue group to begin consuming messages. Every consumer which is part of the same queue group will have messages load balanced across the group. -->
+<p>These docs are currently under construction.</p>
+<!-- RPC Endpoints
+=============
+RPC Endpoints provide a service-oriented request/response system, akin to traditional REST APIs or other RPC systems like gRPC.
+
+## Schema
+RPC Endpoints are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Endpoint` object is as follows:
+
+```yaml
+## The kind of object being defined. In this case, a pipeline.
 kind: Endpoint
 ## The namespace in which this endpoint is to be created.
 namespace: required string
@@ -465,25 +541,27 @@ name: required string
 input: enum Single | Stream
 ## The output RPC mode.
 output: enum Single | Stream
-</code></pre>
-<h3><a class="header" href="#details-3" id="details-3">Details</a></h3>
-<ul>
-<li>Endpoint names may be 1-100 characters long, containing only <code>[-_.a-zA-Z0-9]</code>. The <code>.</code> can be used to form hierarchies for authorization matching wildcards. Consumers do not use wildcards for endpoints.</li>
-<li>RPC messages are published to a specific endpoint within a namespace.</li>
-<li>RPC endpoints are declared explicity in code and must be created on the server.</li>
-<li>RPC messages are not durable, but if an endpoint has no live consumers when a message is published, an error response will be immediately returned for better control flow.</li>
-</ul>
-<h2><a class="header" href="#consumers-2" id="consumers-2">Consumers</a></h2>
-<p>RPC Endpoints offer consumer patterns similar to the ephemeral messaging system, except that wildcards are not allowed.</p>
-<h1><a class="header" href="#config-management" id="config-management">Config Management</a></h1>
-<ul>
-<li>Hadron does not use config files.</li>
-<li>Only env vars are used for config. If a file is needed, the <code>.env</code> file paradigm may be used.</li>
-<li>Config is idempotent, and many config options will only ever be used/evaluated when a node is coming online for the first time.</li>
-<li>Nodes should only ever need to be restarted for upgrading the version of Hadron or for major config changes.</li>
-</ul>
-<h1><a class="header" href="#hadron-cli" id="hadron-cli">Hadron CLI</a></h1>
-<p>Hadron ships with a native CLI, called <code>hadron</code>, not to be confused with the <code>hadrond</code> server. It is the primary mechanism for performing administrative operations on a Hadron cluster.</p>
+```
+
+### Details
+- Endpoint names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards. Consumers do not use wildcards for endpoints.
+- RPC messages are published to a specific endpoint within a namespace.
+- RPC endpoints are declared explicity in code and must be created on the server.
+- RPC messages are not durable, but if an endpoint has no live consumers when a message is published, an error response will be immediately returned for better control flow.
+
+## Consumers
+RPC Endpoints offer consumer patterns similar to the ephemeral messaging system, except that wildcards are not allowed. -->
+<p>These docs are currently under construction.</p>
+<!-- Config Management
+=================
+- Hadron does not use config files.
+- Only env vars are used for config. If a file is needed, the `.env` file paradigm may be used.
+- Config is idempotent, and many config options will only ever be used/evaluated when a node is coming online for the first time.
+- Nodes should only ever need to be restarted for upgrading the version of Hadron or for major config changes. -->
+<p>These docs are currently under construction.</p>
+<!-- Hadron CLI
+==========
+Hadron ships with a native CLI, called `hadron`, not to be confused with the `hadrond` server. It is the primary mechanism for performing administrative operations on a Hadron cluster. -->
 
                     </main>
 
