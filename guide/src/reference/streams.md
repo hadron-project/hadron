@@ -1,4 +1,5 @@
-Streams
+These docs are currently under construction.
+<!-- Streams
 =======
 Streams are append-only, immutable logs of data.
 
@@ -54,4 +55,4 @@ Messages being consumed from a stream must be ack'ed. Once a message is ack'd, i
 
 Messages may be nack'ed, which will cause immediate redelivery by default. A redelivery timeout may be specified, which will cause a timeout to be applied before redelivery of the message to a consumer. Redelivery timeouts are not durable, and are held in-memory by Hadron.
 
-If a client disconnects while it was processing unacknowledged messages, Hadron will redeliver those messages to other live consumers of the same subscription consumer group.
+If a client disconnects while it was processing unacknowledged messages, Hadron will redeliver those messages to other live consumers of the same subscription consumer group. -->

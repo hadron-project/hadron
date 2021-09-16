@@ -1,4 +1,5 @@
-Users & Tokens
+These docs are currently under construction.
+<!-- Users & Tokens
 ==============
 Hadron uses a simple but effective permissions model. There are users and there are tokens. Users represent administrators of the Hadron cluster, while tokens represent access grants to specific Hadron resources for use in application code and automation tools.
 
@@ -28,4 +29,4 @@ Namespace grants come in two different forms:
 
 In addition to the above:
 - Hadron clusters are initialized with a default `root:root` user bearing the `Owner` role. It is expected that cluster admins will use the root credentials to initialize any other users for the system, and it is expected that the root password will be changed and stored securely or removed in favor of other credentials.
-- User & token management is performed via the Hadron CLI.
+- User & token management is performed via the Hadron CLI. -->

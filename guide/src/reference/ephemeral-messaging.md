@@ -1,4 +1,5 @@
-Ephemeral Messaging
+These docs are currently under construction.
+<!-- Ephemeral Messaging
 ===================
 A topic-based, at most once delivery messaging system, perfect for ephemeral data.
 
@@ -38,4 +39,4 @@ The first wildcard is `*` which will match a single hierarchy token. If the volc
 The second wildcard is `>` which will match one or more hierachy tokens, and can only appear at the end of the topic. For example, `volcanoes.usa.>` will match `volcanoes.usa.atka` and `volcanoes.usa.kahoolawe.north`, while `volcanoes.usa.*` would only match `volcanoes.usa.atka` since it can’t match more than one hierarchy token.
 
 ### Consumers
-Ephemeral message consumers specify a topic matcher and may optionally specify a queue group to begin consuming messages. Every consumer which is part of the same queue group will have messages load balanced across the group.
+Ephemeral message consumers specify a topic matcher and may optionally specify a queue group to begin consuming messages. Every consumer which is part of the same queue group will have messages load balanced across the group. -->

@@ -1,4 +1,5 @@
-RPC Endpoints
+These docs are currently under construction.
+<!-- RPC Endpoints
 =============
 RPC Endpoints provide a service-oriented request/response system, akin to traditional REST APIs or other RPC systems like gRPC.
 
@@ -25,4 +26,4 @@ output: enum Single | Stream
 - RPC messages are not durable, but if an endpoint has no live consumers when a message is published, an error response will be immediately returned for better control flow.
 
 ## Consumers
-RPC Endpoints offer consumer patterns similar to the ephemeral messaging system, except that wildcards are not allowed.
+RPC Endpoints offer consumer patterns similar to the ephemeral messaging system, except that wildcards are not allowed. -->
