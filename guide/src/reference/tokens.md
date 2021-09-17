@@ -1,6 +1,8 @@
+Tokens
+======
 These docs are currently under construction.
-<!-- Users & Tokens
-==============
+
+<!--
 Hadron uses a simple but effective permissions model. There are users and there are tokens. Users represent administrators of the Hadron cluster, while tokens represent access grants to specific Hadron resources for use in application code and automation tools.
 
 There are a few different user roles:

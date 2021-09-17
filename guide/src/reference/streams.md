@@ -1,6 +1,8 @@
-These docs are currently under construction.
-<!-- Streams
+Streams
 =======
+These docs are currently under construction.
+
+<!--
 Streams are append-only, immutable logs of data.
 
 ## Schema

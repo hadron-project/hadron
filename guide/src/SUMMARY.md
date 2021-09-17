@@ -1,26 +1,24 @@
 Hadron
 ======
-- [Hadron](./index.md)
 
 # Overview
+- [Introduction](./index.md)
 - [Kubernetes](./overview/kubernetes.md)
-- [CloudEvents](./overview/cloud-events.md)
+- [Events](./overview/events.md)
 - [Streams](./overview/streams.md)
 - [Pipelines](./overview/pipelines.md)
-- [Ephemeral Messaging](./overview/ephemeral-messaging.md)
-- [RPC](./overview/rpc.md)
+- [Exchanges](./overview/exchanges.md)
+- [Endpoints](./overview/endpoints.md)
+- [Producers & Consumers](./overview/producers-consumers.md)
 
-# Clients
-
-# CLI
+# Use Cases
+- [Service Provisioning](./usecases/service-provisioning.md)
 
 # Reference
-- [Schema Management](./reference/schema.md)
-- [Users & Tokens](./reference/users-tokens.md)
-- [Namespaces](./reference/namespaces.md)
+- [Tokens](./reference/tokens.md)
 - [Streams](./reference/streams.md)
 - [Pipelines](./reference/pipelines.md)
-- [Ephemeral Messaging](./reference/ephemeral-messaging.md)
-- [RPC](./reference/rpc.md)
-- [Config Management](./reference/config-management.md)
-- [Hadron CLI](./reference/cli.md)
+- [Exchanges](./reference/exchanges.md)
+- [Endpoints](./reference/endpoints.md)
+- [Clients](./reference/clients.md)
+- [CLI](./reference/cli.md)

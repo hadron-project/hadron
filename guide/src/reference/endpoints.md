@@ -1,6 +1,8 @@
-These docs are currently under construction.
-<!-- RPC Endpoints
+RPC Endpoints
 =============
+These docs are currently under construction.
+
+<!--
 RPC Endpoints provide a service-oriented request/response system, akin to traditional REST APIs or other RPC systems like gRPC.
 
 ## Schema
