@@ -22,26 +22,26 @@ metadata:
 spec:
   sourceStream: events
   triggers:
-    - "service.created"
+    - service.created
   maxParallel: 50
   startPoint:
     location: beginning
   stages:
     - name: deploy-service
 
-    - name: setup-monitoring
-      dependencies: ["deploy-service"]
     - name: setup-billing
       dependencies: ["deploy-service"]
-    - name: email-customer
+    - name: setup-monitoring
+      dependencies: ["deploy-service"]
+    - name: notify-user
       dependencies: ["deploy-service"]
 
     - name: cleanup
       dependencies:
         - deploy-service
-        - setup-monitoring
         - setup-billing
-        - email-customer
+        - setup-monitoring
+        - notify-user
 
 ---
 apiVersion: hadron.rs/v1beta1

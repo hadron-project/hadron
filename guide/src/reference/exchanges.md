@@ -1,6 +1,9 @@
+Exchanges
+=========
 These docs are currently under construction.
-<!-- Ephemeral Messaging
-===================
+
+<!--
+
 A topic-based, at most once delivery messaging system, perfect for ephemeral data.
 
 - Provides **at most once delivery semantics.**

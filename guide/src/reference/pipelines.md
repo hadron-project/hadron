@@ -1,6 +1,8 @@
-These docs are currently under construction.
-<!-- Pipelines
+Pipelines
 =========
+These docs are currently under construction.
+
+<!--
 Pipelines are multi-stage data workflows, composed of multiple streams, structured as a directed acyclic graph (DAG). Pipelines provide transactional guarantees for multi-stage asynchronous workflows. Pipelines orchestrate the delivery of events to specific pipeline stages, collect outputs from pipeline stages, and enforce stage execution order. Pipelines provide a source of truth for codifying asynchronous event-driven architectures.
 
 ## Schema

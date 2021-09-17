@@ -1,4 +1,3 @@
-Ephemeral Messaging
-===================
-
+Clients
+=======
 These docs are currently under construction.
