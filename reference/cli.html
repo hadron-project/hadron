@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Hadron CLI - Hadron | event streaming, workflow orchestration &amp; messaging</title>
+        <title>CLI - Hadron | event streaming, workflow orchestration &amp; messaging</title>
         
         
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Hadron</a></li><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/cloud-events.html"><strong aria-hidden="true">3.</strong> CloudEvents</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../overview/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded affix "><li class="part-title">Clients</li><li class="chapter-item expanded affix "><li class="part-title">CLI</li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/schema.html"><strong aria-hidden="true">8.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="../reference/users-tokens.html"><strong aria-hidden="true">9.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="../reference/namespaces.html"><strong aria-hidden="true">10.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/ephemeral-messaging.html"><strong aria-hidden="true">13.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../reference/rpc.html"><strong aria-hidden="true">14.</strong> RPC</a></li><li class="chapter-item expanded "><a href="../reference/config-management.html"><strong aria-hidden="true">15.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="../reference/cli.html" class="active"><strong aria-hidden="true">16.</strong> Hadron CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="../usecases/service-provisioning.html"><strong aria-hidden="true">9.</strong> Service Provisioning</a></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/tokens.html"><strong aria-hidden="true">10.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/exchanges.html"><strong aria-hidden="true">13.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../reference/endpoints.html"><strong aria-hidden="true">14.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../reference/clients.html"><strong aria-hidden="true">15.</strong> Clients</a></li><li class="chapter-item expanded "><a href="../reference/cli.html" class="active"><strong aria-hidden="true">16.</strong> CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -163,17 +163,114 @@
 
                 <div id="content" class="content">
                     <main>
-                        <p>These docs are currently under construction.</p>
-<!-- Hadron CLI
-==========
-Hadron ships with a native CLI, called `hadron`, not to be confused with the `hadrond` server. It is the primary mechanism for performing administrative operations on a Hadron cluster. -->
+                        <h1><a class="header" href="#cli" id="cli">CLI</a></h1>
+<p>Hadron ships with a native CLI (Command-Line Interface), called <code>hadron</code>.</p>
+<pre><code>The Hadron CLI
+
+USAGE:
+    hadron [FLAGS] [OPTIONS] &lt;SUBCOMMAND&gt;
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+    -v               Enable debug logging
+
+OPTIONS:
+        --token &lt;token&gt;    Set the auth token to use for interacting with the cluster
+        --url &lt;url&gt;        Set the URL of the cluster to interact with
+
+SUBCOMMANDS:
+    help        Prints this message or the help of the given subcommand(s)
+    pipeline    Hadron pipeline interaction
+    stream      Hadron stream interaction
+</code></pre>
+<h3><a class="header" href="#hadron-stream" id="hadron-stream">hadron stream</a></h3>
+<pre><code>Hadron stream interaction
+
+USAGE:
+    hadron stream &lt;SUBCOMMAND&gt;
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+SUBCOMMANDS:
+    help    Prints this message or the help of the given subcommand(s)
+    pub     Publish data to a stream
+    sub     Subscribe to data on a stream
+</code></pre>
+<h4><a class="header" href="#hadron-stream-pub" id="hadron-stream-pub">hadron stream pub</a></h4>
+<pre><code>Publish data to a stream
+
+USAGE:
+    hadron stream pub [FLAGS] [OPTIONS] &lt;data&gt; --subject &lt;subject&gt; --type &lt;type&gt;
+
+FLAGS:
+    -b, --binary     If true, treat the data payload as a base64 encoded binary blob
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -o &lt;optattrs&gt;...           Optional attributes to associate with the given payload
+    -s, --subject &lt;subject&gt;    The subject of the new event
+    -t, --type &lt;type&gt;          The type of the new event
+
+ARGS:
+    &lt;data&gt;    The data payload to be published
+</code></pre>
+<h4><a class="header" href="#hadron-stream-sub" id="hadron-stream-sub">hadron stream sub</a></h4>
+<pre><code>Subscribe to data on a stream
+
+USAGE:
+    hadron stream sub [FLAGS] [OPTIONS] --group &lt;group&gt;
+
+FLAGS:
+    -d, --durable            Make the new subscription durable
+    -h, --help               Prints help information
+        --start-beginning    Start from the first offset of the stream, defaults to latest
+        --start-latest       Start from the latest offset of the stream, default
+    -V, --version            Prints version information
+
+OPTIONS:
+    -b, --batch-size &lt;batch-size&gt;        The batch size to use for this subscription [default: 1]
+    -g, --group &lt;group&gt;                  The subscription group to use
+        --start-offset &lt;start-offset&gt;    Start from the given offset, defaults to latest
+</code></pre>
+<h3><a class="header" href="#hadron-pipeline" id="hadron-pipeline">hadron pipeline</a></h3>
+<pre><code>Hadron pipeline interaction
+
+USAGE:
+    hadron pipeline &lt;SUBCOMMAND&gt;
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+SUBCOMMANDS:
+    help    Prints this message or the help of the given subcommand(s)
+    sub     Subscribe to data on a stream
+</code></pre>
+<h4><a class="header" href="#hadron-pipeline-sub" id="hadron-pipeline-sub">hadron pipeline sub</a></h4>
+<pre><code>Subscribe to data on a stream
+
+USAGE:
+    hadron pipeline sub &lt;pipeline&gt; &lt;stage&gt;
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+ARGS:
+    &lt;pipeline&gt;    The pipeline to which the subscription should be made
+    &lt;stage&gt;       The pipeline stage to process
+</code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../reference/config-management.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../reference/clients.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
@@ -187,7 +284,7 @@ Hadron ships with a native CLI, called `hadron`, not to be confused with the `ha
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../reference/config-management.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../reference/clients.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 

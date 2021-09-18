@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Config Management - Hadron | event streaming, workflow orchestration &amp; messaging</title>
+        <title>Exchanges - Hadron | event streaming, workflow orchestration &amp; messaging</title>
         
         
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Hadron</a></li><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/cloud-events.html"><strong aria-hidden="true">3.</strong> CloudEvents</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../overview/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded affix "><li class="part-title">Clients</li><li class="chapter-item expanded affix "><li class="part-title">CLI</li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/schema.html"><strong aria-hidden="true">8.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="../reference/users-tokens.html"><strong aria-hidden="true">9.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="../reference/namespaces.html"><strong aria-hidden="true">10.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/ephemeral-messaging.html"><strong aria-hidden="true">13.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../reference/rpc.html"><strong aria-hidden="true">14.</strong> RPC</a></li><li class="chapter-item expanded "><a href="../reference/config-management.html" class="active"><strong aria-hidden="true">15.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">16.</strong> Hadron CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/exchanges.html" class="active"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="../usecases/service-provisioning.html"><strong aria-hidden="true">9.</strong> Service Provisioning</a></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/tokens.html"><strong aria-hidden="true">10.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/exchanges.html"><strong aria-hidden="true">13.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../reference/endpoints.html"><strong aria-hidden="true">14.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../reference/clients.html"><strong aria-hidden="true">15.</strong> Clients</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">16.</strong> CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -163,26 +163,26 @@
 
                 <div id="content" class="content">
                     <main>
-                        <p>These docs are currently under construction.</p>
-<!-- Config Management
-=================
-- Hadron does not use config files.
-- Only env vars are used for config. If a file is needed, the `.env` file paradigm may be used.
-- Config is idempotent, and many config options will only ever be used/evaluated when a node is coming online for the first time.
-- Nodes should only ever need to be restarted for upgrading the version of Hadron or for major config changes. -->
+                        <h1><a class="header" href="#exchanges" id="exchanges">Exchanges</a></h1>
+<p>These docs are currently under construction.</p>
+<ul>
+<li>intended for ephemeral events,</li>
+<li>events are dropped after being consumed or are dropped immediately if there are no consumers,</li>
+<li>perfect for ephemeral event streams such as GraphQL Subscriptions, WebSockets, Push Notifications and the like,</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../reference/rpc.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../overview/pipelines.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
 
                         
-                            <a rel="next" href="../reference/cli.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="../overview/endpoints.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -194,13 +194,13 @@
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../reference/rpc.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../overview/pipelines.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 
 
                 
-                    <a rel="next" href="../reference/cli.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="../overview/endpoints.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 

@@ -1,0 +1,324 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Service Provisioning - Hadron | event streaming, workflow orchestration &amp; messaging</title>
+        
+        
+
+
+        <!-- Custom HTML head -->
+        
+
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="The Hadron user guide">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        
+        <link rel="icon" href="../favicon.svg">
+        
+        
+        <link rel="shortcut icon" href="../favicon.png">
+        
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        
+        <link rel="stylesheet" href="../css/print.css" media="print">
+        
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        
+        <link rel="stylesheet" href="../fonts/fonts.css">
+        
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="../usecases/service-provisioning.html" class="active"><strong aria-hidden="true">9.</strong> Service Provisioning</a></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/tokens.html"><strong aria-hidden="true">10.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/exchanges.html"><strong aria-hidden="true">13.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../reference/endpoints.html"><strong aria-hidden="true">14.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../reference/clients.html"><strong aria-hidden="true">15.</strong> Clients</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">16.</strong> CLI</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                        
+                    </div>
+
+                    <h1 class="menu-title">Hadron | event streaming, workflow orchestration &amp; messaging</h1>
+
+                    <div class="right-buttons">
+                        
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        
+                        
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1><a class="header" href="#use-case-service-provisioning" id="use-case-service-provisioning">Use Case: Service Provisioning</a></h1>
+<h3><a class="header" href="#getting-started" id="getting-started">Getting Started</a></h3>
+<p>We've joined a new company, ExampleCloud, which offers a service where customers may provision various types of storage systems in the cloud. Though conceptually simple, there are lots of individual stages in this workflow, each of which will take different amounts of time to complete, and all having different failure conditions and data requirements.</p>
+<p>With Hadron, defining a Pipeline to model this workflow is simple:</p>
+<pre><code class="language-yaml">---
+apiVersion: hadron.rs/v1beta1
+kind: Stream
+metadata:
+  name: events
+spec:
+  partitions: 3
+
+---
+apiVersion: hadron.rs/v1beta1
+kind: Pipeline
+metadata:
+  name: service-creation
+spec:
+  sourceStream: events
+  triggers:
+    - service.created
+  stages:
+    - name: deploy-service
+</code></pre>
+<p>Here we've define a Stream called <code>events</code> and a Pipeline called <code>service-creation</code> to model this workflow. Hadron uses this config to generate resources within its cluster to store and process the data for this new Stream and Pipeline.</p>
+<p>With this configuration, any time our ExampleCloud application publishes a new event of type <code>service.created</code> to our Stream <code>events</code>, Hadron will automatically trigger a new Pipeline execution which will pass that new event through the Pipeline stages defined above (right now, only 1 stage).</p>
+<h3><a class="header" href="#client-setup" id="client-setup">Client Setup</a></h3>
+<p>To get started, we will create a program which uses the Hadron Client to publish events of type <code>service.created</code> to our Stream <code>events</code>, and then we will also create a subscription to our new Pipeline which will process the stage <code>deploy-service</code>.</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Event producer which publishes events to stream `events`.
+let client = hadron::Client::new(&quot;cluster.url:7000&quot;, /* ... */)?;
+let publisher = client.publisher(&quot;example-cloud-app&quot;).await?;
+
+// Publish a new event based on application logic.
+publisher.publish(new_event).await?;
+<span class="boring">}
+</span></code></pre></pre>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Process Pipeline stage `deploy-service`.
+client.pipeline(&quot;service-creation&quot;, &quot;deploy-service&quot;, deploy_handler);
+<span class="boring">}
+</span></code></pre></pre>
+<p>Awesome! The consumer code (the function <code>deploy_handler</code> above) can do whatever it wants. The only requirement is that when it is done, it must return a <code>Result&lt;NewEvent, Error&gt;</code> — that is, it must return an output event for success, or an error for failure cases (resulting in a retry).</p>
+<p>Client disconnects will trigger retries. Errors will be tracked by Hadron and exposed for monitoring. Output events from successful processing of stages are persisted to disk. Once a stage is completed successfully for an event, that stage will never be executed again for the same event.</p>
+<h3><a class="header" href="#new-requirements" id="new-requirements">New Requirements</a></h3>
+<p>Things are going well at our new company. Service creation is trucking along, deploying services for customers, and life is good. However, as it turns out, there are a few important steps which we've neglected, and our boss would like to have that fixed.</p>
+<p>First, we forgot to actually charge the customer for their new services. Company isn't going to survive long unless we start charging, so we'll need to add a new stage to our Pipeline to handle that logic.</p>
+<p>Next, customers have expressed that they would really like to know the state of their service, so once their service has been deployed, we'll need to deploy some monitoring for it. Let's add a new stage for that as well.</p>
+<p>Finally, customers are also saying that it would be great to receive a notification once their service is ready. Same thing, new stage.</p>
+<p>With all of that, we'll update the Pipeline's stages section to look like this:</p>
+<pre><code class="language-yaml">  stages:
+    - name: deploy-service
+    - name: setup-billing
+      dependencies: [&quot;deploy-service&quot;]
+    - name: setup-monitoring
+      dependencies: [&quot;deploy-service&quot;]
+    - name: notify-user
+      dependencies: [&quot;deploy-service&quot;]
+</code></pre>
+<p>Pretty simple, but let's break this down. First, the original <code>deploy-service</code> stage is still there and unchanged. Next, we've added our 3 new stages <code>setup-billing</code>, <code>setup-monitoring</code>, and <code>notify-user</code>. There are a few important things to note here:</p>
+<ul>
+<li>Each of the new stages depends upon <code>deploy-service</code>. This means that they will not be executed until <code>deploy-service</code> has completed successfully and produced an output event.</li>
+<li>Once <code>deploy-service</code> has completed successfully, our next 3 stages will be executed in parallel. Each stage will receive a copy of the root event which triggered this Pipeline execution, as well as a copy of the output event of any stages declared as a dependency.</li>
+</ul>
+<p>This compositional property of Hadron Pipelines sets it apart from the crowd as a powerful data processing and data integration system.</p>
+<p>Given that we've added new stages to our Pipeline, we need to add some new stage consumers to actually handle this logic. This is nearly identical to our consumer for <code>deploy-service</code>, really only the business logic in the handler will be different for each.</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>client.pipeline(&quot;service-creation&quot;, &quot;setup-billing&quot;, billing_handler).await?;
+client.pipeline(&quot;service-creation&quot;, &quot;setup-monitoring&quot;, monitoring_handler).await?;
+client.pipeline(&quot;service-creation&quot;, &quot;notify-user&quot;, notify_handler).await?;
+<span class="boring">}
+</span></code></pre></pre>
+<h3><a class="header" href="#analytics" id="analytics">Analytics</a></h3>
+<p>The team is quite happy with the ease of extending our Pipeline and adding new stage consumers. However, the company has continued to grow, and we've agreed that some deeper analytics would be great as a final touch.</p>
+<p>In this case, we would like to evaluate execution time, errors, re-delivery rates, and other such metadata on our stage handlers. Let's add a new stage to our Pipeline.</p>
+<pre><code class="language-yaml">    - name: analytics
+      dependencies:
+        - deploy-service
+        - setup-billing
+        - setup-monitoring
+        - notify-user
+</code></pre>
+<p>The <code>analytics</code> stage we've defined here will integrate the data signal from all previous stages in the Pipeline, receiving a copy of the root event and output events of each stage. With all of this data, we can generate metrics based on event metadata or even application specific data within each event.</p>
+<p>The sky is the limit. If needed, we could transactionally materialize this data into a traditional RDBMS like PostgreSQL, or we could ship this data over to other systems for graphing, metrics, alerting and the like. As we've seen, adding new stages to a Pipeline is straightforward. Backfilling stages to take place earlier in a Pipeline's workflow is possible, and even adding that output as a dependency to other existing stages is fully backwards compatible.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="../overview/producers-consumers.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+                            <a rel="next" href="../reference/tokens.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a rel="prev" href="../overview/producers-consumers.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a rel="next" href="../reference/tokens.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+
+        
+
+        
+        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+
+    </body>
+</html>

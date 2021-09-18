@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Schema Management - Hadron | event streaming, workflow orchestration &amp; messaging</title>
+        <title>Exchanges - Hadron | event streaming, workflow orchestration &amp; messaging</title>
         
         
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Hadron</a></li><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/cloud-events.html"><strong aria-hidden="true">3.</strong> CloudEvents</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/ephemeral-messaging.html"><strong aria-hidden="true">6.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../overview/rpc.html"><strong aria-hidden="true">7.</strong> RPC</a></li><li class="chapter-item expanded affix "><li class="part-title">Clients</li><li class="chapter-item expanded affix "><li class="part-title">CLI</li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/schema.html" class="active"><strong aria-hidden="true">8.</strong> Schema Management</a></li><li class="chapter-item expanded "><a href="../reference/users-tokens.html"><strong aria-hidden="true">9.</strong> Users &amp; Tokens</a></li><li class="chapter-item expanded "><a href="../reference/namespaces.html"><strong aria-hidden="true">10.</strong> Namespaces</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/ephemeral-messaging.html"><strong aria-hidden="true">13.</strong> Ephemeral Messaging</a></li><li class="chapter-item expanded "><a href="../reference/rpc.html"><strong aria-hidden="true">14.</strong> RPC</a></li><li class="chapter-item expanded "><a href="../reference/config-management.html"><strong aria-hidden="true">15.</strong> Config Management</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">16.</strong> Hadron CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="../usecases/service-provisioning.html"><strong aria-hidden="true">9.</strong> Service Provisioning</a></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/tokens.html"><strong aria-hidden="true">10.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/exchanges.html" class="active"><strong aria-hidden="true">13.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../reference/endpoints.html"><strong aria-hidden="true">14.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../reference/clients.html"><strong aria-hidden="true">15.</strong> Clients</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">16.</strong> CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -163,98 +163,62 @@
 
                 <div id="content" class="content">
                     <main>
-                        <p>These docs are currently under construction.</p>
-<!-- Schema Management
-=================
-All Hadron resources including Namespaces, Streams, Pipelines, RPC Endpoints, etc, are defined using the Hadron Schema Management system.
+                        <h1><a class="header" href="#exchanges" id="exchanges">Exchanges</a></h1>
+<p>These docs are currently under construction.</p>
+<!--
 
-The guiding principals of the Hadron Schema Management system are as follows:
-- Must be easy to use, convenient, and intuitive.
-- Must be natively supported by the hadron CLI, no external tools needed.
-- Must be explicit, clear, well-defined.
-- Must be idempotent.
+A topic-based, at most once delivery messaging system, perfect for ephemeral data.
 
-The Hadron CLI is used for all aspects of schema management, and schema management files should be committed to one's code repository. Very importantly, Hadron schema management is designed to be idempotent, ensuring that the cluster does not end up in an unexpected state as teams roll changes for their applications.
+- Provides **at most once delivery semantics.**
+- Messages are published with "topics", similar to AMQP-style topics. Defaults to an empty string. No ack or nack is used for ephemeral messages.
+- Consumers may specify a "topic" matcher, which expresses interest in matching messages. Wildcard topic matchers are supported, similar to AMQP-style wildcards.
+- If no consumer matches the topic of the message, it will be dropped.
+- Consumers may form groups, where messages will be load balanced across healthy group members.
+- Consumer group information is synchronously replicated to all nodes when the consumer group is formed and as members join and leave the group, but this information is only held in memory.
+- Consumer group load balancing decisions are made by the node which received the message needing to be load balanced.
+- Messages will be delivered once to each consumer group matching the message's topic.
+- Ephemeral messaging exchanges are implicity created as part of a namespace. Namespaces have one and only one ephemeral messaging exchange.
 
-Hadron uses YAML for its schema language. Simply run `hadron schema init {branchName}` to create a new schema management directory. Here, we will use `service-xyz` as the value for `{branchName}` (more on this later). The Hadron CLI will use the directory `hadron-schema` by default, but this value may be overridden. This will give you a directory structure as follows:
+### Topics
+Hadron enforces that message topics adhere to the following pattern `[-_A-Za-z0-9.]*`. In English, this could be read as "all alpha-numeric characters, hyphen, underscore and period". Topics are case-sensitive and can not contain whitespace.
 
-```bash
-hadron-schema/
-├── .hadron-state.yaml
-└── 1608743979-initial.yaml
+##### Topic Hierarchies
+The `.` character is used to create a subject hierarchy. A volcanology team might define the following hierarchy for collecting sensor readings on volcanoes they are monitoring, where volcanoes are grouped by the region they are in, followed by the name of the volcano, then followed by the cardinal point where the sensor is stationed with respect to the center of the volcano.
+
+```
+volcanoes.usa
+volcanoes.usa.atka
+volcanoes.usa.kahoolawe.north
+volcanoes.tanzania
+volcanoes.tanzania.meru
+volcanoes.tanzania.kilimanjaro.east
+volcanoes.tanzania.kilimanjaro.west
 ```
 
-Let's break down each of these files. The leading timestamp, generated at the time of the Hadron CLI invocation, will ensure that files stay sorted, and the Hadron CLI will execute them according to their timestamp order. The `initial` segment in the middle of the timestamped filename is generated by the Hadron CLI as part of generating the new schema management directory. And finally, the `.hadron-state.yaml` file holds state information related to this branch of schema changes, the last applied timestamp, and other info — which is always synchronized with the Hadron cluster. The state file should never be manually edited.
+### Wildcard Matchers
+There are two wildcard tokens available to subscribers for matching message topics. Subscribers can use these wildcards to listen to multiple topics with a single subscription but Publishers will always use a fully specified subject, without any wildcards (as the wildcard characters are not valid topic characters while publishing).
 
-Here are the internals of the `1608743979-initial.yaml` file:
+##### Single-Token Matching
+The first wildcard is `*` which will match a single hierarchy token. If the volcanology team needs to build a consumer for monitoring everything from `Kilimanjaro`, it could subscribe to `volcanoes.tanzania.kilimanjaro.*`, which would match `volcanoes.tanzania.kilimanjaro.east` and `volcanoes.tanzania.kilimanjaro.west`.
 
-```yaml
-# Add your schema changes here. Each schema statement should be delimited by
-# a line with the text `---` which indicates the start of a new YAML object.
-#
-# All of the schema statements in this file will be transactionally applied
-# to the system as a whole.
-#
-# Here is an example `Namespace` declaration:
----
-kind: Namespace
-name: example
-description: This is just an example namespace.
+##### Multi-Token matching
+The second wildcard is `>` which will match one or more hierachy tokens, and can only appear at the end of the topic. For example, `volcanoes.usa.>` will match `volcanoes.usa.atka` and `volcanoes.usa.kahoolawe.north`, while `volcanoes.usa.*` would only match `volcanoes.usa.atka` since it can’t match more than one hierarchy token.
 
-# See the docs at https://docs.hadron.rs/guide/reference/schema.html
-```
-
-This is a schema file. In Hadron, schema files declare a set of schema statements to be applied to the Hadron cluster. The Hadron CLI ensures that all schema file names are prefixed with a valid timestamp, which is used to order the statements before attempting to apply them to the cluster.
-
-And the internals of `.hadron-state.yaml`:
-
-```yaml
-# NOTE: this file was generated by the Hadron CLI. Do not edit.
-branch: service-xyz
-```
-
-This is the state management file. This file declares the provided branch name, establishing a link between all schema files in the respective directory. This file is managed by the Hadron CLI itself, and should not be manually modified. As schema files are applied to the cluster, their timestamps are record in this file under the `lastAppliedTimestamp` key. If a schema file's timestamp is earlier than the `lastAppliedTimestamp`, then it will not be applied.
-
-Simply run the following command `hadron schema apply` to apply any outstanding schema files in this directory to the cluster. The Hadron cluster stores the last applied timestamp per branch, and the Hadron CLI refreshes this data before every attempt to apply schema changes.
-
-### New Schema Files
-New schema files can be added to the schema management directory with the following command: `hadron schema new {fileName}`. This will create a new schema file in the schema management directory. The Hadron CLI will automatically prefix the new file with the current timestamp.
-
-### Idempotent Workflow & Compaction
-The Hadron schema management system is designed to be idempotent based on the simple concepts of branch name and timestamp. This helps to ensure that the cluster does not get into an undesired state due to accidentally applying old changes. This systems has no concept of "rollbacks". We take the fail-forward approach.
-
-Over time, it will be common that a large number of schema files will build up within a schema management directory. Run the `hadron schema compact` command to combine all schema statements into the latest schema file, deleting the old schema files once it is safe to do so.
-- Ordering of all schema statements is strictly preserved during compaction of schema files.
-- Hadron will only compact schema files which are older than the `lastAppliedTimestamp`.
-
-### Schema Statements
-The following is a list of accepted schema statements by `kind`, along with links to their full schema spec.
-
-- [`Namespace`](./namespaces.md#schema)
-- [`Stream`](./streams.md#schema)
-- [`Pipeline`](./pipelines.md#schema)
-- [`Endpoint`](./rpc.md#schema)
-
-### Kubernetes Operator Schema Management
-The Hadron Kubernetes Operator ships with the ability to handle all schema management based on CRDs.
-
-This is a work in progress, but here are a few of the design goals:
-- `HadronSchemaState` CRDs take the place of the `.hadron-state.yaml` files, declaring a branch name and recording the last applied schema file timestamp. The CRD will need to reference a secret containing a Hadron token which has permissions to make schema changes to the cluster.
-- `HadronSchemaFile` CRDs take the place of the standard schema files, and are associated with a parent `HadronSchemaState` CRD by label.
-- The operator will order `HadronSchemaFile`s when changes are detected, and then apply the latest changes in order, updating the `HadronSchemaState` CRD, which will probably back its state via ConfigMap. -->
+### Consumers
+Ephemeral message consumers specify a topic matcher and may optionally specify a queue group to begin consuming messages. Every consumer which is part of the same queue group will have messages load balanced across the group. -->
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../overview/rpc.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../reference/pipelines.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
 
                         
-                            <a rel="next" href="../reference/users-tokens.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="../reference/endpoints.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -266,13 +230,13 @@ This is a work in progress, but here are a few of the design goals:
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../overview/rpc.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../reference/pipelines.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 
 
                 
-                    <a rel="next" href="../reference/users-tokens.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="../reference/endpoints.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 
