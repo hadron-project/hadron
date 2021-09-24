@@ -9,7 +9,7 @@ description = "The Hadron CLI."
 anyhow = "1"
 base64 = "0.13.0"
 futures = "0.3"
-hadron = { version = "0.1.0", path = "../hadron-client" }
+hadron = { package = "hadron-client", version = "0.1.0-beta.0" }
 lazy_static = "1"
 regex = "1"
 structopt = "0.3"
@@ -21,3 +21,4 @@ tokio = { version = "1", default-features = false, features = [
 tokio-stream = { version = "0.1", default-features = false, features = ["time", "net", "signal", "sync"] }
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-subscriber = "0.2"
+uuid = { version = "0.8", default-features = false, features = ["v4"] }

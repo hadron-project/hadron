@@ -231,8 +231,8 @@ impl StreamSubCtl {
         group.is_fetching_data = false;
 
         // Encode the fetched data for delivery.
-        let last_included_offset = match fetched_data.data.last().map(|event| event.id) {
-            Some(offset) => offset,
+        let last_included_offset = match fetched_data.last_included_offset {
+            Some(last_included_offset) => last_included_offset,
             None => {
                 tracing::debug!("empty fetch payload returned from stream fetch");
                 return;
@@ -529,14 +529,19 @@ impl StreamSubCtl {
                 let start = utils::encode_u64(next_offset);
                 let stop = utils::encode_u64(next_offset + max_batch_size as u64);
                 let mut data = Vec::with_capacity(max_batch_size as usize);
+                let mut last_included_offset = None;
                 for iter_res in tree.range(start..stop) {
-                    let (_key, val) = iter_res.context(ERR_ITER_FAILURE).map_err(ShutdownError::from)?;
+                    let (key, val) = iter_res.context(ERR_ITER_FAILURE).map_err(ShutdownError::from)?;
+                    let offset = utils::decode_u64(&key)
+                        .context("error decoding event offset")
+                        .map_err(ShutdownError::from)?;
                     let event: Event = utils::decode_model(val.as_ref())
                         .context("error decoding event from storage")
                         .map_err(ShutdownError::from)?;
                     data.push(event);
+                    last_included_offset = Some(offset);
                 }
-                Ok(FetchStreamRecords { group_name, data })
+                Ok(FetchStreamRecords { group_name, data, last_included_offset })
             })
             .await
             .and_then(|res| res.map_err(ShutdownError::from));
@@ -572,6 +577,7 @@ pub enum StreamSubCtlMsg {
 pub struct FetchStreamRecords {
     group_name: Arc<String>,
     data: Vec<Event>,
+    last_included_offset: Option<u64>,
 }
 
 pub struct DeliveryResponse {

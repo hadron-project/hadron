@@ -7,15 +7,12 @@ pub struct Empty {}
 /// An event record formatted according to the CloudEvents specification.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Event {
-    /// The ID of this event, which is always the offset of this event on its stream partition.
+    /// The application defined ID of this event.
     ///
     /// See [`id`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#id).
-    #[prost(uint64, tag = "1")]
-    pub id: u64,
-    /// The source of this event.
-    ///
-    /// For streams this will be formatted as `/{cluster}/{stream}/{partition}/` and for pipelines
-    /// this will be formatted as `/{cluster}/{stream}/{partition}/{pipeline}/{stage}/`.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The application defined source of this event.
     ///
     /// See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
     #[prost(string, tag = "2")]
@@ -30,46 +27,14 @@ pub struct Event {
     /// See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     #[prost(string, tag = "4")]
     pub r#type: ::prost::alloc::string::String,
-    /// The subject of the event in the context of the event producer.
-    ///
-    /// This is used by Hadron in much the same way that Kafka uses the event `key`.
-    ///
-    /// See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
-    #[prost(string, tag = "5")]
-    pub subject: ::prost::alloc::string::String,
     /// Any additional optional attributes or extension attributes of this event.
     ///
     /// See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
     /// and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    #[prost(map = "string, string", tag = "6")]
+    #[prost(map = "string, string", tag = "5")]
     pub optattrs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     /// The data payload of this event.
-    #[prost(bytes = "vec", tag = "7")]
-    pub data: ::prost::alloc::vec::Vec<u8>,
-}
-/// A new event record to be published to a stream partition.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NewEvent {
-    /// The type identifier of this event.
-    ///
-    /// See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
-    #[prost(string, tag = "1")]
-    pub r#type: ::prost::alloc::string::String,
-    /// The subject of the event in the context of the event producer.
-    ///
-    /// This is used by Hadron in much the same way that Kafka uses the event `key`.
-    ///
-    /// See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
-    #[prost(string, tag = "2")]
-    pub subject: ::prost::alloc::string::String,
-    /// Any additional optional attributes or extension attributes of this event.
-    ///
-    /// See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
-    /// and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    #[prost(map = "string, string", tag = "3")]
-    pub optattrs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
-    /// The data payload of this event.
-    #[prost(bytes = "vec", tag = "4")]
+    #[prost(bytes = "vec", tag = "6")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 //////////////////////////////////////////////////////////////////////////////
@@ -80,7 +45,7 @@ pub struct NewEvent {
 pub struct StreamPublishRequest {
     /// The batch of entries to publish.
     #[prost(message, repeated, tag = "1")]
-    pub batch: ::prost::alloc::vec::Vec<NewEvent>,
+    pub batch: ::prost::alloc::vec::Vec<Event>,
     /// Fsync after writing batch.
     #[prost(bool, tag = "2")]
     pub fsync: bool,
@@ -216,7 +181,7 @@ pub struct PipelineSubscribeResponse {
 pub struct PipelineStageOutput {
     /// The base output of the corresponding pipeline stage.
     #[prost(message, optional, tag = "1")]
-    pub output: ::core::option::Option<NewEvent>,
+    pub output: ::core::option::Option<Event>,
 }
 ///////////////////////////////////////////////////////////////////////////////
 // Metadata ///////////////////////////////////////////////////////////////////

@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use tokio::sync::oneshot;
 
 use crate::error::{AppError, AppErrorExt, RpcResult, ShutdownError, ERR_DB_FLUSH};
-use crate::grpc::{Event, StreamPublishRequest, StreamPublishResponse};
+use crate::grpc::{StreamPublishRequest, StreamPublishResponse};
 use crate::stream::StreamCtl;
 use crate::utils;
 
@@ -44,16 +44,7 @@ impl StreamCtl {
         let mut batch = sled::Batch::default();
         for new_event in req.batch {
             self.current_offset += 1;
-            let entry = utils::encode_model(&Event {
-                id: self.current_offset,
-                source: self.source.clone(),
-                specversion: utils::CLOUD_EVENTS_SPEC_VERSION.into(),
-                r#type: new_event.r#type,
-                subject: new_event.subject,
-                optattrs: new_event.optattrs,
-                data: new_event.data,
-            })
-            .context("error encoding stream event record for storage")?;
+            let entry = utils::encode_model(&new_event).context("error encoding stream event record for storage")?;
             batch.insert(&utils::encode_u64(self.current_offset), entry.as_slice());
         }
         self.tree

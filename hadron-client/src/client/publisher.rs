@@ -1,5 +1,6 @@
 //! Publisher client.
 
+use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use tonic::{transport::Channel, Request};
 
 use crate::client::Client;
-use crate::grpc::stream::{stream_controller_client::StreamControllerClient, NewEvent, StreamPublishRequest, StreamPublishResponse, WriteAck};
+use crate::grpc::stream::{stream_controller_client::StreamControllerClient, Event, StreamPublishRequest, StreamPublishResponse, WriteAck};
 
 impl Client {
     /// Create a new publisher for the target stream.
@@ -64,7 +65,7 @@ impl PublisherClient {
 
     /// Publish a single event.
     #[tracing::instrument(level = "debug", skip(self, event, ack, fsync))]
-    pub async fn publish(&mut self, event: NewEvent, ack: WriteAck, fsync: bool) -> Result<StreamPublishResponse> {
+    pub async fn publish(&mut self, event: Event, ack: WriteAck, fsync: bool) -> Result<StreamPublishResponse> {
         self.try_publish_event(StreamPublishRequest { batch: vec![event], ack: ack as i32, fsync })
             .await
     }
@@ -73,7 +74,7 @@ impl PublisherClient {
     ///
     /// They key of the first event in the given batch will be used to determine placement of the batch.
     #[tracing::instrument(level = "debug", skip(self, batch, ack, fsync))]
-    pub async fn publish_batch(&mut self, batch: Vec<NewEvent>, ack: WriteAck, fsync: bool) -> Result<StreamPublishResponse> {
+    pub async fn publish_batch(&mut self, batch: Vec<Event>, ack: WriteAck, fsync: bool) -> Result<StreamPublishResponse> {
         self.try_publish_event(StreamPublishRequest { batch, ack: ack as i32, fsync })
             .await
     }
@@ -81,9 +82,13 @@ impl PublisherClient {
     /// Publish the given event to the target stream.
     #[tracing::instrument(level = "debug", skip(self, proto))]
     async fn try_publish_event(&mut self, proto: StreamPublishRequest) -> Result<StreamPublishResponse> {
-        let key = proto.batch.get(0).map(|val| val.subject.as_str()).unwrap_or("");
+        let (id, source) = proto
+            .batch
+            .get(0)
+            .map(|val| (val.id.as_str(), val.source.as_str()))
+            .unwrap_or(("", ""));
         let mut conn = self
-            .select_partition(key)
+            .select_partition(id, source)
             .ok_or_else(|| anyhow!("no partitions available"))?;
 
         let header = self.client.inner.creds.header();
@@ -102,22 +107,16 @@ impl PublisherClient {
     /// Select a partition to which the given event key should be published.
     ///
     /// If the given key is empty, then a partition will be selected based on a round robin algorithm.
-    fn select_partition(&mut self, key: &str) -> Option<StreamControllerClient<Channel>> {
+    fn select_partition(&mut self, id: &str, source: &str) -> Option<StreamControllerClient<Channel>> {
         let conns = self.client.inner.conns.load();
         if conns.is_empty() {
             return None;
         }
 
-        // If key is empty, then round-robin; else, hash to a partition.
-        if key.is_empty() {
-            self.rr_partition = self.rr_partition.checked_add(1).unwrap_or(0);
-            // Get the partition by looking for the next logical partition number and on.
-            conns.range(self.rr_partition..).next().map(|val| val.1.clone())
-                // Else, nothing else exists after that key, so start again from the beginning.
-                .or_else(|| conns.range(..).next().map(|val| val.1.clone()))
-        } else {
-            let offset = (seahash::hash(key.as_bytes()) % conns.len() as u64) as u32;
-            conns.get(&offset).cloned()
-        }
+        let mut hasher = seahash::SeaHasher::default();
+        hasher.write(id.as_bytes());
+        hasher.write(source.as_bytes());
+        let offset = (hasher.finish() % conns.len() as u64) as u32;
+        conns.get(&offset).cloned()
     }
 }

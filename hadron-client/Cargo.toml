@@ -1,9 +1,14 @@
 [package]
-authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
-edition = "2018"
-name = "hadron"
-version = "0.1.0"
+name = "hadron-client"
+version = "0.1.0-beta.0"
 description = "The Hadron Rust client library."
+authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
+categories = ["api-bindings", "concurrency", "database"]
+edition = "2018"
+keywords = ["hadron", "events", "CloudEvents", "stream-processing", "workflows"]
+license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/hadron-project/hadron"
 
 [dependencies]
 anyhow = "1"
@@ -25,6 +30,6 @@ tower = { version = "0.4", default-features = false, features = ["discover"] }
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-subscriber = "0.2"
 
-[build-dependencies]
+[dev-dependencies]
 anyhow = "1"
 tonic-build = "0.5"

@@ -83,8 +83,6 @@ pub struct StreamCtl {
 
     /// The last written offset of the stream.
     current_offset: u64,
-    /// The CloudEvents `source` field assigned to each stream event on this partition.
-    source: String,
 }
 
 impl StreamCtl {
@@ -97,7 +95,6 @@ impl StreamCtl {
         let tree = db.get_stream_tree().await?;
         let tree_metadata = db.get_stream_tree_metadata().await?;
         let (current_offset, subs) = recover_stream_state(&tree, &tree_metadata).await?;
-        let source = format!("/{}/{}/{}", config.cluster_name, config.stream, partition);
 
         // Spawn the subscriber controller.
         let (offset_signal, offset_signal_rx) = watch::channel(current_offset);
@@ -132,7 +129,6 @@ impl StreamCtl {
                 descheduled: false,
                 sub_ctl,
                 current_offset,
-                source,
             },
             offset_signal_rx,
         ))

@@ -9,7 +9,7 @@ use kube::CustomResourceExt;
 
 fn main() -> Result<()> {
     let canon = std::fs::canonicalize("..").context("error getting canonical path of current dir")?;
-    let crds_path = canon.join("k8s").join("helm").join("crds");
+    let crds_path = canon.join("charts").join("hadron-operator").join("crds");
 
     let stream = Stream::crd();
     let stream_yaml = serde_yaml::to_string(&stream).context("error serializing Stream CRD to yaml")?;

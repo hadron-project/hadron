@@ -15,9 +15,6 @@ spec:
   scope: Namespaced
   versions:
     - additionalPrinterColumns:
-        - jsonPath: ".spec.cluster_name"
-          name: Cluster Name
-          type: string
         - jsonPath: ".spec.partitions"
           name: Partitions
           type: number
@@ -44,9 +41,6 @@ spec:
             spec:
               description: CRD spec for the Stream resource.
               properties:
-                cluster_name:
-                  description: "The CloudEvents root `source` of all events of this cluster.\n\nThis value is used as the prefix of the `source` field of all events published to this stream, formatted as `{cluster_name}/{stream}/{partition}`.\n\nThis value can be re-used for any number of streams."
-                  type: string
                 debug:
                   default: false
                   description: "Enable debug mode for the Stream's StatefulSet pods."
@@ -79,7 +73,6 @@ spec:
                   minimum: 0.0
                   type: integer
               required:
-                - cluster_name
                 - image
                 - partitions
                 - pvc_volume_size

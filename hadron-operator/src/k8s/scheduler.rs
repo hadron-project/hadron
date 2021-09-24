@@ -662,11 +662,6 @@ impl Controller {
                             ..Default::default()
                         },
                         EnvVar {
-                            name: "CLUSTER_NAME".into(),
-                            value: Some(stream.spec.cluster_name.clone()),
-                            ..Default::default()
-                        },
-                        EnvVar {
                             name: "NAMESPACE".into(),
                             value_from: Some(EnvVarSource {
                                 field_ref: Some(ObjectFieldSelector {

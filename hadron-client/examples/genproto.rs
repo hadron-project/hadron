@@ -1,3 +1,8 @@
+//! Generate updated proto code for this client.
+//!
+//! This is setup as an example instead of as part of the build.rs because the protocode does not
+//! ship along with the client code when distributed.
+
 use anyhow::{Context, Result};
 
 fn main() -> Result<()> {

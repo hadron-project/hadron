@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::grpc::stream::{NewEvent, PipelineSubscribeResponse, StreamSubscribeResponse};
+use crate::grpc::stream::{Event, PipelineSubscribeResponse, StreamSubscribeResponse};
 
 /// A type capable of handling a stream subscription delivery.
 #[async_trait]
@@ -21,5 +21,5 @@ pub trait PipelineHandler: Send + Sync + 'static {
     /// Returning a `Result::Ok` will automatically `ack` the delivery providing the returned
     /// Event output as the output for this pipeline instance's stage, while returning a
     /// `Result::Err` will automatically `nack` the delivery.
-    async fn handle(&self, payload: PipelineSubscribeResponse) -> Result<NewEvent>;
+    async fn handle(&self, payload: PipelineSubscribeResponse) -> Result<Event>;
 }
