@@ -1,0 +1,23 @@
+---
+apiVersion: hadron.rs/v1beta1
+kind: Stream
+metadata:
+  name: events
+  namespace: default
+spec:
+  partitions: 3
+  ttl: 0
+  debug: true
+  image: "ghcr.io/hadron-project/hadron/hadron-stream:latest"
+  pvc_volume_size: "5Gi"
+  pvc_access_modes:
+  - ReadWriteOnce
+
+---
+apiVersion: hadron.rs/v1beta1
+kind: Token
+metadata:
+  name: hadron-full-access
+  namespace: default
+spec:
+  all: true

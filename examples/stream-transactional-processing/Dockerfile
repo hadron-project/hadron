@@ -1,0 +1,33 @@
+## Dockerfile for stream-transactional-processing (txp) demo app.
+
+# syntax=docker/dockerfile:1.3
+ARG RUST_TAG=1.55.0
+ARG ALPINE_TAG=3.14
+FROM rust:${RUST_TAG}-alpine${ALPINE_TAG} as builder
+
+LABEL maintainer="Anthony Dodd <dodd.anthonyjosiah@gmail.com>"
+ENV CARGO_HOME=/txp/target/.cargo
+WORKDIR /stream-txp
+
+RUN apk --no-cache add musl-dev
+
+COPY ./Cargo.toml Cargo.toml
+COPY ./Cargo.lock Cargo.lock
+COPY ./src src
+COPY ./migrations migrations
+
+# Should only ever be "" or "--release".
+ARG RELEASE_OPT=""
+RUN --mount=type=cache,id=stream-txp,target=/stream-txp/target \
+    cargo build ${RELEASE_OPT} \
+    && if [ "${RELEASE_OPT}" == '' ]; then \
+    cp /stream-txp/target/debug/stream-txp /bin/stream-txp; \
+    else \
+    cp /stream-txp/target/release/stream-txp /bin/stream-txp; \
+    fi
+
+##############################################################################
+##############################################################################
+FROM alpine:${ALPINE_TAG} as release
+COPY --from=builder /bin/stream-txp /bin/stream-txp
+CMD ["/bin/stream-txp"]

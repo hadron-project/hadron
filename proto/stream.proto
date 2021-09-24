@@ -24,14 +24,11 @@ message Empty {}
 
 // An event record formatted according to the CloudEvents specification.
 message Event {
-    // The ID of this event, which is always the offset of this event on its stream partition.
+    // The application defined ID of this event.
     //
     // See [`id`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#id).
     uint64 id = 1;
-    // The source of this event.
-    //
-    // For streams this will be formatted as `/{cluster}/{stream}/{partition}/` and for pipelines
-    // this will be formatted as `/{cluster}/{stream}/{partition}/{pipeline}/{stage}/`.
+    // The application defined source of this event.
     //
     // See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
     string source = 2;
@@ -58,27 +55,6 @@ message Event {
     bytes data = 7;
 }
 
-// A new event record to be published to a stream partition.
-message NewEvent {
-    // The type identifier of this event.
-    //
-    // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
-    string type = 1;
-    // The subject of the event in the context of the event producer.
-    //
-    // This is used by Hadron in much the same way that Kafka uses the event `key`.
-    //
-    // See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
-    string subject = 2;
-    // Any additional optional attributes or extension attributes of this event.
-    //
-    // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
-    // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    map<string, string> optattrs = 3;
-    // The data payload of this event.
-    bytes data = 4;
-}
-
 // The replication acknowledgement mode to use for a write batch.
 enum WriteAck {
     // Wait until all in-sync replicas have acknowledged the write.
@@ -95,7 +71,7 @@ enum WriteAck {
 // A request to publish data to a stream.
 message StreamPublishRequest {
     // The batch of entries to publish.
-    repeated NewEvent batch = 1;
+    repeated Event batch = 1;
     // Fsync after writing batch.
     bool fsync = 2;
     // The replication acknowledgement mode for the batch.
@@ -195,7 +171,7 @@ message PipelineSubscribeResponse {
 // The output of a successful pipeline stage consumption.
 message PipelineStageOutput {
     // The base output of the corresponding pipeline stage.
-    NewEvent output = 1;
+    Event output = 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -36,7 +36,9 @@ These two patterns for establishing the identity of an event generalize quite we
 In all of these cases, the `id` and `source` fields of the CloudEvents model together establish an absolute identity for the event. This identity is key in implementing a transactional processing model which is impervious to race conditions, duplicate events and the like.
 
 ### Hadron is Transactional
-Hadron itself is a transactional system, but its transactions only apply to `ack`'ing or `nack`'ing events.
+Hadron itself is a transactional system.
+
+For Streams, transactions apply only to `ack`'ing that an event or event batch was processed. For Pipeline stages, `ack`'ing an event requires an output event which is transactionally recorded as part of the `ack`.
 
 For both Stream and Pipeline consumers, once an event or event batch has been `ack`'ed, those events will never be processed again by the same consumer group. However, it is important to note that Hadron does not use the aforementioned CloudEvents identity for its transactions. Hadron Stream partitions use a differnet mechanism to track processing, and users of Hadron should never have to worry about that.
 
