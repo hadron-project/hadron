@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stream-txp
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: stream-txp
+  template:
+    metadata:
+      labels:
+        app: stream-txp
+    spec:
+      containers:
+      - name: stream-txp
+        image: ghcr.io/hadron-project/hadron/stream-txp:v0.1.0-beta.0
+        env:
+        - name: RUST_LOG
+          value: error,stream_txp=debug,hadron_client=debug
+        - name: HADRON_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hadron-full-access
+              key: token
+        - name: HADRON_URL
+          value: http://events.default.svc.cluster.local:7000
+        - name: POSTGRES_URL
+          value: postgres://postgres:password@postgres.default.svc.cluster.local:5432/postgres

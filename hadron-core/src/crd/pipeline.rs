@@ -42,9 +42,9 @@ const NAME_1123_LABEL_MSG: &str =
     printcolumn = r#"{"name":"Triggers","type":"string","jsonPath":".spec.triggers"}"#,
     printcolumn = r#"{"name":"Max Parallel","type":"number","jsonPath":".spec.maxParallel"}"#
 )]
+#[serde(rename_all = "camelCase")]
 pub struct PipelineSpec {
     /// The name of the stream which will trigger this pipeline.
-    #[serde(rename = "sourceStream")]
     pub source_stream: String,
     /// Event type matchers which will trigger this pipeline.
     ///
@@ -59,15 +59,14 @@ pub struct PipelineSpec {
     /// The stages of this pipeline.
     pub stages: Vec<PipelineStage>,
     /// The maximum number of pipeline instances which may be executed in parallel per partition.
-    #[serde(rename = "maxParallel")]
     pub max_parallel: u32,
     /// The starting point of the source stream from which to begin this pipeline.
-    #[serde(rename = "startPoint")]
     pub start_point: PipelineStartPoint,
 }
 
 /// The definition of a Pipeline stage.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PipelineStage {
     /// The name of this pipeline stage, which is unique per pipeline.
     pub name: String,
@@ -81,6 +80,7 @@ pub struct PipelineStage {
 
 /// The starting point of the source stream from which to begin this pipeline.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PipelineStartPoint {
     /// The start point location.
     pub location: PipelineStartPointLocation,
@@ -103,6 +103,7 @@ pub enum PipelineStartPointLocation {
 
 /// CRD status object.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PipelineStatus {}
 
 impl PipelineCRD {

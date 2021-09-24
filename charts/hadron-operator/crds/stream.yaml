@@ -53,17 +53,17 @@ spec:
                   format: uint32
                   minimum: 0.0
                   type: integer
-                pvc_access_modes:
+                pvcAccessModes:
                   description: "The access modes to use for the Stream's backing StatefulSet PVCs."
                   items:
                     type: string
                   nullable: true
                   type: array
-                pvc_storage_class:
+                pvcStorageClass:
                   description: "The storage class to use for the Stream's backing StatefulSet PVCs."
                   nullable: true
                   type: string
-                pvc_volume_size:
+                pvcVolumeSize:
                   description: "The volume size to use for the Stream's backing StatefulSet PVCs."
                   type: string
                 ttl:
@@ -75,7 +75,7 @@ spec:
               required:
                 - image
                 - partitions
-                - pvc_volume_size
+                - pvcVolumeSize
               type: object
             status:
               description: CRD status object.

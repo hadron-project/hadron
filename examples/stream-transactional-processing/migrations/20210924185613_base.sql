@@ -8,5 +8,6 @@
 CREATE TABLE IF NOT EXISTS in_table (
     id TEXT NOT NULL,
     source TEXT NOT NULL,
+    time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id, source)
 );

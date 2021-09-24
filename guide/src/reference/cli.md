@@ -45,17 +45,18 @@ SUBCOMMANDS:
 Publish data to a stream
 
 USAGE:
-    hadron stream pub [FLAGS] [OPTIONS] <data> --subject <subject> --type <type>
+    hadron stream pub [FLAGS] [OPTIONS] <data> --type <type>
 
 FLAGS:
-    -b, --binary     If true, treat the data payload as a base64 encoded binary blob
+        --binary     If true, treat the data payload as a base64 encoded binary blob
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 OPTIONS:
-    -o <optattrs>...           Optional attributes to associate with the given payload
-    -s, --subject <subject>    The subject of the new event
-    -t, --type <type>          The type of the new event
+        --id <id>            The ID of the new event, else a UUID4 will be generated
+    -o <optattrs>...         Optional attributes to associate with the given payload
+        --source <source>    The source of the new event, else `hadron-cli` will be used
+        --type <type>        The type of the new event
 
 ARGS:
     <data>    The data payload to be published

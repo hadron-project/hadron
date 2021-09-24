@@ -35,14 +35,12 @@ helm upgrade hadron-operator hadron/hadron-operator --install
 ```
 
 ### Install Example Resources
-For this use case, let's use the example resources found in the Hadron repo. [Here is the code](https://raw.githubusercontent.com/hadron-project/hadron/main/charts/hadron-operator/examples/full.yaml).
-
-<!-- TODO: update these examples/full.yaml refs to use a tag, not main -->
+For this use case, let's use the example resources found in the Hadron repo. [Here is the code](https://raw.githubusercontent.com/hadron-project/hadron/tree/v0.1.0-beta.0/charts/hadron-operator/examples/full.yaml).
 
 Apply the code to the cluster:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/hadron-project/hadron/main/charts/hadron-operator/examples/full.yaml | kubectl apply -f -
+wget -qO- https://raw.githubusercontent.com/hadron-project/hadron/tree/v0.1.0-beta.0/charts/hadron-operator/examples/full.yaml | kubectl apply -f -
 ```
 
 The example file is about 75 lines of code, so here we will only show the names and types of the resources for brevity.

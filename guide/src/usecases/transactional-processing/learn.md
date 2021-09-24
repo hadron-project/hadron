@@ -9,7 +9,7 @@ In the greater context of system design and operations, errors take place all th
 
 In some cases, none of these issues matter. Maybe we don't care about the data, maybe we don't retry in the face of errors. However, when attempting to build a consistent system (either strong or eventual), then we need to care about these issues. Deeply.
 
-**Fortunately, transactional processing is the answer.** However, before we delve more deeply into the pattern, we need to understand identity.
+**Transactional processing is the way to deal with these issues.** Before we delve more deeply into implementing a transactional processing pattern, we need to understand identity.
 
 ### Identity
 An event must be uniquely identifiable.
@@ -19,7 +19,7 @@ In Hadron, this is easy, as we use the CloudEvents model, and each event bears t
 #### Establishing Identity
 Depending on the requirements of the system being built, there are a few different ways to establish the identity of an event before publishing it to Hadron.
 
-**OutTableIdentity:** this approach uses a transactional database system to generate events as part of a database transaction, writing those events first to a database table (called an out-table), and then using a separate transaction to copy or move those events from the out-table into Hadron.
+**OutTableIdentity:** this approach uses a transactional database system to generate events as part of the database transaction in which the event transpired, writing those events first to a database table, called the out-table, and then using a separate transaction to copy or move those events from the out-table into Hadron.
 - Most transactional databases provide [ACID guarantees](https://en.wikipedia.org/wiki/ACID) around this process (it is just a regular transaction).
 - This means that the generation of the event is "all or nothing". If the transaction is rolledback before it is committed, then it is as though it never happened.
 - The event should have a unique ID enforced by the database as it is written to the out-table and which will map directly to the Hadron CloudEvents `id` field.

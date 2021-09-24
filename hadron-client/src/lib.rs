@@ -11,3 +11,4 @@ pub use crate::common::ClientCreds;
 pub use crate::grpc::stream::{Event, PipelineSubscribeResponse, StreamSubscribeResponse, WriteAck};
 pub use crate::handler::{PipelineHandler, StreamHandler};
 pub use async_trait::async_trait;
+pub use prost::Message;

@@ -1,0 +1,16 @@
+{
+  "db": "PostgreSQL",
+  "d39d1959da2dc591316235570f9dc412b3f06fbda15eeb54daa44808ada20b20": {
+    "query": "INSERT INTO in_table (id, source) VALUES ($1, $2);",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text"
+        ]
+      },
+      "nullable": []
+    }
+  }
+}
