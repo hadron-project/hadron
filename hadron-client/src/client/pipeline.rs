@@ -13,7 +13,7 @@ use tonic::IntoStreamingRequest;
 use crate::client::subscriber::{SubscriptionStream, Task};
 use crate::client::Client;
 use crate::grpc::stream::pipeline_subscribe_request::Action as PipelineSubscribeRequestAction;
-use crate::grpc::stream::{NewEvent, PipelineStageOutput, PipelineSubscribeRequest, PipelineSubscribeResponse};
+use crate::grpc::stream::{Event, PipelineStageOutput, PipelineSubscribeRequest, PipelineSubscribeResponse};
 use crate::handler::PipelineHandler;
 
 type PipelineTask = Task<PipelineSubscribeResponse, PipelineSubscribeRequest>;
@@ -177,7 +177,7 @@ impl PipelineSubscriptionTask {
 
     /// Respond to the server with an `ack` over the given channel.
     #[tracing::instrument(level = "debug", skip(res_tx, pipeline, data))]
-    async fn ack(res_tx: mpsc::Sender<PipelineSubscribeRequest>, pipeline: String, data: NewEvent) {
+    async fn ack(res_tx: mpsc::Sender<PipelineSubscribeRequest>, pipeline: String, data: Event) {
         let msg = PipelineSubscribeRequest {
             action: Some(PipelineSubscribeRequestAction::Ack(PipelineStageOutput { output: Some(data) })),
             pipeline,

@@ -27,7 +27,7 @@ message Event {
     // The application defined ID of this event.
     //
     // See [`id`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#id).
-    uint64 id = 1;
+    string id = 1;
     // The application defined source of this event.
     //
     // See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
@@ -40,19 +40,13 @@ message Event {
     //
     // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     string type = 4;
-    // The subject of the event in the context of the event producer.
-    //
-    // This is used by Hadron in much the same way that Kafka uses the event `key`.
-    //
-    // See [`subject`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#subject).
-    string subject = 5;
     // Any additional optional attributes or extension attributes of this event.
     //
     // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
     // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    map<string, string> optattrs = 6;
+    map<string, string> optattrs = 5;
     // The data payload of this event.
-    bytes data = 7;
+    bytes data = 6;
 }
 
 // The replication acknowledgement mode to use for a write batch.

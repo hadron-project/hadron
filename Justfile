@@ -85,6 +85,10 @@ applyExample:
 genCrds:
     cd hadron-core && cargo run --example crd
 
+# Generate Hadron CRDs.
+genProtoClient:
+    cd hadron-client && cargo run --example genproto
+
 # Setup cert-manager for use in kind development cluster.
 helmUpCertManager:
     helm repo add jetstack https://charts.jetstack.io

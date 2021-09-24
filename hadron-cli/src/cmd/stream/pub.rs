@@ -4,18 +4,21 @@ use anyhow::{Context, Result};
 use structopt::StructOpt;
 
 use crate::Hadron;
-use hadron::{NewEvent, WriteAck};
+use hadron::{Event, WriteAck};
 
 /// Publish data to a stream.
 #[derive(StructOpt)]
 #[structopt(name = "pub")]
 pub struct Pub {
+    /// The ID of the new event, else a UUID4 will be generated.
+    #[structopt(long)]
+    id: Option<String>,
+    /// The source of the new event, else `hadron-cli` will be used.
+    #[structopt(long)]
+    source: Option<String>,
     /// The type of the new event.
-    #[structopt(short, long)]
+    #[structopt(long)]
     r#type: String,
-    /// The subject of the new event.
-    #[structopt(short, long)]
-    subject: String,
     /// Optional attributes to associate with the given payload.
     #[structopt(short = "o", parse(try_from_str = parse_key_val), number_of_values = 1)]
     optattrs: Vec<(String, String)>,
@@ -23,7 +26,7 @@ pub struct Pub {
     ///
     /// When a binary blob is provided, the blob will be base64 decoded before being sent to
     /// the server. This is useful for binary types such as protobuf and the like.
-    #[structopt(short, long)]
+    #[structopt(long)]
     binary: bool,
     /// The data payload to be published.
     data: String,
@@ -35,6 +38,11 @@ impl Pub {
         tracing::info!("publishing data");
         let mut client = base.get_client().await?.publisher("hadron-cli").await?;
 
+        let id = self.id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let source = self.source.clone().unwrap_or_else(|| "hadron-cli".into());
+        let r#type = self.r#type.clone();
+        let optattrs = self.optattrs.iter().cloned().collect();
+
         // If the given payload is binary, base64 decode it before sending it to the cluster.
         let data = if self.binary {
             base64::decode(self.data.as_str()).context("error base64 decoding given payload, controlled by -b/--binary")?
@@ -45,16 +53,7 @@ impl Pub {
         // Submit the request to the cluster.
         client.ready(None).await?;
         let res = client
-            .publish(
-                NewEvent {
-                    r#type: self.r#type.clone(),
-                    subject: self.subject.clone(),
-                    optattrs: self.optattrs.iter().cloned().collect(),
-                    data,
-                },
-                WriteAck::All,
-                true,
-            )
+            .publish(Event::new(id, source, r#type, data).with_optattrs(optattrs), WriteAck::All, true)
             .await
             .context("error publishing data")?;
         tracing::info!("Response: {:?}", res);

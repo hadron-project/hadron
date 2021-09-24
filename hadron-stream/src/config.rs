@@ -15,11 +15,6 @@ pub struct Config {
     /// The port which cluster internal network traffic is to use.
     pub server_port: u16,
 
-    /// The CloudEvents root `source` of all events of this cluster.
-    ///
-    /// This value is used as the prefix of the `source` field of all events published to
-    /// this stream, formatted as `{cluster_name}/{stream}/{partition}`.
-    pub cluster_name: String,
     /// The Kubernetes namespace of this cluster.
     pub namespace: String,
     /// The name of this controller's stream.

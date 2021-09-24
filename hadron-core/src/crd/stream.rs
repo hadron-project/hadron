@@ -20,7 +20,6 @@ pub type Stream = StreamCRD; // Mostly to resolve a Rust Analyzer issue.
     derive = "PartialEq",
     apiextensions = "v1",
     shortname = "stream",
-    printcolumn = r#"{"name":"Cluster Name","type":"string","jsonPath":".spec.cluster_name"}"#,
     printcolumn = r#"{"name":"Partitions","type":"number","jsonPath":".spec.partitions"}"#,
     printcolumn = r#"{"name":"TTL","type":"number","jsonPath":".spec.ttl"}"#,
     printcolumn = r#"{"name":"Debug","type":"boolean","jsonPath":".spec.debug"}"#,
@@ -29,13 +28,6 @@ pub type Stream = StreamCRD; // Mostly to resolve a Rust Analyzer issue.
     printcolumn = r#"{"name":"PVC Storage Class","type":"string","jsonPath":".spec.pvc_storage_class"}"#
 )]
 pub struct StreamSpec {
-    /// The CloudEvents root `source` of all events of this cluster.
-    ///
-    /// This value is used as the prefix of the `source` field of all events published to
-    /// this stream, formatted as `{cluster_name}/{stream}/{partition}`.
-    ///
-    /// This value can be re-used for any number of streams.
-    pub cluster_name: String,
     /// The number of partitions to be created for this stream.
     ///
     /// This value can be dynamically scaled up and down and directly corresponds to the number of

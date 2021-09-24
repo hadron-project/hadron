@@ -72,7 +72,6 @@ impl hadron::StreamHandler for StdoutHandler {
                 source = %record.source,
                 specversion = %record.specversion,
                 r#type = %record.r#type,
-                subject = %record.subject,
                 optattrs = ?record.optattrs,
                 data,
                 "handling subscription delivery",
