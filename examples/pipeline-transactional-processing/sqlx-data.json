@@ -1,0 +1,40 @@
+{
+  "db": "PostgreSQL",
+  "0b126b2b48bf7b1b648475349c45fe091e408cbbb800ee39191fdcf5ad931c0f": {
+    "query": "INSERT INTO in_table_pipelines (id, source, stage, event) VALUES ($1, $2, $3, $4);",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text",
+          "Text",
+          "Bytea"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "fa1c485e356e6c3f66c53f4188faa0ab1a4adb6a3bdb250e6eedbb253e763373": {
+    "query": "SELECT event FROM in_table_pipelines\n                WHERE id=$1 AND source=$2 AND stage=$3;",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "event",
+          "type_info": "Bytea"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text",
+          "Text"
+        ]
+      },
+      "nullable": [
+        false
+      ]
+    }
+  }
+}

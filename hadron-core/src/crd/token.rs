@@ -32,6 +32,7 @@ pub type Token = TokenCRD; // Mostly to resolve a Rust Analyzer issue.
     printcolumn = r#"{"name":"All","type":"string","jsonPath":".spec.all"}"#,
     printcolumn = r#"{"name":"Token ID","type":"string","jsonPath":".status.token_id"}"#
 )]
+#[serde(rename_all = "camelCase")]
 pub struct TokenSpec {
     /// Grant full access to all resources of the cluster.
     ///

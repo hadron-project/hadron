@@ -13,7 +13,7 @@ buildDemoApp tag="latest" mode="debug":
     esac
 
     docker build ${opts} --target builder -f Dockerfile .
-    docker build ${opts} --target release -f Dockerfile -t ghcr.io/hadron-project/hadron/stream-txp:{{tag}} .
+    docker build ${opts} --target release -f Dockerfile -t ghcr.io/hadron-project/hadron/pipeline-txp:{{tag}} .
 
 # Deploy the demo app & all needed Hadron resources.
 deployDemoApp:
@@ -41,4 +41,4 @@ kindCreateCluster:
 
 # Load docker image into kind cluster.
 kindLoadDemoApp tag="latest":
-    kind load docker-image --name hadron ghcr.io/hadron-project/hadron/stream-txp:{{tag}}
+    kind load docker-image --name hadron ghcr.io/hadron-project/hadron/pipeline-txp:{{tag}}

@@ -27,6 +27,7 @@ pub type Stream = StreamCRD; // Mostly to resolve a Rust Analyzer issue.
     printcolumn = r#"{"name":"PVC Access Modes","type":"string","jsonPath":".spec.pvc_access_modes"}"#,
     printcolumn = r#"{"name":"PVC Storage Class","type":"string","jsonPath":".spec.pvc_storage_class"}"#
 )]
+#[serde(rename_all = "camelCase")]
 pub struct StreamSpec {
     /// The number of partitions to be created for this stream.
     ///

@@ -1,6 +1,6 @@
 [package]
 name = "hadron-client"
-version = "0.1.0-beta.0"
+version = "0.1.0-beta.1"
 description = "The Hadron Rust client library."
 authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
 categories = ["api-bindings", "concurrency", "database"]
@@ -28,7 +28,6 @@ tokio-stream = { version = "0.1", default-features = false, features = ["time", 
 tonic = { version = "0.5", default-features = false, features = ["transport", "codegen", "prost", "tls"] }
 tower = { version = "0.4", default-features = false, features = ["discover"] }
 tracing = { version = "0.1", features = ["attributes"] }
-tracing-subscriber = "0.2"
 
 [dev-dependencies]
 anyhow = "1"

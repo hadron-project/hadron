@@ -39,11 +39,10 @@ kind: Stream
 metadata:
   name: events
 spec:
-  cluster_name: example.hadron.rs
   partitions: 3
   ttl: 0
   image: ghcr.io/hadron-project/hadron/hadron-stream:v0.1.0-beta.0
-  pvc_volume_size: "5Gi"
+  pvcVolumeSize: "5Gi"
 ```
 
 <!-- TODO: ensure image tag is live. -->
@@ -84,7 +83,7 @@ Now that we've defined a Stream along with a Token to allow us to access that St
 First, let's get a copy of the Token's generated Secret (the actual JWT) for later use. We will use `kubectl` to extract the value of the secret:
 
 ```sh
-HADRON_TOKEN=$(kubectl get secret hadron-full-access -o jsonpath='{.data.token}' | base64 -d)
+HADRON_TOKEN=$(kubectl get secret hadron-full-access -o jsonpath='{.data.token}' | base64 --decode)
 ```
 
 With the decoded token set as an environment variable, let's now run the CLI:
