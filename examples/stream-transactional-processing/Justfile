@@ -1,0 +1,48 @@
+# Apply our Hadron Stream and related resources to the cluster for our application.
+applyStream:
+    kubectl apply -f stream.yaml
+
+# Build new docker image for the demo app.
+buildDemoApp tag="latest" mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case '{{mode}}' in
+    'debug') opts='';;
+    'release') opts='--build-arg=RELEASE_OPT=--release';;
+    *) echo 'unrecognized value for `mode`, must be either `debug` or `release`'; exit 1;;
+    esac
+
+    docker build ${opts} --target builder -f Dockerfile .
+    docker build ${opts} --target release -f Dockerfile -t ghcr.io/hadron-project/hadron/stream-txp:{{tag}} .
+
+# Deploy the demo app using the given tag.
+#
+# This will deploy the Stream used by this example app. Database schema
+# migrations are handled by the app.
+deployDemoApp tag="v0.1.0-beta.0":
+    echo "TODO: finish this up."
+
+# Deploy the Hadron Operator.
+# NOTE: this command is defined in the repo's root Justfile.
+helmUp:
+    just ../../ helmUp
+
+# Deploy cert-manager.
+# NOTE: this command is defined in the repo's root Justfile.
+helmUpCertManager:
+    just ../../ helmUpCertManager
+
+# Install a Postgres database into the cluster.
+helmUpPostgres:
+    helm repo add bitnami https://charts.bitnami.com/bitnami
+    helm install postgresql bitnami/postgresql --version 10.10.2 \
+        --set fullnameOverride=postgres,postgresqlDatabase=postgres,postgresqlPassword=password
+
+# Create the kind development cluster used for development in this repo.
+# NOTE: this command is defined in the repo's root Justfile.
+kindCreateCluster:
+    just ../../ kindCreateCluster
+
+# Load docker image into kind cluster.
+kindLoadDemoApp dockerTag:
+    kind load docker-image --name hadron ghcr.io/hadron-project/hadron/stream-txp-app:{{dockerTag}}
