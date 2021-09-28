@@ -21,7 +21,6 @@ pub type Stream = StreamCRD; // Mostly to resolve a Rust Analyzer issue.
     apiextensions = "v1",
     shortname = "stream",
     printcolumn = r#"{"name":"Partitions","type":"number","jsonPath":".spec.partitions"}"#,
-    printcolumn = r#"{"name":"TTL","type":"number","jsonPath":".spec.ttl"}"#,
     printcolumn = r#"{"name":"Debug","type":"boolean","jsonPath":".spec.debug"}"#,
     printcolumn = r#"{"name":"PVC Volume Size","type":"string","jsonPath":".spec.pvc_volume_size"}"#,
     printcolumn = r#"{"name":"PVC Access Modes","type":"string","jsonPath":".spec.pvc_access_modes"}"#,
@@ -35,12 +34,6 @@ pub struct StreamSpec {
     /// pods in the corresponding StatefulSet. Scaling down the number of partitions
     /// will cause the data of the removed partitions to be lost. Use with care.
     pub partitions: u32,
-    /// An optional TTL in seconds specifying how long records are to be kept on the stream.
-    ///
-    /// If `0`, then records will stay on the stream forever. Modifying this value will require a
-    /// restart of the stream's StatefulSet.
-    #[serde(default)]
-    pub ttl: u64,
     /// Enable debug mode for the Stream's StatefulSet pods.
     #[serde(default)]
     pub debug: bool,

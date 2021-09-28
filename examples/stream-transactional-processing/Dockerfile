@@ -6,6 +6,7 @@ ARG ALPINE_TAG=3.14
 FROM rust:${RUST_TAG}-alpine${ALPINE_TAG} as builder
 
 LABEL maintainer="Anthony Dodd <dodd.anthonyjosiah@gmail.com>"
+LABEL org.opencontainers.image.source https://github.com/hadron-project/hadron/
 ENV CARGO_HOME=/stream-txp/target/.cargo
 WORKDIR /stream-txp
 

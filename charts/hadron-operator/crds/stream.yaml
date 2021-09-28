@@ -18,9 +18,6 @@ spec:
         - jsonPath: ".spec.partitions"
           name: Partitions
           type: number
-        - jsonPath: ".spec.ttl"
-          name: TTL
-          type: number
         - jsonPath: ".spec.debug"
           name: Debug
           type: boolean
@@ -66,12 +63,6 @@ spec:
                 pvcVolumeSize:
                   description: "The volume size to use for the Stream's backing StatefulSet PVCs."
                   type: string
-                ttl:
-                  default: 0
-                  description: "An optional TTL in seconds specifying how long records are to be kept on the stream.\n\nIf `0`, then records will stay on the stream forever. Modifying this value will require a restart of the stream's StatefulSet."
-                  format: uint64
-                  minimum: 0.0
-                  type: integer
               required:
                 - image
                 - partitions
