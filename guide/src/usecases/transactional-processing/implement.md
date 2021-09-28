@@ -59,3 +59,9 @@ Let's do this. Our microservice will have a Pipeline stage subscription to whate
 With Pipelines, we are able to model all of the workflows of our applications, even spanning across multiple microservices, teams, and even system boundaries. Because Pipelines require an output event to be returned from stage consumers, we do not need an independent out-table process to ship these events over to Hadron.
 
 The code implementing this model can be found here: [examples/pipeline-transactional-processing](https://github.com/hadron-project/hadron/tree/v0.1.0-beta.0/examples/pipeline-transactional-processing).
+
+### Next Steps
+Now that you've seen the algorithms for implementing a transactional processing models, it would be good to:
+
+- **Dive into the code:** follow the links provided above to see the reference implementation code.
+- **Copy the code and modify it:** if you need to implement your own transactional processing system, the reference code is a great stepping stone.

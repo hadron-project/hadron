@@ -1,76 +1,61 @@
 Pipelines
 =========
-These docs are currently under construction.
+Pipelines are workflow orchestration for data on Streams, providing structured concurrency for arbitrarily complex multi-stage workflows.
 
-<!--
-Pipelines are multi-stage data workflows, composed of multiple streams, structured as a directed acyclic graph (DAG). Pipelines provide transactional guarantees for multi-stage asynchronous workflows. Pipelines orchestrate the delivery of events to specific pipeline stages, collect outputs from pipeline stages, and enforce stage execution order. Pipelines provide a source of truth for codifying asynchronous event-driven architectures.
-
-## Schema
-Pipelines are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Pipeline` object is as follows:
+Pipelines are defined as CRDs stored in Kubernetes. Pipelines exist side by side with their source Stream, and Streams may have any number of associated Pipelines. Pipelines are triggered for execution when an event published to a Stream has an event `type` which matches one of the trigger patterns of an associated Pipeline.
 
 ```yaml
-## The kind of object being defined. In this case, a pipeline.
+apiVersion: hadron.rs/v1beta1
 kind: Pipeline
-## The namespace in which this pipeline is to be created.
-namespace: required string
-## The name of the pipeline. Each pipeline must have a unique name per namespace.
-name: required string
+metadata:
+  ## The name of this Pipeline.
+  name: :string
+  ## The Kubernetes namespace of this Pipeline.
+  ##
+  ## This Pipeline's associated `sourceStream` must exist within
+  ## the same Kubernetes namespace.
+  namespace: :string
+spec:
+  ## The name of the Stream which feeds this Pipeline.
+  ##
+  ## Events published to the source Stream which match this Pipeline's
+  ## `triggers` will trigger a new Pipeline execution with the matching
+  ## event as the root event.
+  sourceStream: :string
 
-## The stream from which this pipeline may be triggered. Only events on this
-## stream will trigger this pipeline. The trigger stream must exist in the
-## same namespace as the pipeline.
-inputStream: required string
+  ## Patterns which must match the event `type` of an event on the
+  ## source Stream in order to trigger a Pipeline execution.
+  triggers: [:string]
 
-## Optional event types of events on the input stream which should trigger new
-## instances of this pipeline.
-##
-## If no triggers are decalred, then all events published to the input stream
-## will create new pipeline instances.
-triggers:
-  - string
+  ## The maximum number of Pipeline executions which may be executed in parallel.
+  ##
+  ## This is calculated per partition.
+  maxParallel: :integer
 
-## `optional array of <stage>`: An array all stages of which this pipeline is
-## composed. Pipelines are composed of one or more stages.
-stages:
-  ## The name of the stage. Each stage has a unique name per pipeline.
-  - name: required string
-
-    ## `optional array of string`: A stage will be executed after all of the
-    ## stages in its `after` array have successfully completed.
+  ## The location of the source Stream which this Pipeline
+  ## should start from when first created.
+  startPoint:
+    ## The start point location.
+    location: :string # One of "beginning" | "latest" | "offset"
+    ## The offset to start from, which is only evaluated when `location` is `offset`.
     ##
-    ## Execution order must be acyclic. If this value is empty or omitted,
-    ## then this stage is considered to be an initial stage of the pipeline,
-    ## and will be invoked with a copy of the event which triggered
-    ## the pipeline.
-    after:
-      ## The name of another stage in this pipeline.
-      - required string
+    ## This is applied to all partitions of the source Stream identically.
+    offset: :integer
 
-    ## `optional array of string`: Stages may depend upon the output of
-    ## earlier stages, which also implies an `after` relationship with the
-    ## specified stages.
-    ##
-    ## If no dependencies are declared, then the stage will be provided with
-    ## the root event which triggered the respective pipeline instance. The
-    ## root event can be referred to directly as `root_event` along with
-    ## other stages.
-    dependencies:
-      ## The name of a stage from this pipeline, or the special name
-      ## `root_event` which refers to the root event of a pipeline instance.
-      - required string
+  ## Workflow stages of this Pipeline.
+  stages:
+    ## Each stage must have a unique name.
+    - name: :string
+      ## The names of other stages in this Pipeline which
+      ## must be completed first before this stage may start.
+      after: [:string]
+      ## The names of other stages in this Pipeline
+      ## which this stage depends upon for input.
+      ##
+      ## All dependencies listed will have their outputs delivered
+      ## to this stage at execution time.
+      ##
+      ## When a stage is listed as a dependency, there is no need to
+      ## also declare it in the `after` list.
+      dependencies: [:string]
 ```
-
-### Details
-- Pipelines can be updated the same way all other Hadron schema objects can be updated. See the [Schema Management](./schema.md) chapter for more details.
-- Pipeline names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
-- Pipelines may be composed of 1 or more stages (nodes of the graph).
-- The flow of data through the pipeline — inputs and outputs — are the edges of the graph.
-- Pipelines may have more than one initial stage. All initial stages of a pipeline will receive a copy of the event which triggered the pipeline.
-- Pipelines are exclusive. They represent a single type of action to be taken over the data moving through the pipeline. All consumers of pipeline stages will be treated as being part of the same consumer group and messages will be load balanced across all consumers.
-- Pipelines have unique names.
-- Pipelines are directed acyclic graphs, cycles are not allowed.
-- Hadron ensures that the output of a stage is delivered to all downstream stages with a connected edge, and that the message is `ack`'ed transactionally along with the delivery of that output. This greatly reduces the overhead of error handling and minimizes the difficulties of modelling idempotent workflows.
-- Pipeline stages may execute in parallel when stages are children of the same parent stage in the graph, or in serial order when stages are ordered one after another in the graph. The `dependencies` & `after` keywords control this behavior.
-
-## Consumers
-Pipeline stages must each be individually subscribed to useing the pipelines subscription API. The pipelines subscription API is uniform for all stages, and allows consumers to think purely in terms of reciving inputs and producing outputs. Hadron consumers are channel based, and multiple channels may exist per network connection to the Hadron cluster. -->

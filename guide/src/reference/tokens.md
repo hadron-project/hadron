@@ -1,34 +1,49 @@
 Tokens
 ======
-These docs are currently under construction.
+Hadron uses a simple authentication and authorization model which works seamlessly with Kubernetes.
 
-<!--
-Hadron uses a simple but effective permissions model. There are users and there are tokens. Users represent administrators of the Hadron cluster, while tokens represent access grants to specific Hadron resources for use in application code and automation tools.
+All authentication in Hadron is performed via Tokens. Tokens are Hadron CRDs, which are recognized and processed by the Operator. Token CRs result in a JWT being created with the Operator's private RSA key. The generated JWT is then written to a Kuberetes Secret in the same namespace as the Token, and will bear the same name as the Token.
 
-There are a few different user roles:
-- `Owner`: this user has full control over the cluster, all namespaces and all resources.
-- `Admin`: admins are the same as owners, except that admin permissions may be revoked by other admins and owners, but admins can not revoked the permissions of an owner.
-- `Viewer`: viewers are read-only. They may view any of ther resources of the cluster, but may not modify them.
+```yaml
+apiVersion: hadron.rs/v1beta1
+kind: Token
+metadata:
+  ## The name of this Token.
+  ##
+  ## The generated Kubernetes Secret will have the same name.
+  name: :string
+  ## The Kubernetes namespace of this Token.
+  ##
+  ## The generated Kubernetes Secret will live in the same namespace.
+  namespace: :string
+spec:
+  ## Grant full access to all resources of the cluster.
+  ##
+  ## If this value is true, then all other values are
+  ## ignored when establishing authorization.
+  all: :bool
 
-Users are not allowed to directly use the resources of Hadron, that is what tokens are for. Tokens represent a set of permissions for the bearer of that token. The token ID is retained within Hadron and the token may be deleted, which revokes that token's access to the cluster. Tokens come in a few forms:
-- `All`: a permissions grant on all resources in the system.
-- `Namespaced`: a set of permissions granted on namespace scoped resources.
-- `Metrics`: A permissions grant on only the cluster metrics system.
+  ## Pub/Sub access for Streams by name.
+  ##
+  ## Permissions granted on a Stream extend to any Pipelines
+  ## associated with that Stream.
+  streams:
+    ## The names of all Streams which this Token can publish to.
+    pub: [:string]
+    ## The names of all Streams which this Token can subscribe to.
+    sub: [:string]
 
-Namespace grants come in two different forms:
-- `Full`: a grant of full permissons on the target namespace.
-    - `namespace`: the namespace to which the grant pertains.
-- `Limited`: a grant of limited access to specific resources within the target namespace.
-    - `namespace`: the namespace to which the grant pertains.
-    - `messaging`: an optional `pub/sub/all` enum value indicating access to the namespace's ephemeral messaging exchange.
-    - `endpoints`: a list of endpoint permissions with the following structure:
-        - `matcher`: the endpoint name matcher to use. May include a wildcard to match endpoint hierarchies. Same wildcard rules apply as described in the [ephemeral messaging chapter](./ephemeral-messaging.md).
-        - `access`: a `pub/sub/all` enum value.
-    - `streams`: a list of stream permissions with the following structure:
-        - `matcher`: the stream name matcher to use. May include a wildcard to match streams hierarchically. Same wildcard rules apply as described in the ephemeral messaging chapter.
-        - `access`: a `pub/sub/all` enum value.
-    - `schema`: a boolean indicating if the token has permissions to modify the schema of the namespace.
+  ## Pub/Sub access for Exchanges by name.
+  exchanges:
+    ## The names of all Exchanges which this Token can publish to.
+    pub: [:string]
+    ## The names of all Exchanges which this Token can subscribe to.
+    sub: [:string]
 
-In addition to the above:
-- Hadron clusters are initialized with a default `root:root` user bearing the `Owner` role. It is expected that cluster admins will use the root credentials to initialize any other users for the system, and it is expected that the root password will be changed and stored securely or removed in favor of other credentials.
-- User & token management is performed via the Hadron CLI. -->
+  ## Pub/Sub access for Endpoints by name.
+  endpoints:
+    ## The names of all Endpoints which this Token can publish to.
+    pub: [:string]
+    ## The names of all Endpoints which this Token can subscribe to.
+    sub: [:string]
+```
