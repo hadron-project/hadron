@@ -310,9 +310,9 @@ dependencies = [
 
 [[package]]
 name = "hadron-client"
-version = "0.1.0-beta.0"
+version = "0.1.0-beta.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02fe0aaa7aad85e455634f2cda14870a43adb6758acba2bfde3304309d89292d"
+checksum = "e125e4ce0f6af6692b658a6c6a0d327b891f8e2079f09ae9a35fb80cc08cf9f2"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -328,7 +328,6 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -467,9 +466,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.102"
+version = "0.2.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2a5ac8f984bfcf3a823267e5fde638acc3325f6496633a5da6bb6eb2171e103"
+checksum = "dd8f7255a17a627354f321ef0055d63b898c6fb27eff628af4d1b66b7331edf6"
 
 [[package]]
 name = "log"
