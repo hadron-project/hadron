@@ -3,6 +3,7 @@
 
 [![Build Status](https://github.com/hadron-project/hadron/workflows/CI/badge.svg?branch=main)](https://github.com/hadron-project/hadron/actions)
 [![Build Status](https://github.com/hadron-project/hadron/workflows/Pages/badge.svg?branch=main)](https://github.com/hadron-project/hadron/actions)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/hadron-operator)](https://artifacthub.io/packages/search?repo=hadron-operator)
 </div>
 <br/>
 

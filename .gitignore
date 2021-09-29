@@ -1,7 +1,7 @@
 # File Ignores #
+**.tgz
 
 # Directory Ignores #
-.artifacts
 .git
 **/target
 guide/book

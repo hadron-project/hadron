@@ -21,11 +21,9 @@ helm upgrade cert-manager jetstack/cert-manager --install --set installCRDs=true
 
 Now we are ready to install the Hadron Operator:
 
-<!-- TODO: add links to the Hadron Operator helm chart once it is published. -->
-
 ```
-helm repo add hadron https://helm.hadron.rs
-helm upgrade hadron-operator hadron/hadron-operator --install
+# Helm >= v3.7.0 is required for OCI usage.
+helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.0
 ```
 
 This will install the Hadron Operator along with roles, service accounts, validating webhooks, and other Kubernetes resources which the Operator requires.
