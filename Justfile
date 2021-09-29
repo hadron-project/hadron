@@ -96,3 +96,19 @@ helmUpCertManager:
     helm repo add jetstack https://charts.jetstack.io
     helm --kube-context="kind-hadron" upgrade cert-manager jetstack/cert-manager --install \
         --version v1.5.3 --set installCRDs=true
+
+# Create a new packaged chart for the Hadron Operator.
+helmPackageOperator:
+    helm package charts/hadron-operator -d charts/
+
+# Push the target Hadron Operator chart package, matching the given version, to the OCI registry.
+helmPushOperator version:
+    helm push charts/hadron-operator-{{version}}.tgz oci://ghcr.io/hadron-project/charts/ && \
+        rm charts/hadron-operator-{{version}}.tgz
+
+# Update the artifacthub-repo.yaml for ArtifactHub.
+helmUpdateArtifactHubRepo:
+    # See https://oras.land/ && https://github.com/oras-project/oras
+    oras push ghcr.io/hadron-project/charts/hadron-operator:artifacthub.io \
+        --manifest-config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+        charts/hadron-operator/artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
