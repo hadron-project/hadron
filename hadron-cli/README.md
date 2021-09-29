@@ -2,21 +2,13 @@ hadron-cli
 ==========
 The Hadron CLI.
 
-## Usage
-Given Hadron's deployment model, there are two ways to use this CLI: `Internal`ly within the Kubernetes cluster where Hadron itself is running, or `External`ly from outside of the cluster in which Hadron is running.
-
-### Internal
-This is the most simple approach, as long as access to the Kubernetes cluster is available. For this approach, simply execute a temporary pod using the Hadron CLI docker image.
+The best way to use the Hadron CLI is by launching a temporary pod inside of the Kubernetes cluster where your Hadron cluster is running. This makes access clean, simple, and secure because the credentials never need to leave the cluster. For a Stream named `events` deployed in the `default` namespace, and a Token named `app-token`, the following command will launch the Hadron CLI:
 
 ```bash
-kubectl run hadron-cli --rm -it --image ghcr.io/hadron-project/hadron/hadron-cli:latest
+kubectl run hadron-cli --rm -it \
+    --env HADRON_TOKEN=$(kubectl get secret app-token -o=jsonpath='{.data.token}' | base64 --decode) \
+    --env HADRON_URL="http://events.default.svc.cluster.local:7000" \
+    --image ghcr.io/hadron-project/hadron/hadron-cli:v0.1.0-beta.0
 ```
 
-### External
-For external use cases, the CLI will need to be invoked with `-e/--external`, and the URL used to connect to the cluster will depend upon how Hadron has been configured, either using `Ingress`es or `NodePort`s.
-
-#### Ingress
-Coming soon.
-
-#### NodePort
-Coming soon.
+Accessing Hadron from outside of the Kubernetes cluster is currently in progress, and details will be added here when ready.

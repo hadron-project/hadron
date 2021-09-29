@@ -1,17 +1,42 @@
-Hadron
-======
+<h1 align="center">Hadron</h1>
+<div align="center">
+
+[![Build Status](https://github.com/hadron-project/hadron/workflows/CI/badge.svg?branch=main)](https://github.com/hadron-project/hadron/actions)
+[![Build Status](https://github.com/hadron-project/hadron/workflows/Pages/badge.svg?branch=main)](https://github.com/hadron-project/hadron/actions)
+</div>
+<br/>
+
 Hadron is the Kubernetes native and CloudEvents native distributed event streaming, event orchestration & messaging platform.
 
-Hadron is built around three core primitives: durable streams, ephemeral messaging & RPC messaging. Durable streams offer configurable durability, and robust consumer patterns. Ephemeral messaging offers topic based publish/subscribe patterns with wildcards, fanout, load balancing queue groups, and more. RPC messaging offers request/response patterns for service-oriented architectures.
+Hadron is designed to ingest data in the form of events, and to facilitate working with that data in the form of multi-stage structured workflows.
 
-Hadron builds upon these core primitives to offer piplines. Pipelines are pre-defined multi-stage data workflows, structured as a graph. Pipelines provide transactional guarantees over ack'ing a stage's work and the delivery of the next stage's data. With Pipelines, Hadron provides a platform with better features, and greater guarantees for building distributed architectures.
+**⎈ Built for Kubernetes** - Hadron was born into the world of Kubernetes and is designed to leverage the Kubernetes platform to the max.
 
-Older AMQP style systems were great, but fall short of Kafka-like streaming capabilities, specifically message persistence. Kafka-like systems lack ephemeral & RPC messaging. More recent blends of the technologies, offer a nice combination, but lack many of the core features needed from both domains. Hadron offers the best of all of these paradigms, adds Pipelines for more powerful architectures, and is shipped as a single binary, written in Rust, with blazing speed, safety, and reliability.
+**📬 CloudEvents** - Hadron uses the CloudEvents model for everything going in and coming out.
 
-Hadron also features a very simple wire protocol based on protocol buffers for client-server communication. Hadron also ships with a powerful Rust client library for native use in Rust, or for use in any other language supporting C FFI. Language specific wrappers are (will be) maintained in various languages built around the core Rust implementation.
+**⚙️ Operational Simplicity** - Hadron leverages the Kubernetes platform for horizontal scaling, high availability, and ease of application integration.
 
-### Learn
-Head over to the [Hadron Guide](https://hadron-project.github.io/hadron/) to learn more.
+**📦 Easy Installation** - Deploy Hadron into your cluster with Helm, the Kubernetes package manager.
 
-### LICENSE
-Unless otherwise noted, the Hadron source files are distributed under the Apache Version 2.0 license found in the LICENSE file.
+## Getting Started
+Head over to the [Hadron Guide](https://hadron-project.github.io/hadron/) to learn more. A few quick links:
+- [Quick Start](https://hadron-project.github.io/hadron/overview/quick-start.html) - Hadron installation and quick start.
+- [Streams](https://hadron-project.github.io/hadron/overview/streams.html) - Append-only, immutable logs of data with absolute ordering per partition.
+- [Pipelines](https://hadron-project.github.io/hadron/overview/pipelines.html) - Workflow orchestration for data on Streams, providing structured concurrency for arbitrarily complex multi-stage workflows.
+- [Produces & Consumers](https://hadron-project.github.io/hadron/overview/producers-consumers.html) - Write data to and read data from Hadron.
+- [Clients](https://hadron-project.github.io/hadron/reference/clients.html) - All Hadron client libraries.
+- [CLI](https://hadron-project.github.io/hadron/reference/cli.html) - The Hadron CLI.
+
+## Examples
+Check out a few end-to-end code examples using Hadron:
+- [Pipeline TXP](https://github.com/hadron-project/hadron/tree/main/examples/pipeline-transactional-processing) - a demo application using Hadron Pipelines for transactional event processing. This is what Hadron was designed for and shows the power of modeling entire systems as workflow Pipelines.
+- [Stream TXP](https://github.com/hadron-project/hadron/tree/main/examples/stream-transactional-processing) - a demo application using Hadron Streams for transactional event processing. For folks coming from the Kafka world, this example is more directly relatable.
+
+---
+
+### License
+Hadron's licensing is still being finalized, however the ultimate licensing goals are simple:
+- Keep Hadron open source and available for anyone to use.
+- Only the team/company behind Hadron is allowed to offer Hadron as a hosted service for profit.
+
+Without that last licensing provision, Hadron would not survive as an open source project.
