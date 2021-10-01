@@ -8,7 +8,7 @@ The best way to use the Hadron CLI is by launching a temporary pod inside of the
 kubectl run hadron-cli --rm -it \
     --env HADRON_TOKEN=$(kubectl get secret app-token -o=jsonpath='{.data.token}' | base64 --decode) \
     --env HADRON_URL="http://events.default.svc.cluster.local:7000" \
-    --image ghcr.io/hadron-project/hadron/hadron-cli:v0.1.0-beta.0
+    --image ghcr.io/hadron-project/hadron/hadron-cli:latest
 ```
 
 Accessing Hadron from outside of the Kubernetes cluster is currently in progress, and details will be added here when ready.

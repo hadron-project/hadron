@@ -21,13 +21,16 @@ just helmUp
 # Get a Postgres database running in the cluster for application state.
 just helmUpPostgres
 
+# Apply Hadron example resources for the demo.
+just applyExample
+
 # Deploy our demo app.
 #
 # This will deploy all Hadron resources used by this example app.
 # Database schema migrations are handled by the app.
 #
 # The Hadron resources used are found here:
-# https://github.com/hadron-project/hadron/tree/v0.1.0-beta.0/charts/hadron-operator/examples/full.yaml
+# https://github.com/hadron-project/hadron/tree/main/charts/hadron-operator/examples/full.yaml
 just deployDemoApp
 
 # NOTE: if experimenting with the demo app, and you've made changes that

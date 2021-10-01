@@ -39,7 +39,7 @@ Time to implement. Our microservice will have a live subscription to our Stream 
 
 For cases where a new event was generated as part of the business logic, the out-table is already setup to ship these events over to Hadron.
 
-The code implementing this model can be found here: [examples/stream-transactional-processing](https://github.com/hadron-project/hadron/tree/v0.1.0-beta.0/examples/stream-transactional-processing).
+The code implementing this model can be found here: [examples/stream-transactional-processing](https://github.com/hadron-project/hadron/tree/main/examples/stream-transactional-processing).
 
 #### Pipeline Consumers
 For Pipeline consumers, the in-table needs four columns, `id`, `source`, `stage` and `output`. The in-table will have a compound primary key over the columns `id`, `source` and `stage`.
@@ -58,7 +58,7 @@ Let's do this. Our microservice will have a Pipeline stage subscription to whate
 
 With Pipelines, we are able to model all of the workflows of our applications, even spanning across multiple microservices, teams, and even system boundaries. Because Pipelines require an output event to be returned from stage consumers, we do not need an independent out-table process to ship these events over to Hadron.
 
-The code implementing this model can be found here: [examples/pipeline-transactional-processing](https://github.com/hadron-project/hadron/tree/v0.1.0-beta.0/examples/pipeline-transactional-processing).
+The code implementing this model can be found here: [examples/pipeline-transactional-processing](https://github.com/hadron-project/hadron/tree/main/examples/pipeline-transactional-processing).
 
 ### Next Steps
 Now that you've seen the algorithms for implementing a transactional processing models, it would be good to:
