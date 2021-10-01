@@ -260,7 +260,7 @@ impl Controller {
     /// Create a list params object which selects only objects which matching Hadron labels.
     fn list_params_cluster_selector_labels(&self) -> ListParams {
         ListParams {
-            label_selector: Some("app=hadron,hadron.rs/controlled-by=hadron-operator".into()),
+            label_selector: Some(hadron_core::HADRON_OPERATOR_LABEL_SELECTORS.into()),
             ..Default::default()
         }
     }

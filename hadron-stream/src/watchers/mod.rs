@@ -6,4 +6,4 @@ mod tokens;
 
 pub use pipelines::{PipelineWatcher, PipelinesMap};
 pub use stream::{StreamMetadataRx, StreamWatcher};
-pub use tokens::{TokensMap, TokensWatcher};
+pub use tokens::{SecretsMap, TokensMap, TokensWatcher};

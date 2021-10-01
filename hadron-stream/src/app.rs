@@ -12,7 +12,7 @@ use crate::config::Config;
 use crate::database::Database;
 use crate::server::AppServer;
 use crate::stream::StreamCtl;
-use crate::watchers::{PipelineWatcher, PipelinesMap, StreamWatcher, TokensMap, TokensWatcher};
+use crate::watchers::{PipelineWatcher, PipelinesMap, SecretsMap, StreamWatcher, TokensMap, TokensWatcher};
 
 /// The application object for when Hadron is running as a server.
 pub struct App {
@@ -25,6 +25,8 @@ pub struct App {
     _pipelines: PipelinesMap,
     /// A map of all known Token CRs in the namespace.
     _tokens: TokensMap,
+    /// A map of all known Secrets in the namespace belonging to Hadron.
+    _secrets: SecretsMap,
 
     /// A channel used for triggering graceful shutdown.
     shutdown_tx: broadcast::Sender<()>,
@@ -58,7 +60,7 @@ impl App {
             .context("error initializing K8s client")?;
 
         // Spawn various core tasks.
-        let (tokens, tokens_map) = TokensWatcher::new(client.clone(), config.clone(), shutdown_tx.subscribe());
+        let (tokens, tokens_map, secrets_map) = TokensWatcher::new(client.clone(), config.clone(), shutdown_tx.subscribe());
         let tokens_handle = tokens.spawn();
 
         let (stream_tx, stream_rx) = mpsc::channel(1000);
@@ -77,6 +79,7 @@ impl App {
             config.clone(),
             pipelines_map.clone(),
             tokens_map.clone(),
+            secrets_map.clone(),
             metadata_rx,
             shutdown_tx.clone(),
             stream_tx,
@@ -88,6 +91,7 @@ impl App {
             _config: config,
             _db: db,
             _tokens: tokens_map,
+            _secrets: secrets_map,
             _pipelines: pipelines_map,
             shutdown_rx: BroadcastStream::new(shutdown_rx),
             shutdown_tx,
