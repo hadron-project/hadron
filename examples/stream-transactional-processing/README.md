@@ -30,7 +30,7 @@ just applyExample
 # Database schema migrations are handled by the app.
 #
 # The Hadron resources used are found here:
-# https://github.com/hadron-project/hadron/tree/v0.1.0-beta.0/charts/hadron-operator/examples/full.yaml
+# https://github.com/hadron-project/hadron/tree/main/charts/hadron-operator/examples/full.yaml
 just deployDemoApp
 
 # NOTE: if experimenting with the demo app, and you've made changes that

@@ -20,11 +20,11 @@ kindLoadCli tag="latest":
     kind load docker-image --name hadron ghcr.io/hadron-project/hadron/hadron-cli:{{tag}}
 
 # Run the Hadron CLI within the kind cluster.
-runCli:
+runCli tag="latest" pullPolicy="IfNotPresent":
     kubectl --context="kind-hadron" run hadron-cli --rm -it \
         --env HADRON_TOKEN=$(kubectl get secret hadron-full-access -o=jsonpath='{.data.token}' | base64 --decode) \
         --env HADRON_URL="http://events.default.svc.cluster.local:7000" \
-        --image ghcr.io/hadron-project/hadron/hadron-cli:latest --image-pull-policy=Never
+        --image ghcr.io/hadron-project/hadron/hadron-cli:{{tag}} --image-pull-policy={{pullPolicy}}
 
 # Build the Hadron Operator docker image.
 buildOperator mode="debug" tag="latest":
@@ -61,9 +61,9 @@ kindLoadStream tag="latest":
     kind load docker-image --name hadron ghcr.io/hadron-project/hadron/hadron-stream:{{tag}}
 
 # Perform a upgrade --install of the Hadron chart into the kind cluster.
-helmUp tag="v0.1.0-beta.0":
+helmUp tag="latest" pull="IfNotPresent":
     helm --kube-context="kind-hadron" upgrade hadron-operator ./charts/hadron-operator -i \
-        --set container.image.tag={{tag}},container.image.pullPolicy=IfNotPresent
+        --set container.image.tag={{tag}},container.image.pullPolicy={{pull}}
 
 # Purge all Hadron data in the local kind cluster.
 helmPurge:

@@ -6,7 +6,7 @@ metadata:
 spec:
   partitions: 3
   debug: true
-  image: "ghcr.io/hadron-project/hadron/hadron-stream:v0.1.0-beta.0"
+  image: "ghcr.io/hadron-project/hadron/hadron-stream:latest"
   pvcVolumeSize: "5Gi"
   pvcAccessModes:
   - ReadWriteOnce

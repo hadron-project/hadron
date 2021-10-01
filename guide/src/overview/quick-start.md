@@ -39,7 +39,7 @@ metadata:
 spec:
   partitions: 3
   ttl: 0
-  image: ghcr.io/hadron-project/hadron/hadron-stream:v0.1.0-beta.0
+  image: ghcr.io/hadron-project/hadron/hadron-stream:latest
   pvcVolumeSize: "5Gi"
 ```
 
@@ -90,7 +90,7 @@ With the decoded token set as an environment variable, let's now run the CLI:
 kubectl run hadron-cli --rm -it \
     --env=HADRON_TOKEN=${HADRON_TOKEN} \
     --env=HADRON_URL='http://events.default.svc.cluster.local:7000' \
-    --image ghcr.io/hadron-project/hadron/hadron-cli:v0.1.0-beta.0
+    --image ghcr.io/hadron-project/hadron/hadron-cli:latest
 ```
 
 <!-- TODO: ensure image tag is live. -->

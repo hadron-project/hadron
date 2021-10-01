@@ -540,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "hadron-operator"
-version = "0.1.0"
+version = "0.1.0-beta.0"
 dependencies = [
  "anyhow",
  "axum",

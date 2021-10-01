@@ -6,7 +6,7 @@ authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
 
 [dependencies]
 anyhow = "1.0.44"
-hadron = { package = "hadron-client", version = "0.1.0-beta.0" }
+hadron = { package = "hadron-client", version = "0.1.0-beta.1" }
 sqlx = { version = "0.5", features = [ "runtime-tokio-rustls", "postgres", "offline" ] }
 tokio = { version = "1", default-features = false, features = [
     # See https://docs.rs/tokio/latest/tokio/#feature-flags

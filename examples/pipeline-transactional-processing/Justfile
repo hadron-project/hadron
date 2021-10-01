@@ -17,7 +17,6 @@ buildDemoApp tag="latest" mode="debug":
 
 # Deploy the demo app & all needed Hadron resources.
 deployDemoApp:
-    just ../../ applyExample
     kubectl --context="kind-hadron" apply -f deployment.yaml
 
 # Deploy the Hadron Operator.
