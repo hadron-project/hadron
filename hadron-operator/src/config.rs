@@ -3,7 +3,6 @@
 use std::io::BufReader;
 
 use anyhow::{Context, Result};
-use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer};
 use tokio_rustls::rustls::{internal::pemfile, Certificate, PrivateKey};
@@ -32,13 +31,6 @@ pub struct Config {
     /// To ensure stable cluster leadership, a 10 seconds renew rate is currently recommended.
     pub lease_renew_seconds: u32,
 
-    /// The JWT encoding key.
-    #[serde(deserialize_with = "Config::parse_encoding_key")]
-    pub jwt_encoding_key: EncodingKey,
-    /// The JWT decoding key, along with its original base64 encoded form.
-    #[serde(deserialize_with = "Config::parse_decoding_key")]
-    pub jwt_decoding_key: (DecodingKey<'static>, String),
-
     /// The webhook server's TLS certificate, PEM encoded.
     #[serde(deserialize_with = "Config::parse_webhook_cert")]
     pub webhook_cert: (Vec<Certificate>, String),
@@ -56,28 +48,6 @@ impl Config {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Result<Self> {
         envy::from_env().context("error building config from env")
-    }
-
-    // /// The cluster's TLS config, if any.
-    // pub fn tls_config(&self) -> Option<()> {
-    //     None
-    // }
-
-    /// Parse the encoding key from the config source.
-    fn parse_encoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<EncodingKey, D::Error> {
-        let b64_bytes: String = Deserialize::deserialize(val)?;
-        let bytes = base64::decode(&b64_bytes).map_err(|err| DeError::custom(err.to_string()))?;
-        EncodingKey::from_rsa_pem(&bytes).map_err(|err| DeError::custom(err.to_string()))
-    }
-
-    /// Parse the decoding key from the config source.
-    fn parse_decoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<(DecodingKey<'static>, String), D::Error> {
-        let b64_bytes: String = Deserialize::deserialize(val)?;
-        let bytes = base64::decode(&b64_bytes).map_err(|err| DeError::custom(err.to_string()))?;
-        let key = DecodingKey::from_rsa_pem(&bytes)
-            .map_err(|err| DeError::custom(err.to_string()))
-            .map(|val| val.into_static())?;
-        Ok((key, b64_bytes))
     }
 
     /// Parse the given base64 encoded webhook cert.

@@ -1,9 +1,7 @@
 //! Runtime configuration.
 
 use anyhow::{Context, Result};
-use jsonwebtoken::DecodingKey;
-use serde::de::Error as DeError;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 /// Runtime configuration data.
 #[derive(Clone, Debug, Deserialize)]
@@ -32,10 +30,6 @@ pub struct Config {
     /// The path to the database on disk.
     #[serde(default = "crate::database::default_data_path")]
     pub storage_data_path: String,
-
-    /// The JWT decoding key.
-    #[serde(deserialize_with = "Config::parse_decoding_key")]
-    pub jwt_decoding_key: DecodingKey<'static>,
 }
 
 impl Config {
@@ -54,14 +48,5 @@ impl Config {
             .and_then(|offset_str| offset_str.parse().ok())
             .context("invalid pod name, expected offset suffix at the end of the name")?;
         Ok(config)
-    }
-
-    /// Parse the decoding key from the config source.
-    fn parse_decoding_key<'de, D: Deserializer<'de>>(val: D) -> Result<DecodingKey<'static>, D::Error> {
-        let b64_bytes: String = Deserialize::deserialize(val)?;
-        let bytes = base64::decode(&b64_bytes).map_err(|err| DeError::custom(err.to_string()))?;
-        DecodingKey::from_rsa_pem(&bytes)
-            .map_err(|err| DeError::custom(err.to_string()))
-            .map(|val| val.into_static())
     }
 }

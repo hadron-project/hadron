@@ -21,13 +21,13 @@ spec:
   - hadron-operator-webhooks.{{ .Values.namespace | default .Release.Namespace }}.svc
   - hadron-operator-webhooks.{{ .Values.namespace | default .Release.Namespace }}.svc.cluster.local
   issuerRef:
-    name: hadron-webhooks
+    name: hadron-issuer
 
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: hadron-webhooks
+  name: hadron-issuer
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
     {{- include "chart.labels" . | indent 4 }}

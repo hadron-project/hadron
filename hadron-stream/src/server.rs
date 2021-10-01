@@ -13,7 +13,7 @@ use crate::error::{AppError, AppErrorExt, RpcResult};
 use crate::grpc;
 use crate::pipeline::PipelineCtlMsg;
 use crate::stream::StreamCtlMsg;
-use crate::watchers::{PipelinesMap, StreamMetadataRx, TokensMap};
+use crate::watchers::{PipelinesMap, SecretsMap, StreamMetadataRx, TokensMap};
 use hadron_core::auth;
 use hadron_core::crd::Token;
 
@@ -27,6 +27,8 @@ pub struct AppServer {
     pipelines: PipelinesMap,
     /// A map of all known Token CRs in the namespace.
     tokens: TokensMap,
+    /// A map of all known Secrets in the namespace belonging to Hadron.
+    secrets: SecretsMap,
     /// A channel of stream metadata for connection info.
     metadata_rx: StreamMetadataRx,
 
@@ -40,13 +42,14 @@ pub struct AppServer {
 impl AppServer {
     /// Create a new instance.
     pub fn new(
-        config: Arc<Config>, pipelines: PipelinesMap, tokens: TokensMap, metadata_rx: StreamMetadataRx, shutdown: broadcast::Sender<()>,
-        stream_tx: mpsc::Sender<StreamCtlMsg>,
+        config: Arc<Config>, pipelines: PipelinesMap, tokens: TokensMap, secrets: SecretsMap, metadata_rx: StreamMetadataRx,
+        shutdown: broadcast::Sender<()>, stream_tx: mpsc::Sender<StreamCtlMsg>,
     ) -> Self {
         Self {
             config,
             pipelines,
             tokens,
+            secrets,
             metadata_rx,
             shutdown,
             stream_tx,
@@ -72,21 +75,25 @@ impl AppServer {
     }
 
     /// Extract the given request's auth token, else fail.
-    fn must_get_token<T>(&self, req: &Request<T>) -> Result<auth::TokenCredentials> {
+    fn must_get_token<T>(&self, req: &Request<T>) -> Result<auth::UnverifiedTokenCredentials> {
         // Extract the authorization header.
         let header_val = req
             .metadata()
             .get("authorization")
             .cloned()
             .ok_or(AppError::Unauthorized)?;
-        auth::TokenCredentials::from_auth_header(header_val, &self.config.jwt_decoding_key)
+        auth::UnverifiedTokenCredentials::from_auth_header(header_val)
     }
 
-    /// Get the given token's claims, else return an auth error.
-    #[allow(clippy::ptr_arg)]
-    pub fn must_get_token_claims(&self, token_id: &String) -> Result<Arc<Token>> {
-        match self.tokens.as_ref().load().get(token_id).cloned() {
-            Some(claims) => Ok(claims),
+    /// Get the given token's claims, cryptographically verifying the claims, else return an auth error.
+    pub fn must_get_token_claims(&self, token: auth::UnverifiedTokenCredentials) -> Result<(Arc<Token>, auth::TokenCredentials)> {
+        let secret = match self.secrets.as_ref().load().get(&token.claims.sub).cloned() {
+            Some(secret) => secret,
+            None => return Err(AppError::UnknownToken.into()),
+        };
+        let token = token.verify(secret.key())?;
+        match self.tokens.as_ref().load().get(&token.claims.sub).cloned() {
+            Some(claims) => Ok((claims, token)),
             None => Err(AppError::UnknownToken.into()),
         }
     }
@@ -116,7 +123,7 @@ impl grpc::StreamController for AppServer {
     /// Open a metadata stream.
     async fn metadata(&self, request: Request<grpc::MetadataRequest>) -> RpcResult<Response<Self::MetadataStream>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
-        let _claims = self.must_get_token_claims(&creds.claims.sub).map_err(AppError::grpc)?;
+        let _claims = self.must_get_token_claims(creds).map_err(AppError::grpc)?;
 
         let (res_tx, res_rx) = mpsc::channel(1);
         let mut metadata_rx = WatchStream::new(self.metadata_rx.clone());
@@ -144,7 +151,7 @@ impl grpc::StreamController for AppServer {
     /// Open a stream publisher channel.
     async fn stream_publish(&self, request: Request<grpc::StreamPublishRequest>) -> RpcResult<Response<grpc::StreamPublishResponse>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
-        let claims = self.must_get_token_claims(&creds.claims.sub).map_err(AppError::grpc)?;
+        let (claims, _creds) = self.must_get_token_claims(creds).map_err(AppError::grpc)?;
         claims.check_stream_pub_auth(&self.config.stream).map_err(AppError::grpc)?;
 
         let (tx, rx) = oneshot::channel();
@@ -161,7 +168,7 @@ impl grpc::StreamController for AppServer {
     /// Open a stream subscriber channel.
     async fn stream_subscribe(&self, request: Request<Streaming<grpc::StreamSubscribeRequest>>) -> RpcResult<Response<Self::StreamSubscribeStream>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
-        let claims = self.must_get_token_claims(&creds.claims.sub).map_err(AppError::grpc)?;
+        let (claims, _creds) = self.must_get_token_claims(creds).map_err(AppError::grpc)?;
         claims.check_stream_sub_auth(&self.config.stream).map_err(AppError::grpc)?;
 
         // Await initial setup payload and forward it along to the controller.
@@ -194,7 +201,7 @@ impl grpc::StreamController for AppServer {
         &self, request: Request<Streaming<grpc::PipelineSubscribeRequest>>,
     ) -> RpcResult<Response<Self::PipelineSubscribeStream>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
-        let claims = self.must_get_token_claims(&creds.claims.sub).map_err(AppError::grpc)?;
+        let (claims, _creds) = self.must_get_token_claims(creds).map_err(AppError::grpc)?;
         claims.check_stream_sub_auth(&self.config.stream).map_err(AppError::grpc)?;
 
         // Await initial setup payload and use it to find the target controller.

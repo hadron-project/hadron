@@ -6,8 +6,6 @@
 ## {{ required "required value .Values.container.env.logging" .Values.container.env.logging }}
 ## {{ required "required value .Values.container.env.lease.durationSeconds" .Values.container.env.lease.durationSeconds }}
 ## {{ required "required value .Values.container.env.lease.renewSeconds" .Values.container.env.lease.renewSeconds }}
-## {{ required "required value .Values.container.env.jwt.encodingKey" .Values.container.env.jwt.encodingKey }}
-## {{ required "required value .Values.container.env.jwt.decodingKey" .Values.container.env.jwt.decodingKey }}
 ## {{ required "required value .Values.container.env.vaw.webhookCert" .Values.container.env.vaw.webhookCert }}
 ## {{ required "required value .Values.container.env.vaw.webhookKey" .Values.container.env.vaw.webhookKey }}
 
@@ -86,11 +84,6 @@ spec:
             value: {{ .Values.container.env.lease.durationSeconds | quote }}
           - name: LEASE_RENEW_SECONDS
             value: {{ .Values.container.env.lease.renewSeconds | quote }}
-
-          - name: JWT_ENCODING_KEY
-{{ .Values.container.env.jwt.encodingKey | toYaml | indent 12 }}
-          - name: JWT_DECODING_KEY
-{{ .Values.container.env.jwt.decodingKey | toYaml | indent 12 }}
 
           - name: WEBHOOK_CERT
 {{ .Values.container.env.vaw.webhookCert | toYaml | indent 12 }}

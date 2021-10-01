@@ -25,6 +25,7 @@ kube = { version = "0.59", default-features = false, features = ["admission", "d
 kube-runtime = { version = "0.59", default-features = false }
 maplit = "1"
 prost = "0.8"
+ring = "0.16"
 serde = { version="1", features = ["derive"] }
 tokio = { version = "1", default-features = false, features = [
     # See https://docs.rs/tokio/latest/tokio/#feature-flags

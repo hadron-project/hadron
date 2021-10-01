@@ -49,3 +49,8 @@ rules:
     - "streams"
     - "streams/status"
   verbs: ["get", "list", "watch"]
+# This rule allows for watching secrets, which is needed for extracting HMAC keys
+# for establishing the veracity of JWTs presented for authentication.
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]

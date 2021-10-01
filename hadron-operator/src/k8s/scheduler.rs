@@ -36,6 +36,7 @@ use k8s_openapi::api::core::v1::{
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+use k8s_openapi::ByteString;
 use kube::api::{Api, ListParams, ObjectMeta, Patch, PatchParams};
 use kube::Resource;
 use tokio::time::timeout;
@@ -59,8 +60,6 @@ const LABEL_K8S_STS_POD_NAME: &str = "statefulset.kubernetes.io/pod-name";
 const LABEL_HADRON_RS_STREAM: &str = "hadron.rs/stream";
 /// The canonical Hadron label identifying a StatefulSet.
 const LABEL_HADRON_RS_STS: &str = "hadron.rs/statefulset";
-/// The secret key used for storing a generated JWT.
-const SECRET_KEY_TOKEN: &str = "token";
 /// The location where stream controllers place their data.
 const STREAM_DATA_PATH: &str = "/usr/local/hadron-stream/data";
 /// The port used by clients to connect to Stream StatefulSets.
@@ -698,11 +697,6 @@ impl Controller {
                             value: Some(STREAM_DATA_PATH.into()),
                             ..Default::default()
                         },
-                        EnvVar {
-                            name: "JWT_DECODING_KEY".into(),
-                            value: Some(self.config.jwt_decoding_key.1.clone()),
-                            ..Default::default()
-                        },
                     ]),
                     volume_mounts: Some(vec![VolumeMount {
                         name: "data".into(),
@@ -797,16 +791,18 @@ impl Controller {
         }
 
         // Secret does not exist. Mint a new JWT & create the backing secret.
+        let rng = ring::rand::SystemRandom::new();
+        let key_value: [u8; ring::digest::SHA512_OUTPUT_LEN * 2] = ring::rand::generate(&rng)
+            .context("error generating key for JWT")?
+            .expose();
+        let encoding_key = jsonwebtoken::EncodingKey::from_secret(&key_value);
         let claims = TokenClaims::new(name.as_str());
-        let jwt = claims
-            .encode(&self.config.jwt_encoding_key)
-            .context("error encoding claims as JWT")?;
+        let jwt = claims.encode(&encoding_key).context("error encoding claims as JWT")?;
 
         let mut secret = Secret::default();
-        secret
-            .string_data
-            .get_or_insert_with(Default::default)
-            .insert(SECRET_KEY_TOKEN.into(), jwt);
+        let data = secret.data.get_or_insert_with(Default::default);
+        data.insert(hadron_core::auth::SECRET_KEY_TOKEN.into(), ByteString(jwt.into()));
+        data.insert(hadron_core::auth::SECRET_HMAC_KEY.into(), ByteString(key_value.into()));
         secret.meta_mut().name = Some(name.as_ref().clone());
         secret.meta_mut().namespace = Some(self.config.namespace.clone());
 

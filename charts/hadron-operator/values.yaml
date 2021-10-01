@@ -60,29 +60,6 @@ container:
       ## The duration that a lease holder will retry refreshing lease.
       renewSeconds: 10
 
-    ## JWT Config
-    jwt:
-      ## The value to use for referencing the JWT encoding key. Will be inlined as YAML.
-      ## Should have a single key `value` or `valueFrom`. EG:
-      ## ```
-      ## encodingKey:
-      ##   valueFrom:
-      ##     secretKeyRef:
-      ##       name: secret-123
-      ##       key: encodingKey
-      ## ```
-      encodingKey: null
-      ## The value to use for referencing the JWT decoding key. Will be inlined as YAML.
-      ## Should have a single key `value` or `valueFrom`. EG:
-      ## ```
-      ## decodingKey:
-      ##   valueFrom:
-      ##     secretKeyRef:
-      ##       name: secret-123
-      ##       key: ecodingKey
-      ## ```
-      decodingKey: null
-
     ## VAW Config
     vaw:
       ## The value to use for the VAW webhook cert. Will be inlined as YAML.

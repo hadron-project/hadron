@@ -8,13 +8,10 @@ use futures::prelude::*;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tonic::transport::Server as TonicServer;
-use tonic::Request;
 
 use crate::config::Config;
 use crate::grpc;
 use crate::server::webhook::WebhookServer;
-use hadron_core::auth;
-use hadron_core::error::AppError;
 
 /// Application server.
 pub struct AppServer {
@@ -72,30 +69,6 @@ impl AppServer {
                 }
             }
         }))
-    }
-
-    /// Extract the given request's auth token, else fail.
-    #[allow(dead_code)]
-    fn must_get_token<T>(&self, req: &Request<T>) -> Result<auth::TokenCredentials> {
-        // Extract the authorization header.
-        let header_val = req
-            .metadata()
-            .get("authorization")
-            .cloned()
-            .ok_or(AppError::Unauthorized)?;
-        auth::TokenCredentials::from_auth_header(header_val, &self.config.jwt_decoding_key.0)
-    }
-
-    /// Extract the given request's basic auth, else fail.
-    #[allow(dead_code)]
-    fn must_get_user<T>(&self, req: &Request<T>) -> Result<auth::UserCredentials> {
-        // Extract the authorization header.
-        let header_val = req
-            .metadata()
-            .get("authorization")
-            .cloned()
-            .ok_or(AppError::Unauthorized)?;
-        auth::UserCredentials::from_auth_header(header_val)
     }
 }
 
