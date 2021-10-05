@@ -8,6 +8,7 @@ Before getting started, it is expected that you have the following tools install
 - [kind](https://kind.sigs.k8s.io/docs/)
 - [docker](https://docs.docker.com/get-docker/)
 
+Now, execute the following commands to get the demo app up and running.
 ```sh
 # Create the kind development cluster used for development in this repo.
 just kindCreateCluster
@@ -22,15 +23,12 @@ just helmUp
 just helmUpPostgres
 
 # Apply Hadron example resources for the demo.
-just applyExample
-
-# Deploy our demo app.
-#
-# This will deploy all Hadron resources used by this example app.
-# Database schema migrations are handled by the app.
 #
 # The Hadron resources used are found here:
 # https://github.com/hadron-project/hadron/tree/main/charts/hadron-operator/examples/full.yaml
+just applyExample
+
+# Deploy our demo app.
 just deployDemoApp
 
 # NOTE: if experimenting with the demo app, and you've made changes that
