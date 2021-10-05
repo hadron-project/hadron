@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="../usecases/service-provisioning.html" class="active"><strong aria-hidden="true">9.</strong> Service Provisioning</a></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/tokens.html"><strong aria-hidden="true">10.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/exchanges.html"><strong aria-hidden="true">13.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../reference/endpoints.html"><strong aria-hidden="true">14.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../reference/clients.html"><strong aria-hidden="true">15.</strong> Clients</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">16.</strong> CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../overview/quick-start.html"><strong aria-hidden="true">1.1.</strong> Quick Start</a></li></ol></li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="../usecases/local-development.html"><strong aria-hidden="true">9.</strong> Local Development</a></li><li class="chapter-item expanded "><a href="../usecases/service-provisioning.html" class="active"><strong aria-hidden="true">10.</strong> Service Provisioning</a></li><li class="chapter-item expanded "><a href="../usecases/transactional-processing.html"><strong aria-hidden="true">11.</strong> Transactional Processing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../usecases/transactional-processing/learn.html"><strong aria-hidden="true">11.1.</strong> What is Transactional Processing</a></li><li class="chapter-item expanded "><a href="../usecases/transactional-processing/implement.html"><strong aria-hidden="true">11.2.</strong> Implement Transactional Processing</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/tokens.html"><strong aria-hidden="true">12.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">13.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">14.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/exchanges.html"><strong aria-hidden="true">15.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../reference/endpoints.html"><strong aria-hidden="true">16.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../reference/clients.html"><strong aria-hidden="true">17.</strong> Clients</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">18.</strong> CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -164,42 +164,44 @@
                 <div id="content" class="content">
                     <main>
                         <h1><a class="header" href="#use-case-service-provisioning" id="use-case-service-provisioning">Use Case: Service Provisioning</a></h1>
+<p>This use case assumes some familiarity with Hadron. It is recommended to have at least read the <a href="../overview/quick-start.html">Quick Start</a> chapter before continuing here.</p>
 <h3><a class="header" href="#getting-started" id="getting-started">Getting Started</a></h3>
 <p>We've joined a new company, ExampleCloud, which offers a service where customers may provision various types of storage systems in the cloud. Though conceptually simple, there are lots of individual stages in this workflow, each of which will take different amounts of time to complete, and all having different failure conditions and data requirements.</p>
 <p>With Hadron, defining a Pipeline to model this workflow is simple:</p>
-<pre><code class="language-yaml">---
-apiVersion: hadron.rs/v1beta1
-kind: Stream
-metadata:
-  name: events
-spec:
-  partitions: 3
-
----
-apiVersion: hadron.rs/v1beta1
+<pre><code class="language-yaml">apiVersion: hadron.rs/v1beta1
 kind: Pipeline
 metadata:
   name: service-creation
 spec:
+  # The source Stream of this Pipeline.
   sourceStream: events
+  # Event types which trigger this Pipeline.
   triggers:
     - service.created
+  # When first created, the position of the Source stream to start from.
+  startPoint:
+    location: beginning
+  # Maximum number of parallel executions per stage.
+  maxParallel: 50
   stages:
+    # Deploy the customer's service in Kubernetes.
     - name: deploy-service
 </code></pre>
-<p>Here we've define a Stream called <code>events</code> and a Pipeline called <code>service-creation</code> to model this workflow. Hadron uses this config to generate resources within its cluster to store and process the data for this new Stream and Pipeline.</p>
+<p><small><i>The existance of the Stream <code>events</code> is assumed, review <a href="../overview/quick-start.html">Quick Start</a> chapter for details.</i></small></p>
+<p>Here we've defined a Pipeline called <code>service-creation</code> to model this workflow. Hadron uses this config to generate resources within its cluster to store and process the data for this new Pipeline. As show above, we can even document the purpose and expectations of or workflow stages.</p>
 <p>With this configuration, any time our ExampleCloud application publishes a new event of type <code>service.created</code> to our Stream <code>events</code>, Hadron will automatically trigger a new Pipeline execution which will pass that new event through the Pipeline stages defined above (right now, only 1 stage).</p>
 <h3><a class="header" href="#client-setup" id="client-setup">Client Setup</a></h3>
-<p>To get started, we will create a program which uses the Hadron Client to publish events of type <code>service.created</code> to our Stream <code>events</code>, and then we will also create a subscription to our new Pipeline which will process the stage <code>deploy-service</code>.</p>
+<p>Next let's create a program which uses the Hadron Client to publish events of type <code>service.created</code> to our Stream <code>events</code>, and then we will also create a subscription to our new Pipeline which will process the stage <code>deploy-service</code>.</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// Event producer which publishes events to stream `events`.
-let client = hadron::Client::new(&quot;cluster.url:7000&quot;, /* ... */)?;
+let client = hadron::Client::new(&quot;http://events.default:7000&quot;, /* ... params ... */)?;
 let publisher = client.publisher(&quot;example-cloud-app&quot;).await?;
 
-// Publish a new event based on application logic.
-publisher.publish(new_event).await?;
+// Publish a new event based on some application logic.
+let event = hadron::NewEvent { /* ... snip ... */ };
+publisher.publish(event).await?;
 <span class="boring">}
 </span></code></pre></pre>
 <pre><pre class="playground"><code class="language-rust">
@@ -209,27 +211,34 @@ publisher.publish(new_event).await?;
 client.pipeline(&quot;service-creation&quot;, &quot;deploy-service&quot;, deploy_handler);
 <span class="boring">}
 </span></code></pre></pre>
-<p>Awesome! The consumer code (the function <code>deploy_handler</code> above) can do whatever it wants. The only requirement is that when it is done, it must return a <code>Result&lt;NewEvent, Error&gt;</code> — that is, it must return an output event for success, or an error for failure cases (resulting in a retry).</p>
+<p>Awesome! The consumer code of <code>deploy_handler</code> shown above can do whatever it wants. The only requirement is that when it is done, it must return a <code>Result&lt;NewEvent, Error&gt;</code> — that is, it must return an output event for success, or an error for failure cases (resulting in a retry).</p>
 <p>Client disconnects will trigger retries. Errors will be tracked by Hadron and exposed for monitoring. Output events from successful processing of stages are persisted to disk. Once a stage is completed successfully for an event, that stage will never be executed again for the same event.</p>
 <h3><a class="header" href="#new-requirements" id="new-requirements">New Requirements</a></h3>
-<p>Things are going well at our new company. Service creation is trucking along, deploying services for customers, and life is good. However, as it turns out, there are a few important steps which we've neglected, and our boss would like to have that fixed.</p>
+<p>Things are going well at our new company. Service creation is trucking along, and life is good. However, as it turns out, there are a few important steps which we've neglected, and our boss would like to have that fixed.</p>
 <p>First, we forgot to actually charge the customer for their new services. Company isn't going to survive long unless we start charging, so we'll need to add a new stage to our Pipeline to handle that logic.</p>
 <p>Next, customers have expressed that they would really like to know the state of their service, so once their service has been deployed, we'll need to deploy some monitoring for it. Let's add a new stage for that as well.</p>
 <p>Finally, customers are also saying that it would be great to receive a notification once their service is ready. Same thing, new stage.</p>
 <p>With all of that, we'll update the Pipeline's stages section to look like this:</p>
 <pre><code class="language-yaml">  stages:
+    # Deploy the customer's service in Kubernetes.
     - name: deploy-service
+
+    # Setup billing for the customer's new service.
     - name: setup-billing
       dependencies: [&quot;deploy-service&quot;]
+
+    # Setup monitoring for the customer's new service.
     - name: setup-monitoring
       dependencies: [&quot;deploy-service&quot;]
+
+    # Notify the user that their service is deployed and ready.
     - name: notify-user
       dependencies: [&quot;deploy-service&quot;]
 </code></pre>
 <p>Pretty simple, but let's break this down. First, the original <code>deploy-service</code> stage is still there and unchanged. Next, we've added our 3 new stages <code>setup-billing</code>, <code>setup-monitoring</code>, and <code>notify-user</code>. There are a few important things to note here:</p>
 <ul>
 <li>Each of the new stages depends upon <code>deploy-service</code>. This means that they will not be executed until <code>deploy-service</code> has completed successfully and produced an output event.</li>
-<li>Once <code>deploy-service</code> has completed successfully, our next 3 stages will be executed in parallel. Each stage will receive a copy of the root event which triggered this Pipeline execution, as well as a copy of the output event of any stages declared as a dependency.</li>
+<li>Once <code>deploy-service</code> has completed successfully, our next 3 stages will be executed in parallel. Each stage will receive a copy of the root event which triggered this Pipeline execution, as well as a copy of the output event from the <code>deploy-service</code> stage.</li>
 </ul>
 <p>This compositional property of Hadron Pipelines sets it apart from the crowd as a powerful data processing and data integration system.</p>
 <p>Given that we've added new stages to our Pipeline, we need to add some new stage consumers to actually handle this logic. This is nearly identical to our consumer for <code>deploy-service</code>, really only the business logic in the handler will be different for each.</p>
@@ -241,31 +250,46 @@ client.pipeline(&quot;service-creation&quot;, &quot;setup-monitoring&quot;, moni
 client.pipeline(&quot;service-creation&quot;, &quot;notify-user&quot;, notify_handler).await?;
 <span class="boring">}
 </span></code></pre></pre>
-<h3><a class="header" href="#analytics" id="analytics">Analytics</a></h3>
-<p>The team is quite happy with the ease of extending our Pipeline and adding new stage consumers. However, the company has continued to grow, and we've agreed that some deeper analytics would be great as a final touch.</p>
-<p>In this case, we would like to evaluate execution time, errors, re-delivery rates, and other such metadata on our stage handlers. Let's add a new stage to our Pipeline.</p>
-<pre><code class="language-yaml">    - name: analytics
+<h3><a class="header" href="#synchronization" id="synchronization">Synchronization</a></h3>
+<p>A subtle, yet very impactful aspect of doing parallel processing is synchronization. How do we guard against conflicting states? How do we prevent invalid actions?</p>
+<p>At ExampleCloud, we want to provide the best experience for our users. As such, we will add one more stage to our Pipeline which we will use to synchronize the system. Here is the new stage:</p>
+<pre><code class="language-yaml">    # Synchronize the state of the system.
+    #
+    # - Update tables using the event data from all of the upstream stages.
+    # - Update the state of the new service in the database so that the
+    #   user can upgrade, resize, or otherwise modify the service safely.
+    - name: sync
       dependencies:
         - deploy-service
         - setup-billing
         - setup-monitoring
         - notify-user
 </code></pre>
-<p>The <code>analytics</code> stage we've defined here will integrate the data signal from all previous stages in the Pipeline, receiving a copy of the root event and output events of each stage. With all of this data, we can generate metrics based on event metadata or even application specific data within each event.</p>
-<p>The sky is the limit. If needed, we could transactionally materialize this data into a traditional RDBMS like PostgreSQL, or we could ship this data over to other systems for graphing, metrics, alerting and the like. As we've seen, adding new stages to a Pipeline is straightforward. Backfilling stages to take place earlier in a Pipeline's workflow is possible, and even adding that output as a dependency to other existing stages is fully backwards compatible.</p>
+<p>The <code>sync</code> stage we've defined here will integrate the data signal from all previous stages in the Pipeline, receiving a copy of the root event and output events of each stage. There is a lot that we can do with this data, but here are a few important things that we should do:</p>
+<ul>
+<li>Update the state of the user's new service in our database. This will ensure that users see the finished state of their services in our fancy ExampleCloud API and UI.</li>
+<li>With this small amount of synchronization, we can prevent race conditions in our system by simply not allowing certain actions to be taken on a service when it is in the middle of a Pipeline.</li>
+</ul>
+<h3><a class="header" href="#next-steps" id="next-steps">Next Steps</a></h3>
+<p>From here, we could begin to model other workflows in our system as independent Pipelines triggered from different event types. Examples might be:</p>
+<ul>
+<li><strong>Upgrade a service:</strong> maybe the user needs a bigger or smaller service. There are plenty of granular tasks involved in making this happen, which is perfect for Pipelines.</li>
+<li><strong>Delete a service:</strong> resources originally created and associated with a service may live in a few different microservices. Have each microservice process a different stage for their own service deletion routines as part of a new Pipeline specifically for deleting services.</li>
+</ul>
+<p>See the <a href="./transactional-processing.html">Use Case: Transactional Processing</a> for more details on how to build powerful stateful systems while still leveraging the benefits of an event-driven architecture.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../overview/producers-consumers.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../usecases/local-development.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
 
                         
-                            <a rel="next" href="../reference/tokens.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="../usecases/transactional-processing.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -277,13 +301,13 @@ client.pipeline(&quot;service-creation&quot;, &quot;notify-user&quot;, notify_ha
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../overview/producers-consumers.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../usecases/local-development.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 
 
                 
-                    <a rel="next" href="../reference/tokens.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="../usecases/transactional-processing.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 

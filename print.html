@@ -97,7 +97,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="usecases/service-provisioning.html"><strong aria-hidden="true">9.</strong> Service Provisioning</a></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/tokens.html"><strong aria-hidden="true">10.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="reference/exchanges.html"><strong aria-hidden="true">13.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="reference/endpoints.html"><strong aria-hidden="true">14.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="reference/clients.html"><strong aria-hidden="true">15.</strong> Clients</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">16.</strong> CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="overview/quick-start.html"><strong aria-hidden="true">1.1.</strong> Quick Start</a></li></ol></li><li class="chapter-item expanded "><a href="overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="usecases/local-development.html"><strong aria-hidden="true">9.</strong> Local Development</a></li><li class="chapter-item expanded "><a href="usecases/service-provisioning.html"><strong aria-hidden="true">10.</strong> Service Provisioning</a></li><li class="chapter-item expanded "><a href="usecases/transactional-processing.html"><strong aria-hidden="true">11.</strong> Transactional Processing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="usecases/transactional-processing/learn.html"><strong aria-hidden="true">11.1.</strong> What is Transactional Processing</a></li><li class="chapter-item expanded "><a href="usecases/transactional-processing/implement.html"><strong aria-hidden="true">11.2.</strong> Implement Transactional Processing</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/tokens.html"><strong aria-hidden="true">12.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="reference/streams.html"><strong aria-hidden="true">13.</strong> Streams</a></li><li class="chapter-item expanded "><a href="reference/pipelines.html"><strong aria-hidden="true">14.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="reference/exchanges.html"><strong aria-hidden="true">15.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="reference/endpoints.html"><strong aria-hidden="true">16.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="reference/clients.html"><strong aria-hidden="true">17.</strong> Clients</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">18.</strong> CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -166,20 +166,100 @@
                 <div id="content" class="content">
                     <main>
                         <h1><a class="header" href="#introduction" id="introduction">Introduction</a></h1>
-<p>Hadron is a distributed data storage system designed to rapidly ingest large amounts of data, and to facilitate working with that data in the form of arbitrarily complex structured workflows.</p>
+<p>Hadron is a distributed data storage system designed to ingest data in the form of events, and to facilitate working with that data in the form of multi-stage structured workflows.</p>
 <p>Building distributed applications can be tough. Teams might have tens, hundreds or even thousands of microservices. Platforms may have thousands of data signals ranging from business critical application events, to telemetry signals including logs, tracing, metrics and the like. All of this data is important, and now more than ever teams need a way to not only capture this data, but also to work with this data in a scalable and extensible way.</p>
 <p>Hadron offers a powerful solution to these problems using the following primitives:</p>
 <ul>
 <li><strong>Events</strong> - all data going into and coming out of Hadron is structured in the form of events.</li>
 <li><strong>Streams</strong> - durable logs for storing arbitrary data, with absolute ordering and horizontal scalability.</li>
-<li><strong>Pipelines</strong> - workflow orchestration for data on Streams, providing structured concurrency for arbitrarily complex multi-stage tasks.</li>
-<li><strong>Exchanges</strong> - ephemeral messaging hubs used to exchange non-durable events between processes, perfect for GraphQL Subscriptions, WebSockets, Push Notifications and the like.</li>
+<li><strong>Pipelines</strong> - workflow orchestration for data on Streams, providing structured concurrency for arbitrarily complex multi-stage structured workflows.</li>
+<li><strong>Exchanges</strong> - ephemeral messaging used to exchange non-durable events between processes, perfect for GraphQL Subscriptions, WebSockets, Push Notifications and the like.</li>
 <li><strong>Endpoints</strong> - general-purpose RPC handlers for leveraging Hadron's powerful networking capabilities.</li>
-<li><strong>Producers</strong> - client processes connected to Hadron, written in any language, working to produce and publish data to Hadron.</li>
+<li><strong>Producers</strong> - client processes connected to Hadron, written in any language, working to publish data to Hadron.</li>
 <li><strong>Consumers</strong> - client processes connected to Hadron, written in any language, working to consume data from Streams, process Pipeline stages, consume ephemeral messages from Exchanges, or even handle RPC Endpoints.</li>
 </ul>
-<p>Hadron was born into the world of Kubernetes, and Kubernetes is a core assumption in the Hadron operational model. See the next section for more details.</p>
-<p>For a use case demonstrating the power of these components working together, head on over to <a href="./usecases/service-provisioning.html">Use Case: Service Provisioning</a>.</p>
+<p>Hadron was born into the world of Kubernetes, and Kubernetes is a core expection in the Hadron operational model. To learn more about how Hadron leverages the Kubernetes platform, go to <a href="./overview/kubernetes.html">the Kubernetes chapter</a> of this guide.</p>
+<p>The next chapter of this guide will walk you through the process of getting Hadron up and running. See you there.</p>
+<h1><a class="header" href="#quick-start" id="quick-start">Quick Start</a></h1>
+<p>Hadron is designed to run within a Kubernetes cluster. This chapter will bring you up-to-speed on everything you need to know to start running your own Hadron clusters.</p>
+<h3><a class="header" href="#kubernetes" id="kubernetes">Kubernetes</a></h3>
+<p>If you already have Kubernetes clusters, then choose a cluster to use. Starting with a development oriented cluster or namespace is typically a good idea. If you do not have a Kubernetes cluster available for use, then you have a few options:</p>
+<ul>
+<li>Get warmed up to Kubernetes using <a href="https://kind.sigs.k8s.io/">Kind</a> - a tool for running local Kubernetes clusters using Docker container “nodes”. The <a href="overview/../usecases/local-development.html">Use Case: Local Development</a> in this guide is a great way to get started with Hadron and Kind for local development.</li>
+<li>Managed Kubernetes. Every cloud provider has a managed Kubernetes offering, take your pick.</li>
+<li><strong>The Hadron Collider</strong> — our hosted Hadron Cloud <strong><em>(under construction).</em></strong> The only hosted and fully managed Hadron solution. Pick your cloud, pick your region, and start using Hadron. The Hadron Cloud offers deep integrations with major cloud providers, and is the best way to get started with Hadron.</li>
+</ul>
+<p><a href="https://helm.sh/">Helm</a> is the package manager for Kubernetes, and it will need to be installed and available for command-line usage to get started. If you've been using Kubernetes for any amount of time, then you are probably already using helm.</p>
+<h3><a class="header" href="#installation" id="installation">Installation</a></h3>
+<p>Before we install the Hadron Operator, we are going to install <a href="https://cert-manager.io/">cert-manager</a>. Though cert-manager is not required by Hadron, it does greatly simplify the setup of TLS certificates, which Hadron uses for its validating webhooks. Instead of manually crafting our own certs, we'll stick with cert-manager.</p>
+<pre><code class="language-sh">helm repo add jetstack https://charts.jetstack.io
+helm upgrade cert-manager jetstack/cert-manager --install --set installCRDs=true
+</code></pre>
+<p>Now we are ready to install the Hadron Operator:</p>
+<pre><code># Helm &gt;= v3.7.0 is required for OCI usage.
+helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.0
+</code></pre>
+<p>This will install the Hadron Operator along with roles, service accounts, validating webhooks, and other Kubernetes resources which the Operator requires.</p>
+<h3><a class="header" href="#create-a-stream" id="create-a-stream">Create a Stream</a></h3>
+<p>You are now ready to create a Stream. Create a file <code>stream.yaml</code> with the following contents:</p>
+<pre><code class="language-yaml">apiVersion: hadron.rs/v1beta1
+kind: Stream
+metadata:
+  name: events
+spec:
+  partitions: 3
+  ttl: 0
+  image: ghcr.io/hadron-project/hadron/hadron-stream:latest
+  pvcVolumeSize: &quot;5Gi&quot;
+</code></pre>
+<!-- TODO: ensure image tag is live. -->
+<p>See the <a href="overview/../reference/streams.html">Stream Reference</a> for more details on the spec fields listed above, as well as other config options available for Streams. Now apply the file to your Kubernetes cluster as shown below using the <code>kubectl</code> CLI (part of the Kubernetes distribution).</p>
+<pre><code class="language-sh">kubectl apply -f stream.yaml
+</code></pre>
+<p>In this example, we are applying the Stream CR instance as an independent Kubernetes manifest. For production usage and long-term maintainability, it is recommended to include your Hadron manifests as part of a helm chart which will likely include other Streams, Pipelines and Tokens.</p>
+<p>Applying this resource to your cluster will result in the creation of a Kubernetes StatefulSet bearing the same name, along with the creation of a few Kubernetes Services.</p>
+<h3><a class="header" href="#create-a-token" id="create-a-token">Create a Token</a></h3>
+<p>In order to access the resources of a Hadron cluster, a Token CR must be created describing a set of permissions for the bearer of the Token. Create a file <code>token.yaml</code> with the following contents:</p>
+<pre><code class="language-yaml">apiVersion: hadron.rs/v1beta1
+kind: Token
+metadata:
+  name: hadron-full-access
+spec:
+  all: true
+</code></pre>
+<p>See the <a href="overview/../reference/tokens.html">Token Reference</a> for more details on the spec of Hadron Tokens. Now apply the file to your Kubernetes cluster as shown below.</p>
+<pre><code class="language-sh">kubectl apply -f token.yaml
+</code></pre>
+<p>Applying this resource to your cluster will result in the creation of a Kubernetes Secret in the same namespace bearing the same name. The generated secret may be mounted and used as an env var for your application deployments and the like, or it may be used by the Hadron CLI for cluster access.</p>
+<h3><a class="header" href="#cli-access" id="cli-access">CLI Access</a></h3>
+<p>Now that we've defined a Stream along with a Token to allow us to access that Stream, we are ready to start publishing and consuming data.</p>
+<p>First, let's get a copy of the Token's generated Secret (the actual JWT) for later use. We will use <code>kubectl</code> to extract the value of the secret:</p>
+<pre><code class="language-sh">HADRON_TOKEN=$(kubectl get secret hadron-full-access -o jsonpath='{.data.token}' | base64 --decode)
+</code></pre>
+<p>With the decoded token set as an environment variable, let's now run the CLI:</p>
+<pre><code class="language-sh">kubectl run hadron-cli --rm -it \
+    --env=HADRON_TOKEN=${HADRON_TOKEN} \
+    --env=HADRON_URL='http://events.default.svc.cluster.local:7000' \
+    --image ghcr.io/hadron-project/hadron/hadron-cli:latest
+</code></pre>
+<!-- TODO: ensure image tag is live. -->
+<p>Here we are running a temporary pod which will be removed from the Kubernetes cluster when disconnected. Once the pod session is started, you should see the help text of the CLI displayed, and then you should have access to the shell prompt.</p>
+<p>From here, we can execute CLI commands to interact with our new Stream. Let's publish a simple event:</p>
+<pre><code class="language-sh">hadron stream pub --subject demo --type example.event '{&quot;demo&quot;: &quot;live&quot;}'
+</code></pre>
+<p>This will publish a simple event as a JSON blob. Publishing of binary events, such as protobuf, is also fully supported. Let's create a consumer to read this event.</p>
+<pre><code class="language-sh">hadron stream sub --group demo --start-beginning
+</code></pre>
+<p>You should see some output which looks like:</p>
+<pre><code class="language-sh">INFO hadron_cli::cmd::stream::sub: handling subscription delivery id=1 source=/example.hadron.rs/events/2 specversion=1.0 type=example.event subject=demo optattrs={} data='{&quot;demo&quot;: &quot;live&quot;}'
+</code></pre>
+<h3><a class="header" href="#wrapping-up" id="wrapping-up">Wrapping Up</a></h3>
+<p>This example shows the most basic usage of Hadron. From here, the next logical steps might be:</p>
+<ul>
+<li><strong>Continue reading:</strong> learn more about how Hadron leverages the Kubernetes platform in the next chapter of this guide.</li>
+<li><strong>Define Pipelines:</strong> start modeling your application workflows as code using Pipelines. See the <a href="overview/../usecases/service-provisioning.html">Use Case: Service Provisioning</a> for deeper exploration on this topic.</li>
+<li><strong>Application Integration:</strong> go to the <a href="overview/../usecases/local-development.html">Use Case: Local Development</a> for more details on how to integrate with Hadron.</li>
+</ul>
 <h1><a class="header" href="#hadron--kubernetes" id="hadron--kubernetes">Hadron &amp; Kubernetes</a></h1>
 <blockquote>
 <p>Kubernetes, also known as K8s, is an open-source system for automating deployment, scaling, and management of containerized applications.
@@ -189,11 +269,16 @@
 <p>Hadron is designed from the ground up to take full advantage of Kubernetes and its rich API for deploying and running applications. Building upon this foundation has enabled Hadron to achieve an operational model with a simple setup, which removes performance bottlenecks, simplifies clustering and consensus, provides predictable and clear scalability, and positions Hadron for seamless and intuitive integration with user applications and infrastructure.</p>
 <p>Each of the above points merits deeper discussion, all of which are covered in further detail throughout the reference section of this guide. Here are the highlights.</p>
 <h3><a class="header" href="#simple-setup" id="simple-setup">Simple Setup</a></h3>
-<p>Most usage of Hadron will start with the Hadron Helm chart. The chart installs the Hadron Operator along with various other resources. Everything related to Hadron operations is handled by the Operator and is driven via Kubernetes configuration files. Provisioning, auto-scaling, networking, access control, all of this is controlled through a few lines of YAML which can be versioned in source control and reviewed as code.</p>
-<p>The entire lifecycle of Hadron clusters is handled by the Operator. Upgrading a cluster to a new version of Hadron, horizontally scaling a cluster, adding credentials and access control, all of this and more is declarative and fully managed, which means no operational headaches for users.</p>
+<p>Everything related to Hadron operations is handled by the Operator and is driven via Kubernetes configuration files. Provisioning, auto-scaling, networking, access control, all of this is controlled through a few lines of YAML which can be versioned in source control and reviewed as code.</p>
+<p>The Hadron Operator handles the entire lifecycle of Hadron clusters, including:</p>
+<ul>
+<li>upgrading a cluster to a new version of Hadron,</li>
+<li>horizontally scaling a cluster,</li>
+<li>adding credentials and access control to a cluster,</li>
+</ul>
+<p>All of this and more is declarative and fully managed, which means less operational burden for users.</p>
 <h3><a class="header" href="#removing-performance-bottlenecks" id="removing-performance-bottlenecks">Removing Performance Bottlenecks</a></h3>
-<p>Kubernetes offers deployment models which allow Hadron to completely remove the need for its own distributed consensus algorithms in many cases, especially on the write path of publishing data to streams. Without this overhead, Hadron is able to optimize write throughput, replication, and other performance criteria in ways which would not otherwise be feasible.</p>
-<p>These wins come with no downsides. Horizontally scaling a cluster is still fully dynamic, clients are still able to detect cluster topology changes in real-time as they take place, but most importantly: the path which data takes from the moment of publication to the moment it is persisted to disk is direct and simple. No extra network hops. No overhead. Just an HTTP2 data stream directly from the client to the Hadron internal function which writes data to disk. All with absolute ordering per partition.</p>
+<p>Horizontally scaling a Hadron cluster is fully dynamic, clients are able to detect cluster topology changes in real-time as they take place, and very importantly: the path which data takes from the moment of publication to the moment it is persisted to disk is direct and simple. No extra network hops. No overhead. Just an HTTP2 data stream directly from the client to a Hadron partition's internal function which writes data to disk.</p>
 <h3><a class="header" href="#seamless-and-intuitive-integration" id="seamless-and-intuitive-integration">Seamless and Intuitive Integration</a></h3>
 <p>Hadron clusters are exposed for application and infrastructure integration using canonical Kubernetes patterns for networking and access. Clients receive a stream of cluster metadata and can react in real-time to topology changes to maximize use of horizontal scaling and high-availability.</p>
 <p>If your applications are already running in Kubernetes, then integration couldn't be more simple.</p>
@@ -202,65 +287,68 @@
 <p>A specification for describing event data in a common way
 <br/><small><i>~ <a href="https://cloudevents.io/">cloudevents.io</a></i></small></p>
 </blockquote>
-<p>Events are everywhere. Everything is an event. As humans have continued to work with event-driven data streams, we've accumulated many best practices on how to model our data in a reliable, extensible, and intuitive way. CloudEvents is at the heart of this movement, and also happens to be at the very core of Hadron.</p>
-<p>Everything in Hadron is an event, a CloudEvents 1.0 event. Streams, Pipeline inputs and outputs for workflow orchestration, ephemeral messages, everything in Hadron is built around the CloudEvents model.</p>
-<h3><a class="header" href="#ease-of-use" id="ease-of-use">Ease of Use</a></h3>
+<p>Events are everywhere. Everything is an event. As the industry has continued to work with event-driven data streams, we've accumulated many best practices on how to model our data in a reliable, extensible, and intuitive way. CloudEvents is at the heart of this movement, and also happens to be at the very core of Hadron.</p>
+<p>Everything in Hadron is an event, a CloudEvents 1.0 event. Streams, Pipeline inputs and outputs, ephemeral messages, everything in Hadron is built around the CloudEvents model.</p>
+<h4><a class="header" href="#ease-of-use" id="ease-of-use">Ease of Use</a></h4>
 <p>Hadron events are well-structured, easy to analyze, and prime for automation and application usage.</p>
-<h3><a class="header" href="#interoperable" id="interoperable">Interoperable</a></h3>
+<h4><a class="header" href="#interoperable" id="interoperable">Interoperable</a></h4>
 <p>Hadron is positioned from the very beginning to integrate seamlessly with the greater event-driven ecosystem.</p>
-<h3><a class="header" href="#ready-to-go" id="ready-to-go">Ready to Go</a></h3>
-<p>Hadron clients speak CloudEvents fluently. Publishing data to, and consuming data from Hadron is clear, concise, and has broad general-purpose application.</p>
+<h4><a class="header" href="#ready-to-go" id="ready-to-go">Ready to Go</a></h4>
+<p>Hadron clients speak CloudEvents fluently. Publishing data to, and consuming data from Hadron is clear, concise, and covers a wide range of applications.</p>
 <h1><a class="header" href="#streams" id="streams">Streams</a></h1>
 <p>Streams are append-only, immutable logs of data with absolute ordering per partition.</p>
-<p>Streams are deployed as independent StatefulSets within a Kubernetes cluster, based purely on a Stream CRD (YAML config) stored in Kubernetes. Each pod of the StatefulSet acts as the leader of a partition of its Stream. Kubernetes guarantees the identity, stable storage and stable network address of each pod. When replication is enabled for a Stream, replication is based on a deterministic algorithm and does not require leadership or consensus given these powerful identity properties from the StatefulSet building block.</p>
+<p>Streams are deployed as independent StatefulSets within a Kubernetes cluster, based purely on a Stream CRD (YAML) stored in Kubernetes.</p>
+<p>Each pod of a Stream's StatefulSet acts as a leader of its own partition. Kubernetes guarantees the identity, stable storage and stable network address of each pod. Replication is based on a deterministic algorithm and does not require consensus due to these powerful identity and stability properties.</p>
 <h3><a class="header" href="#scaling" id="scaling">Scaling</a></h3>
-<p>Streams can be horizontally scaled based on the Stream's CRD. Scaling a Stream to add new partitions will cause the Hadron Operator to scale the corresponding StatefulSet, which ultimately adds a matching number of pods.</p>
-<p>Each pod constitutes an independent container process with its own set of system resources (CPU, RAM, storage), all of which will span different underlying virtual or hardware nodes (OS hoststs) of the underlying Kubernetes cluster. This helps to ensure availability of the Stream.</p>
+<p>Streams can be horizontally scaled based on the Stream's CRD. Scaling a Stream to add new partitions will cause the Hadron Operator to scale the corresponding StatefulSet.</p>
+<p>Each pod constitutes an independent container process with its own set of system resources (CPU, RAM, storage), all of which will span different underlying virtual or hardware nodes (OS hoststs) of the Kubernetes cluster. This helps to ensure availability of the Stream.</p>
 <h3><a class="header" href="#high-availability-ha" id="high-availability-ha">High Availability (HA)</a></h3>
 <p>In Hadron, the availability of a Stream is reckoned as a whole. If any partition of the Stream is alive and running, then the Stream is available. The temporary loss of an individual partition does not render the Stream overall as being unavailable.</p>
-<p>This is a powerful property of Hadron, and is an intentional design decision which the Hadron ecosystem builds upon. Hadron clients automatically monitor the topology of the connected Hadron cluster, and will establish connections to new partitions as they become available, and will failover to healthy partitions when others become unhealthy. Hashing to specific partitions based on the <code>subject</code> of an event or event batch is still the norm, however clients also dynamically take into account the state of connections as part of that procedure.</p>
+<p>This is a powerful property of Hadron, and is an intentional design decision which the Hadron ecosystem builds upon.</p>
+<p>Hadron clients automatically monitor the topology of the connected Hadron cluster, and will establish connections to new partitions as they become available, and will failover to healthy partitions when others become unhealthy. Hashing to specific partitions based on the <code>subject</code> of an event or event batch is still the norm, however clients also dynamically take into account the state of connections as part of that procedure.</p>
 <h3><a class="header" href="#producers" id="producers">Producers</a></h3>
-<p>Hadron clients which produce and publish data to a Hadron Stream (or other component) are considered to be Producers. Stream Producers establish durable long-lived connections to all partitions of a Stream, and will publish data to specific partitions based on hashing the <code>subject</code> of an event or event batch.</p>
+<p>Hadron clients which publish data to a Hadron Stream are considered to be Producers. Stream Producers establish durable long-lived connections to all partitions of a Stream, and will publish data to specific partitions based on hashing the <code>subject</code> of an event or event batch.</p>
 <h3><a class="header" href="#consumers" id="consumers">Consumers</a></h3>
-<p>Hadron clients which consume data from a Stream (or other component) are considered to be Consumers. Stream Consumers establish durable long-lived connections to all partitions of a Stream, and consume data from all partitions. Every event consumed includes details on the ID of the event as well as the partition from which it came. This combination establishes uniqueness, and also happens to be a core facet of the CloudEvents ecosystem.</p>
+<p>Hadron clients which consume data from a Stream are considered to be Consumers. Stream Consumers establish durable long-lived connections to all partitions of a Stream, and consume data from all partitions.</p>
+<p>Every event consumed includes details on the ID of the event as well as the partition from which it came. This combination establishes uniqueness, and also happens to be a core facet of the CloudEvents ecosystem.</p>
 <p>Consuming data from a Stream is transactional in nature, and the lifetime of any transaction is tied to the client's connection to the corresponding Stream partition. If a Consumer's connection is ever lost, then any outstanding deliveries to that Consumer are considered to have failed and will ultimately be delivered to another Consumer for processing.</p>
 <h4><a class="header" href="#groups" id="groups">Groups</a></h4>
-<p>Stream Consumers may form groups. Groups are used to load-balance work across multiple processes working together as a logical Consumer.</p>
-<p>All consumers must declare a group when they first establish a connection to the backing Stream partitions. When multiple consumers claim to be participating in a group bearing the same name, then they are implicitly members of the same group.</p>
+<p>Stream Consumers may form groups. Groups are used to load-balance work across multiple processes working together as a logical unit.</p>
+<p>All consumers must declare their group name when they first establish a connection to the backing Stream partitions. When multiple consumers connect to the Hadron cluster bearing the same group name, then they are treated as members of the same group.</p>
 <h4><a class="header" href="#durable-or-ephemeral" id="durable-or-ephemeral">Durable or Ephemeral</a></h4>
 <p>Stream Consumers may be durable or ephemeral. Durable groups will have their progress recorded on each respective Stream partition. Ephemeral groups only have their progress tracked in memory, which is erased once all group members disconnect per partition.</p>
 <h1><a class="header" href="#pipelines" id="pipelines">Pipelines</a></h1>
-<p>Pipelines are workflow definitions for data on Streams, providing structured concurrency for arbitrarily complex multi-stage tasks.</p>
+<p>Pipelines are workflow orchestration for data on Streams, providing structured concurrency for arbitrarily complex multi-stage workflows.</p>
 <p>Pipelines exist side by side with their source Stream, and Streams may have any number of associated Pipelines. Pipelines are triggered for execution when an event published to a Stream has an event <code>type</code> which matches one of the trigger patterns of an associated Pipeline.</p>
 <h3><a class="header" href="#why" id="why">Why</a></h3>
 <p>So, why do Pipelines exist, and what are they for?</p>
-<p>Practically speaking, as software systems grow, they will inevitibly require sequences of tasks to be executed, usually in some logical ordering, and often times these tasks will cross system/service/microservice boundaries. When a system is young, such workflows might be simple, and may involve only one or two stages — such as making an API call and then emailing a user. However, as the system evolves, these workflows will grow in the number of stages, and ordering may become difficult.</p>
-<p>When companies are young, these asynchronous tasks may be implicit. They exist in code, but their actual role in the system overall may be easily forgotten, and tracking down individual functions for these tasks may not be easy. The workflow may not even have a name.</p>
-<p>Pipelines offer a way to name these workflows, to define them as declarative specifications so that they can be versioned and reviewed. Pipelines are a way to avoid sprawl, confusion, and to bring clarity to how a software system actually operates at the highest levels.</p>
-<p>Pipelines can be used to define the entire logical composition of a company's software systems. No more unnamed workflows which exist only as tribal knowledge in the minds of a few developers. No more grueling debug sessions where the first few hours are spent just trying to trace an implicit, unnamed, multi-stage workflow across multiple microservices.</p>
+<p>Practically speaking, as software systems grow, they will inevitibly require sequences of tasks to be executed, usually according to some logical ordering, and often times these tasks will cross system/service/microservice boundaries.</p>
+<p>When a system is young, such workflows are often simple, unnamed, and involve only one or two stages. As the system evolves, these workflows will grow in the number of stages, and orchestration often becomes more difficult.</p>
+<p>Pipelines offer a way to name these workflows, to define them as code so that they can be versioned and reviewed. Pipelines are a way to avoid sprawl, confusion, and to bring clarity to how a software system actually functions.</p>
+<p>Pipelines can be used to define the entire logical composition of a company's software systems. A specification of a system's functionality.</p>
 <h3><a class="header" href="#scaling--high-availability" id="scaling--high-availability">Scaling &amp; High Availability</a></h3>
 <p>Pipelines exist side by side with their source Stream. All scaling and availability properties of the source Stream apply to any and all Pipelines associated with that Stream. See the <a href="overview/./streams.html">Streams Overview</a> for more details on these properties.</p>
 <h3><a class="header" href="#publishers" id="publishers">Publishers</a></h3>
-<p>Pipelines do not have their own direct mechanism for publishing data to a Pipeline. Instead, data is published to the Pipeline's source Stream, and when an event on that source Stream has a <code>type</code> field which matches one of the Pipeline's trigger patterns, then a new Pipeline execution will be started with that event as the &quot;root event&quot; of the Pipeline execution.</p>
+<p>Pipelines do not have their own direct mechanism for publishing data to a Pipeline. Instead, data is published to the Pipeline's source Stream, and when an event on that source Stream has a <code>type</code> field which matches one of the Pipeline's <code>triggers</code>, then a new Pipeline execution will be started with that event as the &quot;root event&quot; of the Pipeline execution.</p>
 <h3><a class="header" href="#triggers" id="triggers">Triggers</a></h3>
 <p>Every Pipeline may be declared with zero or more <code>triggers</code>. When an event is published to a Pipeline's source Stream, its <code>type</code> field will be compared to each of the matcher patterns in the Pipeline's <code>triggers</code> list. If any match is found, then a new Pipeline execution will begin for that event.</p>
 <p>If a Pipeline is declared without any <code>triggers</code>, or with a trigger which is an empty string (<code>&quot;&quot;</code>), then it will match every event published to its source Stream.</p>
 <h3><a class="header" href="#consumers-1" id="consumers-1">Consumers</a></h3>
 <p>Pipelines are consumed in terms of their stages. As Hadron client programs register as Pipeline consumers, they are required to speciy the stage of the Pipeline which they intend to process. All Pipeline consumers form an implicit group per stage.</p>
 <h3><a class="header" href="#pipeline-evolution" id="pipeline-evolution">Pipeline Evolution</a></h3>
-<p>As software systems evolve over time, it is inevitible that Pipelines will also evolve. Pipelines may be safely updated in many different ways, the only dangerous update is to remove a Pipeline's stage. Doing so should ALWAYS be considered to result in data loss. These semantics may change in the future, however it is best avoided.</p>
-<p>Barring removal of Pipeline stages, most other updates are perfectly safe and encouraged. Adding new stages, changing dependencies and ordering, all of this is perfectly fine and expected.</p>
+<p>As software systems evolve over time, it is inevitible that Pipelines will also evolve. Pipelines may be safely updated in many different ways. The only dangerous update is to remove a Pipeline's stage. Doing so should ALWAYS be considered to result in data loss. These semantics may change in the future, however it is best avoided.</p>
+<p>Adding new stages, changing dependencies, changing stage ordering, all of these changes are safe and Hadron will handle them as expected. See the next section below for best practices on how to make such changes.</p>
 <p>There is no renaming of Pipeline stages, this is tantamount to deleting a stage and adding a new stage with a different name.</p>
-<h4><a class="header" href="#updating-consumers" id="updating-consumers">Updating Consumers</a></h4>
+<h4><a class="header" href="#best-practices" id="best-practices">Best Practices</a></h4>
 <p>As Pipelines evolve, users should take care to ensure that their applications have been updated to process any new stages added to the Pipeline. Hadron makes this very simple:</p>
 <ul>
 <li>Before applying the changes to the Pipeline which adds new stages, first update the application's Pipeline consumers.</li>
 <li>Add a consumer for any new stages.</li>
-<li>Deploy the new application code. The new consumers will log errors as they attempt to connect, as Hadron will reject the consumer registry until the new stages are applied to the Pipeline. This is perfectly fine, and will not crash the application code. Hadron will simply back off, and retry the connection again soon.</li>
+<li>Deploy the new application code. The new consumers will log errors as they attempt to connect, as Hadron will reject the consumer registry until the new stages are applied to the Pipeline. This is expected, and will not crash the client application. The client will simply back off, and retry the connection again soon.</li>
 <li>Now it is safe to apply the changes to the Pipeline.</li>
 </ul>
 <p>In essence: add your Pipeline stage consumers first.</p>
-<p>If this protocol is not adhered to, then the only danger is that the Pipeline will eventually stop making progress, as too many parallel executions will remain in an uncomplete state as they wait for the new Pipeline stages to be processed. Avoid this by deploying your updated application code first.</p>
+<p>If this protocol is not adhered to, then the only danger is that the Pipeline will eventually stop making progress, as too many parallel executions will remain in an incomplete state as they wait for the new Pipeline stages to be processed. Avoid this by deploying your updated application code first.</p>
 <h1><a class="header" href="#exchanges" id="exchanges">Exchanges</a></h1>
 <p>These docs are currently under construction.</p>
 <ul>
@@ -272,52 +360,171 @@
 <p>These docs are currently under construction.</p>
 <ul>
 <li>an abstraction built directly on top of gRPC,</li>
-<li>can be thought of as something similar to brokered gRPC,</li>
+<li>can be thought of as something similar to proxied gRPC,</li>
 <li>clients are configured with automatic serialization &amp; deserialization for nearly identical look and feel of plain old gRPC,</li>
 </ul>
 <h1><a class="header" href="#producers--consumers" id="producers--consumers">Producers &amp; Consumers</a></h1>
-<p>Hadron clients which produce and publish data to a Stream, an Exchange or an Endpoint are considered to be Producers. Hadron clients which consume data from a Stream, an Exchange or an Endpoint are considered to be Consumers.</p>
+<p><small><i>These terms can be interchanged with Publisher and Subscriber respectively.</i></small></p>
+<p>Hadron clients which publish data to Streams, Exchanges or Endpoints are considered to be Producers. Hadron clients which consume data from Streams, Pipelines, Exchanges or Endpoints are considered to be Consumers.</p>
 <p>Producers and Consumers establish durable long-lived connections to backend components in the target Hadron cluster, which helps to avoid unnecessary setup and teardown of network connections.</p>
 <p>Producers and Consumers typically exist as user defined code within larger applications. However, they may also exist as open source projects which run independently based on runtime configuration, acting as standalone components, often times both producing and consuming data. The latter are typically referred to as Connectors.</p>
-<p>Producers and Consumers may be created in any language. The Hadron team maintains a common Rust client which is used as the shared foundation for clients written in other languages, which provides maximum performance and safety across the ecosystem. The Hadron team also maintains the Hadron CLI, which is based upon the Rust client and which can be used for basic production and consumption of data from Hadron.</p>
-<p>Producer and Consumer behavior varies depending on where data is being published to or consumed from, whether for Streams, Exchanges or for RPC Endpoints. Each respective section of the guide contains further details on these differences.</p>
-<h1><a class="header" href="#use-case-service-provisioning" id="use-case-service-provisioning">Use Case: Service Provisioning</a></h1>
-<h3><a class="header" href="#getting-started" id="getting-started">Getting Started</a></h3>
-<p>We've joined a new company, ExampleCloud, which offers a service where customers may provision various types of storage systems in the cloud. Though conceptually simple, there are lots of individual stages in this workflow, each of which will take different amounts of time to complete, and all having different failure conditions and data requirements.</p>
-<p>With Hadron, defining a Pipeline to model this workflow is simple:</p>
-<pre><code class="language-yaml">---
-apiVersion: hadron.rs/v1beta1
+<p>Producers and Consumers may be created in any language. The Hadron team maintains a common Rust client which is used as the shared foundation for clients written in other languages, which provides maximum performance and safety across the ecosystem.</p>
+<p>The Hadron team also maintains the Hadron CLI, which is based upon the Rust client and which can be used for basic production and consumption of data from Hadron.</p>
+<h1><a class="header" href="#local-development" id="local-development">Local Development</a></h1>
+<p>Let's get started with Hadron for local application development using Kubernetes and Kind.</p>
+<p><a href="https://kind.sigs.k8s.io/">Kind</a> is a tool for running local Kubernetes clusters using Docker container “nodes” and is the easiest way to get started with Kubernetes.</p>
+<h3><a class="header" href="#install-kind" id="install-kind">Install Kind</a></h3>
+<p>Follow the instructions in the <a href="https://kind.sigs.k8s.io/docs/user/quick-start/#installation">Kind installation guide</a> to ensure kind is installed locally and ready for use.</p>
+<p>Next, create a cluster.</p>
+<pre><code class="language-sh">kind create cluster
+</code></pre>
+<p>Once your cluster is up and running, you are ready to move on to the next step.</p>
+<h3><a class="header" href="#install-hadron" id="install-hadron">Install Hadron</a></h3>
+<p><a href="https://helm.sh/">Helm</a> is the package manager for Kubernetes, and it will need to be installed and available for command-line usage for this use case. If you've been using Kubernetes for any amount of time, then you are probably already using helm.</p>
+<p>Before we install the Hadron Operator, we are going to install <a href="https://cert-manager.io/">cert-manager</a>. Though cert-manager is not required by Hadron, it does greatly simplify the setup of TLS certificates, which Hadron uses for its validating webhooks. Instead of manually crafting our own certs, we'll stick with cert-manager.</p>
+<pre><code class="language-sh">helm repo add jetstack https://charts.jetstack.io
+helm upgrade cert-manager jetstack/cert-manager --install --set installCRDs=true
+</code></pre>
+<p>Now we are ready to install the Hadron Operator:</p>
+<pre><code># Helm &gt;= v3.7.0 is required for OCI usage.
+helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.0
+</code></pre>
+<h3><a class="header" href="#install-example-resources" id="install-example-resources">Install Example Resources</a></h3>
+<p>For this use case, let's use the example resources found in the Hadron repo. <a href="https://raw.githubusercontent.com/hadron-project/hadron/tree/main/charts/hadron-operator/examples/full.yaml">Here is the code</a>.</p>
+<p>Apply the code to the cluster:</p>
+<pre><code class="language-sh">wget -qO- https://raw.githubusercontent.com/hadron-project/hadron/tree/main/charts/hadron-operator/examples/full.yaml | kubectl apply -f -
+</code></pre>
+<p>The example file is about 75 lines of code, so here we will only show the names and types of the resources for brevity.</p>
+<pre><code class="language-yaml">apiVersion: hadron.rs/v1beta1
 kind: Stream
 metadata:
   name: events
-spec:
-  partitions: 3
+  ...
 
 ---
 apiVersion: hadron.rs/v1beta1
 kind: Pipeline
 metadata:
   name: service-creation
+# ...
+
+---
+apiVersion: hadron.rs/v1beta1
+kind: Token
+metadata:
+  name: hadron-full-access
+# ...
+
+---
+apiVersion: hadron.rs/v1beta1
+kind: Token
+metadata:
+  name: hadron-read-only
+# ...
+
+---
+apiVersion: hadron.rs/v1beta1
+kind: Token
+metadata:
+  name: hadron-read-write
+# ...
+</code></pre>
+<p>This example code defines a Stream, a Pipeline associated with that Stream, and 3 Tokens which can be used to experiment with Hadron's authentication and authorization system.</p>
+<h3><a class="header" href="#application-integration" id="application-integration">Application Integration</a></h3>
+<p>Integrating you application with Hadron involves three simple steps:</p>
+<ul>
+<li>Add the Hadron client as an application dependency. This is language dependent. In Rust, simply add <code>hadron-client = &quot;0.1.0-beta.0&quot;</code> to the <code>[dependencies]</code> section of your <code>Cargo.toml</code>.</li>
+<li>Next, determine the access token which your application will use. For this use case, we'll use the <code>hadron-full-access</code> Token.</li>
+<li>Finally, we need the URL to use for connecting to the Hadron Stream. This is always deterministic based on the name of the Stream itself, and follows the pattern: <code>http://{streamName}.{namespaceName}.svc.{clusterApex}:7000</code>.
+<ul>
+<li><code>{streamName}</code> is <code>events</code>,</li>
+<li><code>{namespaceName}</code> is <code>default</code>,</li>
+<li><code>{clusterApex}</code> defaults to <code>cluster.local</code> in Kubernetes,</li>
+<li>which all works out to <code>http://events.default.svc.cluster.local:7000</code>,</li>
+<li>for details on how to connect from outside of the Kubernetes cluster, see the <a href="usecases/../reference/streams.html">Streams reference</a>.</li>
+</ul>
+</li>
+</ul>
+<p>Now that we have this info, let's define a Kubernetes Deployment which uses this info. In this case we will just be using the Hadron CLI to establish Stream subscriptions, but it will sufficiently demonstrate how to integrate an application using these details.</p>
+<p>Create a file called <code>deployment.yaml</code> with the following contents:</p>
+<pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-client
+  namespace: default
 spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo-client
+  template:
+    metadata:
+      labels:
+        app: demo-client
+    spec:
+      containers:
+      - name: cli
+        image: ghcr.io/hadron-project/hadron/hadron-cli:latest
+        command: [&quot;hadron&quot;, &quot;stream&quot;, &quot;sub&quot;, &quot;--group=demo-client&quot;, &quot;--start-beginning&quot;]
+        env:
+        - name: HADRON_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hadron-full-access
+              key: token
+        - name: HADRON_URL
+          value: http://events.default.svc.cluster.local:7000
+</code></pre>
+<p>Now apply this file to the cluster:</p>
+<pre><code class="language-sh">kubectl apply -f deployment.yaml
+</code></pre>
+<p>This will create a new deployment, with 3 replicas, and each replica pod will be running an instance of the Hadron CLI. The CLI will create a subscription to all partitions of the Stream <code>events</code>, and will print the contents of each event it receives and will then <code>ack</code> the event.</p>
+<h3><a class="header" href="#next-steps" id="next-steps">Next Steps</a></h3>
+<p>From here, some good next steps may be:</p>
+<ul>
+<li><strong>Make some changes:</strong> you've made it pretty far through the guide! Now might be a good time to try some experimentation of your own.</li>
+<li><strong>Model application workflows:</strong> start modeling your own application workflows by encoding them as <a href="usecases/../reference/pipelines.html">Pipelines</a>. Start writing your client code for publishing application events to your Stream, and then write the code which will process the various stages of your Pipelines. Check out the <a href="usecases/./service-provisioning.html">Use Case: Service Provisioning</a> for some deeper exploration.</li>
+<li><strong>Prepare for Production deployment:</strong> reviewing the reference sections for Hadron's resources is a great way to prepare for deploying Hadron in a production environment. <a href="usecases/../reference/streams.html">Streams</a> have various configuration options which can be tuned for scaling, storage, resource quotas and the like.</li>
+</ul>
+<h1><a class="header" href="#use-case-service-provisioning" id="use-case-service-provisioning">Use Case: Service Provisioning</a></h1>
+<p>This use case assumes some familiarity with Hadron. It is recommended to have at least read the <a href="usecases/../overview/quick-start.html">Quick Start</a> chapter before continuing here.</p>
+<h3><a class="header" href="#getting-started" id="getting-started">Getting Started</a></h3>
+<p>We've joined a new company, ExampleCloud, which offers a service where customers may provision various types of storage systems in the cloud. Though conceptually simple, there are lots of individual stages in this workflow, each of which will take different amounts of time to complete, and all having different failure conditions and data requirements.</p>
+<p>With Hadron, defining a Pipeline to model this workflow is simple:</p>
+<pre><code class="language-yaml">apiVersion: hadron.rs/v1beta1
+kind: Pipeline
+metadata:
+  name: service-creation
+spec:
+  # The source Stream of this Pipeline.
   sourceStream: events
+  # Event types which trigger this Pipeline.
   triggers:
     - service.created
+  # When first created, the position of the Source stream to start from.
+  startPoint:
+    location: beginning
+  # Maximum number of parallel executions per stage.
+  maxParallel: 50
   stages:
+    # Deploy the customer's service in Kubernetes.
     - name: deploy-service
 </code></pre>
-<p>Here we've define a Stream called <code>events</code> and a Pipeline called <code>service-creation</code> to model this workflow. Hadron uses this config to generate resources within its cluster to store and process the data for this new Stream and Pipeline.</p>
+<p><small><i>The existance of the Stream <code>events</code> is assumed, review <a href="usecases/../overview/quick-start.html">Quick Start</a> chapter for details.</i></small></p>
+<p>Here we've defined a Pipeline called <code>service-creation</code> to model this workflow. Hadron uses this config to generate resources within its cluster to store and process the data for this new Pipeline. As show above, we can even document the purpose and expectations of or workflow stages.</p>
 <p>With this configuration, any time our ExampleCloud application publishes a new event of type <code>service.created</code> to our Stream <code>events</code>, Hadron will automatically trigger a new Pipeline execution which will pass that new event through the Pipeline stages defined above (right now, only 1 stage).</p>
 <h3><a class="header" href="#client-setup" id="client-setup">Client Setup</a></h3>
-<p>To get started, we will create a program which uses the Hadron Client to publish events of type <code>service.created</code> to our Stream <code>events</code>, and then we will also create a subscription to our new Pipeline which will process the stage <code>deploy-service</code>.</p>
+<p>Next let's create a program which uses the Hadron Client to publish events of type <code>service.created</code> to our Stream <code>events</code>, and then we will also create a subscription to our new Pipeline which will process the stage <code>deploy-service</code>.</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// Event producer which publishes events to stream `events`.
-let client = hadron::Client::new(&quot;cluster.url:7000&quot;, /* ... */)?;
+let client = hadron::Client::new(&quot;http://events.default:7000&quot;, /* ... params ... */)?;
 let publisher = client.publisher(&quot;example-cloud-app&quot;).await?;
 
-// Publish a new event based on application logic.
-publisher.publish(new_event).await?;
+// Publish a new event based on some application logic.
+let event = hadron::NewEvent { /* ... snip ... */ };
+publisher.publish(event).await?;
 <span class="boring">}
 </span></code></pre></pre>
 <pre><pre class="playground"><code class="language-rust">
@@ -327,27 +534,34 @@ publisher.publish(new_event).await?;
 client.pipeline(&quot;service-creation&quot;, &quot;deploy-service&quot;, deploy_handler);
 <span class="boring">}
 </span></code></pre></pre>
-<p>Awesome! The consumer code (the function <code>deploy_handler</code> above) can do whatever it wants. The only requirement is that when it is done, it must return a <code>Result&lt;NewEvent, Error&gt;</code> — that is, it must return an output event for success, or an error for failure cases (resulting in a retry).</p>
+<p>Awesome! The consumer code of <code>deploy_handler</code> shown above can do whatever it wants. The only requirement is that when it is done, it must return a <code>Result&lt;NewEvent, Error&gt;</code> — that is, it must return an output event for success, or an error for failure cases (resulting in a retry).</p>
 <p>Client disconnects will trigger retries. Errors will be tracked by Hadron and exposed for monitoring. Output events from successful processing of stages are persisted to disk. Once a stage is completed successfully for an event, that stage will never be executed again for the same event.</p>
 <h3><a class="header" href="#new-requirements" id="new-requirements">New Requirements</a></h3>
-<p>Things are going well at our new company. Service creation is trucking along, deploying services for customers, and life is good. However, as it turns out, there are a few important steps which we've neglected, and our boss would like to have that fixed.</p>
+<p>Things are going well at our new company. Service creation is trucking along, and life is good. However, as it turns out, there are a few important steps which we've neglected, and our boss would like to have that fixed.</p>
 <p>First, we forgot to actually charge the customer for their new services. Company isn't going to survive long unless we start charging, so we'll need to add a new stage to our Pipeline to handle that logic.</p>
 <p>Next, customers have expressed that they would really like to know the state of their service, so once their service has been deployed, we'll need to deploy some monitoring for it. Let's add a new stage for that as well.</p>
 <p>Finally, customers are also saying that it would be great to receive a notification once their service is ready. Same thing, new stage.</p>
 <p>With all of that, we'll update the Pipeline's stages section to look like this:</p>
 <pre><code class="language-yaml">  stages:
+    # Deploy the customer's service in Kubernetes.
     - name: deploy-service
+
+    # Setup billing for the customer's new service.
     - name: setup-billing
       dependencies: [&quot;deploy-service&quot;]
+
+    # Setup monitoring for the customer's new service.
     - name: setup-monitoring
       dependencies: [&quot;deploy-service&quot;]
+
+    # Notify the user that their service is deployed and ready.
     - name: notify-user
       dependencies: [&quot;deploy-service&quot;]
 </code></pre>
 <p>Pretty simple, but let's break this down. First, the original <code>deploy-service</code> stage is still there and unchanged. Next, we've added our 3 new stages <code>setup-billing</code>, <code>setup-monitoring</code>, and <code>notify-user</code>. There are a few important things to note here:</p>
 <ul>
 <li>Each of the new stages depends upon <code>deploy-service</code>. This means that they will not be executed until <code>deploy-service</code> has completed successfully and produced an output event.</li>
-<li>Once <code>deploy-service</code> has completed successfully, our next 3 stages will be executed in parallel. Each stage will receive a copy of the root event which triggered this Pipeline execution, as well as a copy of the output event of any stages declared as a dependency.</li>
+<li>Once <code>deploy-service</code> has completed successfully, our next 3 stages will be executed in parallel. Each stage will receive a copy of the root event which triggered this Pipeline execution, as well as a copy of the output event from the <code>deploy-service</code> stage.</li>
 </ul>
 <p>This compositional property of Hadron Pipelines sets it apart from the crowd as a powerful data processing and data integration system.</p>
 <p>Given that we've added new stages to our Pipeline, we need to add some new stage consumers to actually handle this logic. This is nearly identical to our consumer for <code>deploy-service</code>, really only the business logic in the handler will be different for each.</p>
@@ -359,182 +573,274 @@ client.pipeline(&quot;service-creation&quot;, &quot;setup-monitoring&quot;, moni
 client.pipeline(&quot;service-creation&quot;, &quot;notify-user&quot;, notify_handler).await?;
 <span class="boring">}
 </span></code></pre></pre>
-<h3><a class="header" href="#analytics" id="analytics">Analytics</a></h3>
-<p>The team is quite happy with the ease of extending our Pipeline and adding new stage consumers. However, the company has continued to grow, and we've agreed that some deeper analytics would be great as a final touch.</p>
-<p>In this case, we would like to evaluate execution time, errors, re-delivery rates, and other such metadata on our stage handlers. Let's add a new stage to our Pipeline.</p>
-<pre><code class="language-yaml">    - name: analytics
+<h3><a class="header" href="#synchronization" id="synchronization">Synchronization</a></h3>
+<p>A subtle, yet very impactful aspect of doing parallel processing is synchronization. How do we guard against conflicting states? How do we prevent invalid actions?</p>
+<p>At ExampleCloud, we want to provide the best experience for our users. As such, we will add one more stage to our Pipeline which we will use to synchronize the system. Here is the new stage:</p>
+<pre><code class="language-yaml">    # Synchronize the state of the system.
+    #
+    # - Update tables using the event data from all of the upstream stages.
+    # - Update the state of the new service in the database so that the
+    #   user can upgrade, resize, or otherwise modify the service safely.
+    - name: sync
       dependencies:
         - deploy-service
         - setup-billing
         - setup-monitoring
         - notify-user
 </code></pre>
-<p>The <code>analytics</code> stage we've defined here will integrate the data signal from all previous stages in the Pipeline, receiving a copy of the root event and output events of each stage. With all of this data, we can generate metrics based on event metadata or even application specific data within each event.</p>
-<p>The sky is the limit. If needed, we could transactionally materialize this data into a traditional RDBMS like PostgreSQL, or we could ship this data over to other systems for graphing, metrics, alerting and the like. As we've seen, adding new stages to a Pipeline is straightforward. Backfilling stages to take place earlier in a Pipeline's workflow is possible, and even adding that output as a dependency to other existing stages is fully backwards compatible.</p>
+<p>The <code>sync</code> stage we've defined here will integrate the data signal from all previous stages in the Pipeline, receiving a copy of the root event and output events of each stage. There is a lot that we can do with this data, but here are a few important things that we should do:</p>
+<ul>
+<li>Update the state of the user's new service in our database. This will ensure that users see the finished state of their services in our fancy ExampleCloud API and UI.</li>
+<li>With this small amount of synchronization, we can prevent race conditions in our system by simply not allowing certain actions to be taken on a service when it is in the middle of a Pipeline.</li>
+</ul>
+<h3><a class="header" href="#next-steps-1" id="next-steps-1">Next Steps</a></h3>
+<p>From here, we could begin to model other workflows in our system as independent Pipelines triggered from different event types. Examples might be:</p>
+<ul>
+<li><strong>Upgrade a service:</strong> maybe the user needs a bigger or smaller service. There are plenty of granular tasks involved in making this happen, which is perfect for Pipelines.</li>
+<li><strong>Delete a service:</strong> resources originally created and associated with a service may live in a few different microservices. Have each microservice process a different stage for their own service deletion routines as part of a new Pipeline specifically for deleting services.</li>
+</ul>
+<p>See the <a href="usecases/./transactional-processing.html">Use Case: Transactional Processing</a> for more details on how to build powerful stateful systems while still leveraging the benefits of an event-driven architecture.</p>
+<h1><a class="header" href="#transactional-processing" id="transactional-processing">Transactional Processing</a></h1>
+<p>This chapter is broken into two parts:</p>
+<ul>
+<li><a href="usecases/./transactional-processing/learn.html">What is Transactional Processing</a></li>
+<li><a href="usecases/./transactional-processing/implement.html">Implement Transactional Processing</a></li>
+</ul>
+<h1><a class="header" href="#what-is-transactional-processing" id="what-is-transactional-processing">What is Transactional Processing</a></h1>
+<p><small><i>This use case assumes some familiarity with Hadron. It is recommended to have at least read the <a href="usecases/transactional-processing/../overview/quick-start.html">Quick Start</a> chapter before continuing here. Reading the previous chapter <a href="usecases/transactional-processing/./service-provisioning.html">Use Case: Service Provisioning</a> is a great primer as well.</i></small></p>
+<p>Transactional processing is an algorithmic pattern used to ensure that event processing is <a href="https://en.wikipedia.org/wiki/Idempotence">idempotent</a>.</p>
+<p>In the greater context of system design and operations, errors take place all the time. This can lead to race conditions, duplicate events, invalid states, you name it. How do we deal with these issues?</p>
+<p>In some cases, none of these issues matter. Maybe we don't care about the data, maybe we don't retry in the face of errors. However, when attempting to build a consistent system (either strong or eventual), then we need to care about these issues. Deeply.</p>
+<p><strong>Transactional processing is the way to deal with these issues.</strong> Before we delve more deeply into implementing a transactional processing pattern, we need to understand identity.</p>
+<h3><a class="header" href="#identity" id="identity">Identity</a></h3>
+<p>An event must be uniquely identifiable.</p>
+<p>In Hadron, this is easy, as we use the CloudEvents model, and each event bears the <code>id</code> and <code>source</code> fields which together uniquely identify an event. Producers provide the <code>id</code> and <code>source</code> fields when publishing events, the only trick is in determining what the values for these fields should be.</p>
+<h4><a class="header" href="#establishing-identity" id="establishing-identity">Establishing Identity</a></h4>
+<p>Depending on the requirements of the system being built, there are a few different ways to establish the identity of an event before publishing it to Hadron.</p>
+<p><strong>OutTableIdentity:</strong> this approach uses a transactional database system to generate events as part of the database transaction in which the event transpired, writing those events first to a database table, called the out-table, and then using a separate transaction to copy or move those events from the out-table into Hadron.</p>
+<ul>
+<li>Most transactional databases provide <a href="https://en.wikipedia.org/wiki/ACID">ACID guarantees</a> around this process (it is just a regular transaction).</li>
+<li>This means that the generation of the event is &quot;all or nothing&quot;. If the transaction is rolledback before it is committed, then it is as though it never happened.</li>
+<li>The event should have a unique ID enforced by the database as it is written to the out-table and which will map directly to the Hadron CloudEvents <code>id</code> field.</li>
+<li>The event should also have a well established value for <code>source</code>, which will often correspond to the application's name, the out-table's name, or some other value which uniquely identifies the entity which generated the event.</li>
+<li>The process of moving events from the out-table into Hadron could still result in duplicate events, however the ID of the event from the out-table will be preserved and firmly establishes its identity.</li>
+</ul>
+<p><strong>OccurrenceIdentity:</strong> this approach establishes an identity the moment the event occures, typically using something like a UUID. The generated ID is embedded within the event when it is published to Hadron, and even though the publication could be duplicated due to retries, the generated ID firmly establishes its identity.</p>
+<ul>
+<li>The generated ID will directly map to the Hadron CloudEvents <code>id</code> field of the event when published.</li>
+<li>The event should also have a well established value for <code>source</code>, which will often correspond to the application's name or some other value which uniquely identifies the entity which generated the event.</li>
+<li>This approach works well for systems which need to optimize for rapid ingest, and as such typically treat the occurrence itself as authoritative and will often not subject the event to dynamic stateful validation (which is what out-tables are good for).</li>
+</ul>
+<p>These two patterns for establishing the identity of an event generalize quite well, and can be applied to practically any use case depending on its requirements.</p>
+<p>In all of these cases, the <code>id</code> and <code>source</code> fields of the CloudEvents model together establish an absolute identity for the event. This identity is key in implementing a transactional processing model which is impervious to race conditions, duplicate events and the like.</p>
+<h3><a class="header" href="#hadron-is-transactional" id="hadron-is-transactional">Hadron is Transactional</a></h3>
+<p>Hadron itself is a transactional system.</p>
+<p>For Streams, transactions apply only to <code>ack</code>'ing that an event or event batch was processed. For Pipeline stages, <code>ack</code>'ing an event requires an output event which is transactionally recorded as part of the <code>ack</code>.</p>
+<p>For both Stream and Pipeline consumers, once an event or event batch has been <code>ack</code>'ed, those events will never be processed again by the same consumer group. However, it is important to note that Hadron does not use the aforementioned CloudEvents identity for its transactions. Hadron Stream partitions use a differnet mechanism to track processing, and users of Hadron should never have to worry about that.</p>
+<p>For users of Hadron, processing should only ever take into account the <code>id</code> and <code>source</code> fields of an event to establish identity.</p>
+<h1><a class="header" href="#implement-transactional-processing" id="implement-transactional-processing">Implement Transactional Processing</a></h1>
+<p><small><i>This chapter builds upon the ideas established in the previous chapter <a href="usecases/transactional-processing/./learn.html">What is Transactional Processing</a> and it is recommended to have a firm understanding of that content before continuing here.</i></small></p>
+<p>Armed with the knowledge of event identity, we are now ready to implement our own transactional processing system.</p>
+<p>For this use case we will make the following starting assumptions:</p>
+<ul>
+<li>We are using an RDBMS (like PostgreSQL or CockroachDB) for application state.</li>
+<li>We are using the <a href="usecases/transactional-processing/./learn.html#establishing-identity"><code>OutTableIdentity</code> pattern</a> to transactionally generate our events.</li>
+<li>We are using a microservices model, so we have multiple out-tables each in its own database schema (think namespace except for a database) owned by a different microservice.</li>
+<li>Every event published to our Hadron Stream is coming from one of our microservice out-tables. Let's say our Stream is named <code>events</code>.</li>
+</ul>
+<p>What properties does this model have?</p>
+<ul>
+<li>Every event on our Stream will have a guaranteed unique identity based on the combination of the <code>id</code> and <code>source</code> fields.</li>
+<li>Duplicates may still exist, but we know they are duplicates based on the <code>id</code> and <code>source</code> field combination. Our implementation below will easily deal with such duplicates.</li>
+<li>As requirements evolve, we can seamlessly add new microservices to our system following this same pattern, and our uniqueness properties will still hold.</li>
+</ul>
+<p>This is not the only way to implement a pattern like this, but it is a great stepping stone which can be adapted to your specific use cases.</p>
+<h3><a class="header" href="#transactional-consumers" id="transactional-consumers">Transactional Consumers</a></h3>
+<p>Given our starting assumptions and the properties of our model, we are ready to implement a transactional processing algorithm for our consumers.</p>
+<p>First, we'll show what this looks like for Streams, then we'll show what this looks like for Pipelines.</p>
+<h4><a class="header" href="#stream-consumers" id="stream-consumers">Stream Consumers</a></h4>
+<p>For any given microservice, we will need an in-table. For transactional processing, an in-table is the logical counterpart to an out-table, but is far more simple. The in-table in this case needs only two columns, <code>id</code> and <code>source</code>, corresponding to an event's <code>id</code> and <code>source</code> fields. The in-table will also have a compound primary key over both of these fields.</p>
+<p>Time to implement. Our microservice will have a live subscription to our Stream <code>events</code>, and when an event is received, the algorithm of the event handler will be roughly as follows:</p>
+<ul>
+<li>Open a new transaction with our database.</li>
+<li>Attempt to write a new row to the in-table using the event's <code>id</code> and <code>source</code> fields as values for their respective columns.
+<ul>
+<li>If an error is returned indicating a primary key violation, then we know that we've already processed this event. Close the database transaction. Return a success response from the event handler. Done.</li>
+<li>Else, if no error, then continue.</li>
+</ul>
+</li>
+<li>Now time for business logic. Do whatever it is your microservice needs to do. Manipulate some rows in the database using the open transaction. Whatever.</li>
+<li>If your business logic needs to produce a new event as part of its business logic, then craft the new event, and write it to the out-table.</li>
+<li>Commit the database transaction. If errors take place, no worries. Just return the error from the event handler and a retry will take place.</li>
+<li>Finally, return a success from the event handler. Done!</li>
+</ul>
+<p>For cases where a new event was generated as part of the business logic, the out-table is already setup to ship these events over to Hadron.</p>
+<p>The code implementing this model can be found here: <a href="https://github.com/hadron-project/hadron/tree/main/examples/stream-transactional-processing">examples/stream-transactional-processing</a>.</p>
+<h4><a class="header" href="#pipeline-consumers" id="pipeline-consumers">Pipeline Consumers</a></h4>
+<p>For Pipeline consumers, the in-table needs four columns, <code>id</code>, <code>source</code>, <code>stage</code> and <code>output</code>. The in-table will have a compound primary key over the columns <code>id</code>, <code>source</code> and <code>stage</code>.</p>
+<p>Let's do this. Our microservice will have a Pipeline stage subscription to whatever Pipeline stages it should process, and when an event is received, the algorithm of the event handler will be roughly as follows:</p>
+<ul>
+<li>Open a new transaction with our database.</li>
+<li>Query the in-table using the table's primary key, where <code>id</code> is the root event's <code>id</code>, <code>source</code> is the root event's <code>source</code>, and <code>stage</code> is the name of the stage being processed.
+<ul>
+<li>If a row is returned, then we know that we've already processed this root event for this stage, and the row contains the output event which our Pipeline stage handler needs to return. Close the database transaction. Return the output event. Done.</li>
+<li>Else, if no row is found, then this event has not yet been processed. Continue.</li>
+</ul>
+</li>
+<li>Now time for business logic. Do whatever it is your microservice needs to do. Manipulate some rows in the database using the open transaction, use the root event or any of the dependency events of this Pipeline stage. Whatever.</li>
+<li>Pipeline stage handlers are required to return an output event indicating success. Construct a new output event. For simplicity, use the <code>id</code> of the root event and simply make the <code>source</code> something unique to this microservice's Pipeline stage.</li>
+<li>Using the open database transaction, write a new row to the in-table where <code>id</code> is the root event's <code>id</code>, <code>source</code> is the root event's <code>source</code>, <code>stage</code> is the name of the stage being processed, and <code>output</code> is the serialized bytes of our new output event.</li>
+<li>Commit the database transaction. If errors take place, no worries. Just return the error from the event handler and a retry will take place.</li>
+<li>Finally, return the output event from the event handler. Done!</li>
+</ul>
+<p>With Pipelines, we are able to model all of the workflows of our applications, even spanning across multiple microservices, teams, and even system boundaries. Because Pipelines require an output event to be returned from stage consumers, we do not need an independent out-table process to ship these events over to Hadron.</p>
+<p>The code implementing this model can be found here: <a href="https://github.com/hadron-project/hadron/tree/main/examples/pipeline-transactional-processing">examples/pipeline-transactional-processing</a>.</p>
+<h3><a class="header" href="#next-steps-2" id="next-steps-2">Next Steps</a></h3>
+<p>Now that you've seen the algorithms for implementing a transactional processing models, it would be good to:</p>
+<ul>
+<li><strong>Dive into the code:</strong> follow the links provided above to see the reference implementation code.</li>
+<li><strong>Copy the code and modify it:</strong> if you need to implement your own transactional processing system, the reference code is a great stepping stone.</li>
+</ul>
 <h1><a class="header" href="#tokens" id="tokens">Tokens</a></h1>
-<p>These docs are currently under construction.</p>
-<!--
-Hadron uses a simple but effective permissions model. There are users and there are tokens. Users represent administrators of the Hadron cluster, while tokens represent access grants to specific Hadron resources for use in application code and automation tools.
+<p>Hadron uses a simple authentication and authorization model which works seamlessly with Kubernetes.</p>
+<p>All authentication in Hadron is performed via Tokens. Tokens are Hadron CRDs, which are recognized and processed by the Operator. Token CRs result in a JWT being created with the Operator's private RSA key. The generated JWT is then written to a Kuberetes Secret in the same namespace as the Token, and will bear the same name as the Token.</p>
+<pre><code class="language-yaml">apiVersion: hadron.rs/v1beta1
+kind: Token
+metadata:
+  ## The name of this Token.
+  ##
+  ## The generated Kubernetes Secret will have the same name.
+  name: :string
+  ## The Kubernetes namespace of this Token.
+  ##
+  ## The generated Kubernetes Secret will live in the same namespace.
+  namespace: :string
+spec:
+  ## Grant full access to all resources of the cluster.
+  ##
+  ## If this value is true, then all other values are
+  ## ignored when establishing authorization.
+  all: :bool
 
-There are a few different user roles:
-- `Owner`: this user has full control over the cluster, all namespaces and all resources.
-- `Admin`: admins are the same as owners, except that admin permissions may be revoked by other admins and owners, but admins can not revoked the permissions of an owner.
-- `Viewer`: viewers are read-only. They may view any of ther resources of the cluster, but may not modify them.
+  ## Pub/Sub access for Streams by name.
+  ##
+  ## Permissions granted on a Stream extend to any Pipelines
+  ## associated with that Stream.
+  streams:
+    ## The names of all Streams which this Token can publish to.
+    pub: [:string]
+    ## The names of all Streams which this Token can subscribe to.
+    sub: [:string]
 
-Users are not allowed to directly use the resources of Hadron, that is what tokens are for. Tokens represent a set of permissions for the bearer of that token. The token ID is retained within Hadron and the token may be deleted, which revokes that token's access to the cluster. Tokens come in a few forms:
-- `All`: a permissions grant on all resources in the system.
-- `Namespaced`: a set of permissions granted on namespace scoped resources.
-- `Metrics`: A permissions grant on only the cluster metrics system.
+  ## Pub/Sub access for Exchanges by name.
+  exchanges:
+    ## The names of all Exchanges which this Token can publish to.
+    pub: [:string]
+    ## The names of all Exchanges which this Token can subscribe to.
+    sub: [:string]
 
-Namespace grants come in two different forms:
-- `Full`: a grant of full permissons on the target namespace.
-    - `namespace`: the namespace to which the grant pertains.
-- `Limited`: a grant of limited access to specific resources within the target namespace.
-    - `namespace`: the namespace to which the grant pertains.
-    - `messaging`: an optional `pub/sub/all` enum value indicating access to the namespace's ephemeral messaging exchange.
-    - `endpoints`: a list of endpoint permissions with the following structure:
-        - `matcher`: the endpoint name matcher to use. May include a wildcard to match endpoint hierarchies. Same wildcard rules apply as described in the [ephemeral messaging chapter](./ephemeral-messaging.md).
-        - `access`: a `pub/sub/all` enum value.
-    - `streams`: a list of stream permissions with the following structure:
-        - `matcher`: the stream name matcher to use. May include a wildcard to match streams hierarchically. Same wildcard rules apply as described in the ephemeral messaging chapter.
-        - `access`: a `pub/sub/all` enum value.
-    - `schema`: a boolean indicating if the token has permissions to modify the schema of the namespace.
-
-In addition to the above:
-- Hadron clusters are initialized with a default `root:root` user bearing the `Owner` role. It is expected that cluster admins will use the root credentials to initialize any other users for the system, and it is expected that the root password will be changed and stored securely or removed in favor of other credentials.
-- User & token management is performed via the Hadron CLI. -->
+  ## Pub/Sub access for Endpoints by name.
+  endpoints:
+    ## The names of all Endpoints which this Token can publish to.
+    pub: [:string]
+    ## The names of all Endpoints which this Token can subscribe to.
+    sub: [:string]
+</code></pre>
 <h1><a class="header" href="#streams-1" id="streams-1">Streams</a></h1>
-<p>These docs are currently under construction.</p>
-<!--
-Streams are append-only, immutable logs of data.
-
-## Schema
-Streams are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Stream` object is as follows:
-
-```yaml
-## The kind of object being defined. In this case, a stream.
+<p>Streams are append-only, immutable logs of data with absolute ordering per partition.</p>
+<p>Streams are deployed as independent StatefulSets within a Kubernetes cluster, based purely on a Stream CRD stored in Kubernetes.</p>
+<p>Each pod of a Stream's StatefulSet acts as a leader of its own partition. Kubernetes guarantees the identity, stable storage and stable network address of each pod. Replication is based on a deterministic algorithm and does not require consensus due to these powerful identity and stability properties.</p>
+<pre><code class="language-yaml">apiVersion: hadron.rs/v1beta1
 kind: Stream
-## The namespace in which this stream is to be created.
-namespace: required string
-## The name of the stream. Each stream must have a unique name per namespace.
-name: required string
+metadata:
+  ## The name of this Stream.
+  ##
+  ## The generated Kubernetes StatefulSet of this Stream will have the same name.
+  name: :string
+  ## The Kubernetes namespace of this Stream.
+  ##
+  ## The generated Kubernetes Secret will live in the same namespace.
+  namespace: :string
+spec:
+  ## The number of partitions this Stream should have.
+  ##
+  ## This directly corresponds to the number of replicas of the
+  ## backing StatefulSet of this Stream. Scaling this value up or down will
+  ## cause the backing StatefulSet to be scaled identically.
+  partitions: :integer
 
-## The cluster replica sets which are to be used as partitions for this stream.
-partitions: required string
+  ## When true, the Stream processes will use `debug` level logging.
+  debug: :bool
 
-## An optional TTL duration specifying how long records are to be kept on
-## the stream.
-##
-## If not specified, then records will stay on the stream forever.
-ttl: optional duration (default none)
-```
+  ## The full image name, including tag, to use for the backing StatefulSet pods.
+  image: :string
 
-Streams can be updated the same way all other Hadron DDL objects can be updated. See the [Schema Management chapter](./schema.md) for more details.
+  ## The PVC volume size for each pod of the backing StatefulSet.
+  pvcVolumeSize: :string
 
-### Details
-- Stream names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
-- Streams may have one or more partitions, which may be increased as needed. Horizontally scaling the Hadron cluster and adding more partitions to a stream will allow the write throughput of the stream to horizontally scale.
-- Stream data is replicated across each partition's replica set.
-- Streams must first be created via the Hadron schema system. See the [Schema Management](./schema.md) chapter for more details.
+  ## The PVC storage class to use for each pod of the backing StatefulSet.
+  pvcStorageClass: :string
 
-## Subscriptions
-Subscriptions represent a client's interest to consume data from a stream. Subscriptions are created when a client submits a subscription request. Subscription requests must specify the target stream to subscribe to and a name to use for the subscription.
-
-**Consumers & groups:** clients which process records from a stream as part of a subscription are known as consumers. When multiple clients subscribe to the same stream using the same subscription name, this will dynamically form a consumer group and messages will be load-balanced across all members of the group. Consumers will receive all messages without any message level discrimination.
-
-**Durable:** subscriptions are durable in the sense that the group's progress through the stream is stored on disk. Clients may disconnect at any time, and they will be automatically removed from the consumer group, and new consumers may be added to the group just as easily.
-
-**Starting point:** when subscriptions are created, they may specify a starting point: first or latest. The starting point only affects the creation of the consumer group when a subscription is created.
-
-**Subscription Config:** when creating a subscription, there are various configuration options which my be specified in order to control behavior.
-- `maxParallelConsumers` (default none): the maximum number of consumers allowed to process messages in parallel. If set to 1, then only one consumer is allowed to process messages at a time for the consumer group.
-
-**Consumer Config:** each individual consumer within a group has its own isolated configuration options.
-- `batchSize` (default 100): the maximum number of messages which will be delivered to the consumer per batch.
-- `batchWaitMillis` (default 500): the amount of time in milliseconds which the consumer should delay for its batch to fill. This only applies when the consumer's batch has been partially filled.
-
-Subscriptions may be deleted using the `StreamUnsub` client API.
-
-### Ack & Nack
-Messages being consumed from a stream must be ack'ed. Once a message is ack'd, it will not be delivered again to the same consumer group.
-
-Messages may be nack'ed, which will cause immediate redelivery by default. A redelivery timeout may be specified, which will cause a timeout to be applied before redelivery of the message to a consumer. Redelivery timeouts are not durable, and are held in-memory by Hadron.
-
-If a client disconnects while it was processing unacknowledged messages, Hadron will redeliver those messages to other live consumers of the same subscription consumer group. -->
+  ## The PVC access modes to use for each pod of the backing StatefulSet.
+  pvcAccessModes: [:string]
+</code></pre>
 <h1><a class="header" href="#pipelines-1" id="pipelines-1">Pipelines</a></h1>
-<p>These docs are currently under construction.</p>
-<!--
-Pipelines are multi-stage data workflows, composed of multiple streams, structured as a directed acyclic graph (DAG). Pipelines provide transactional guarantees for multi-stage asynchronous workflows. Pipelines orchestrate the delivery of events to specific pipeline stages, collect outputs from pipeline stages, and enforce stage execution order. Pipelines provide a source of truth for codifying asynchronous event-driven architectures.
-
-## Schema
-Pipelines are declared in YAML as part of the [Schema Management system](./schema.md). The schema for the `Pipeline` object is as follows:
-
-```yaml
-## The kind of object being defined. In this case, a pipeline.
+<p>Pipelines are workflow orchestration for data on Streams, providing structured concurrency for arbitrarily complex multi-stage workflows.</p>
+<p>Pipelines are defined as CRDs stored in Kubernetes. Pipelines exist side by side with their source Stream, and Streams may have any number of associated Pipelines. Pipelines are triggered for execution when an event published to a Stream has an event <code>type</code> which matches one of the trigger patterns of an associated Pipeline.</p>
+<pre><code class="language-yaml">apiVersion: hadron.rs/v1beta1
 kind: Pipeline
-## The namespace in which this pipeline is to be created.
-namespace: required string
-## The name of the pipeline. Each pipeline must have a unique name per namespace.
-name: required string
+metadata:
+  ## The name of this Pipeline.
+  name: :string
+  ## The Kubernetes namespace of this Pipeline.
+  ##
+  ## This Pipeline's associated `sourceStream` must exist within
+  ## the same Kubernetes namespace.
+  namespace: :string
+spec:
+  ## The name of the Stream which feeds this Pipeline.
+  ##
+  ## Events published to the source Stream which match this Pipeline's
+  ## `triggers` will trigger a new Pipeline execution with the matching
+  ## event as the root event.
+  sourceStream: :string
 
-## The stream from which this pipeline may be triggered. Only events on this
-## stream will trigger this pipeline. The trigger stream must exist in the
-## same namespace as the pipeline.
-inputStream: required string
+  ## Patterns which must match the event `type` of an event on the
+  ## source Stream in order to trigger a Pipeline execution.
+  triggers: [:string]
 
-## Optional event types of events on the input stream which should trigger new
-## instances of this pipeline.
-##
-## If no triggers are decalred, then all events published to the input stream
-## will create new pipeline instances.
-triggers:
-  - string
+  ## The maximum number of Pipeline executions which may be executed in parallel.
+  ##
+  ## This is calculated per partition.
+  maxParallel: :integer
 
-## `optional array of <stage>`: An array all stages of which this pipeline is
-## composed. Pipelines are composed of one or more stages.
-stages:
-  ## The name of the stage. Each stage has a unique name per pipeline.
-  - name: required string
-
-    ## `optional array of string`: A stage will be executed after all of the
-    ## stages in its `after` array have successfully completed.
+  ## The location of the source Stream which this Pipeline
+  ## should start from when first created.
+  startPoint:
+    ## The start point location.
+    location: :string # One of &quot;beginning&quot; | &quot;latest&quot; | &quot;offset&quot;
+    ## The offset to start from, which is only evaluated when `location` is `offset`.
     ##
-    ## Execution order must be acyclic. If this value is empty or omitted,
-    ## then this stage is considered to be an initial stage of the pipeline,
-    ## and will be invoked with a copy of the event which triggered
-    ## the pipeline.
-    after:
-      ## The name of another stage in this pipeline.
-      - required string
+    ## This is applied to all partitions of the source Stream identically.
+    offset: :integer
 
-    ## `optional array of string`: Stages may depend upon the output of
-    ## earlier stages, which also implies an `after` relationship with the
-    ## specified stages.
-    ##
-    ## If no dependencies are declared, then the stage will be provided with
-    ## the root event which triggered the respective pipeline instance. The
-    ## root event can be referred to directly as `root_event` along with
-    ## other stages.
-    dependencies:
-      ## The name of a stage from this pipeline, or the special name
-      ## `root_event` which refers to the root event of a pipeline instance.
-      - required string
-```
-
-### Details
-- Pipelines can be updated the same way all other Hadron schema objects can be updated. See the [Schema Management](./schema.md) chapter for more details.
-- Pipeline names may be 1-100 characters long, containing only `[-_.a-zA-Z0-9]`. The `.` can be used to form hierarchies for authorization matching wildcards.
-- Pipelines may be composed of 1 or more stages (nodes of the graph).
-- The flow of data through the pipeline — inputs and outputs — are the edges of the graph.
-- Pipelines may have more than one initial stage. All initial stages of a pipeline will receive a copy of the event which triggered the pipeline.
-- Pipelines are exclusive. They represent a single type of action to be taken over the data moving through the pipeline. All consumers of pipeline stages will be treated as being part of the same consumer group and messages will be load balanced across all consumers.
-- Pipelines have unique names.
-- Pipelines are directed acyclic graphs, cycles are not allowed.
-- Hadron ensures that the output of a stage is delivered to all downstream stages with a connected edge, and that the message is `ack`'ed transactionally along with the delivery of that output. This greatly reduces the overhead of error handling and minimizes the difficulties of modelling idempotent workflows.
-- Pipeline stages may execute in parallel when stages are children of the same parent stage in the graph, or in serial order when stages are ordered one after another in the graph. The `dependencies` & `after` keywords control this behavior.
-
-## Consumers
-Pipeline stages must each be individually subscribed to useing the pipelines subscription API. The pipelines subscription API is uniform for all stages, and allows consumers to think purely in terms of reciving inputs and producing outputs. Hadron consumers are channel based, and multiple channels may exist per network connection to the Hadron cluster. -->
+  ## Workflow stages of this Pipeline.
+  stages:
+    ## Each stage must have a unique name.
+    - name: :string
+      ## The names of other stages in this Pipeline which
+      ## must be completed first before this stage may start.
+      after: [:string]
+      ## The names of other stages in this Pipeline
+      ## which this stage depends upon for input.
+      ##
+      ## All dependencies listed will have their outputs delivered
+      ## to this stage at execution time.
+      ##
+      ## When a stage is listed as a dependency, there is no need to
+      ## also declare it in the `after` list.
+      dependencies: [:string]
+</code></pre>
 <h1><a class="header" href="#exchanges-1" id="exchanges-1">Exchanges</a></h1>
 <p>These docs are currently under construction.</p>
 <!--
@@ -608,9 +914,24 @@ output: enum Single | Stream
 ## Consumers
 RPC Endpoints offer consumer patterns similar to the ephemeral messaging system, except that wildcards are not allowed. -->
 <h1><a class="header" href="#clients" id="clients">Clients</a></h1>
-<p>These docs are currently under construction.</p>
+<p>The Hadron team maintains the following Hadron clients by language.</p>
+<h3><a class="header" href="#rust" id="rust">Rust</a></h3>
+<p>The official Rust Hadron client library.</p>
+<ul>
+<li><a href="https://github.com/hadron-project/hadron/tree/main/hadron-client">Repo</a></li>
+<li><a href="https://docs.rs/hadron-client/0.1.0-beta.1/hadron_client/">Docs</a></li>
+</ul>
+<p>As Hadron matures and grows, the Hadron team will be releasing client libraries for various other languages using the Rust client as a common core, providing maximum speed, safety and efficiency for all client languages.</p>
 <h1><a class="header" href="#cli" id="cli">CLI</a></h1>
 <p>Hadron ships with a native CLI (Command-Line Interface), called <code>hadron</code>.</p>
+<p>The best way to use the Hadron CLI is by launching a temporary pod inside of the Kubernetes cluster where your Hadron cluster is running. This makes access clean, simple, and secure because the credentials never need to leave the cluster. For a Stream named <code>events</code> deployed in the <code>default</code> namespace, and a Token named <code>app-token</code>, the following command will launch the Hadron CLI:</p>
+<pre><code class="language-bash">kubectl run hadron-cli --rm -it \
+    --env HADRON_TOKEN=$(kubectl get secret app-token -o=jsonpath='{.data.token}' | base64 --decode) \
+    --env HADRON_URL=&quot;http://events.default.svc.cluster.local:7000&quot; \
+    --image ghcr.io/hadron-project/hadron/hadron-cli:latest
+</code></pre>
+<p>Accessing Hadron from outside of the Kubernetes cluster is currently in progress, and details will be added here when ready.</p>
+<h2><a class="header" href="#commands" id="commands">Commands</a></h2>
 <pre><code>The Hadron CLI
 
 USAGE:
@@ -649,17 +970,18 @@ SUBCOMMANDS:
 <pre><code>Publish data to a stream
 
 USAGE:
-    hadron stream pub [FLAGS] [OPTIONS] &lt;data&gt; --subject &lt;subject&gt; --type &lt;type&gt;
+    hadron stream pub [FLAGS] [OPTIONS] &lt;data&gt; --type &lt;type&gt;
 
 FLAGS:
-    -b, --binary     If true, treat the data payload as a base64 encoded binary blob
+        --binary     If true, treat the data payload as a base64 encoded binary blob
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 OPTIONS:
-    -o &lt;optattrs&gt;...           Optional attributes to associate with the given payload
-    -s, --subject &lt;subject&gt;    The subject of the new event
-    -t, --type &lt;type&gt;          The type of the new event
+        --id &lt;id&gt;            The ID of the new event, else a UUID4 will be generated
+    -o &lt;optattrs&gt;...         Optional attributes to associate with the given payload
+        --source &lt;source&gt;    The source of the new event, else `hadron-cli` will be used
+        --type &lt;type&gt;        The type of the new event
 
 ARGS:
     &lt;data&gt;    The data payload to be published

@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="../usecases/service-provisioning.html"><strong aria-hidden="true">9.</strong> Service Provisioning</a></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/tokens.html"><strong aria-hidden="true">10.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/exchanges.html"><strong aria-hidden="true">13.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../reference/endpoints.html"><strong aria-hidden="true">14.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../reference/clients.html"><strong aria-hidden="true">15.</strong> Clients</a></li><li class="chapter-item expanded "><a href="../reference/cli.html" class="active"><strong aria-hidden="true">16.</strong> CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../overview/quick-start.html"><strong aria-hidden="true">1.1.</strong> Quick Start</a></li></ol></li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="../usecases/local-development.html"><strong aria-hidden="true">9.</strong> Local Development</a></li><li class="chapter-item expanded "><a href="../usecases/service-provisioning.html"><strong aria-hidden="true">10.</strong> Service Provisioning</a></li><li class="chapter-item expanded "><a href="../usecases/transactional-processing.html"><strong aria-hidden="true">11.</strong> Transactional Processing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../usecases/transactional-processing/learn.html"><strong aria-hidden="true">11.1.</strong> What is Transactional Processing</a></li><li class="chapter-item expanded "><a href="../usecases/transactional-processing/implement.html"><strong aria-hidden="true">11.2.</strong> Implement Transactional Processing</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/tokens.html"><strong aria-hidden="true">12.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">13.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">14.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/exchanges.html"><strong aria-hidden="true">15.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../reference/endpoints.html"><strong aria-hidden="true">16.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../reference/clients.html"><strong aria-hidden="true">17.</strong> Clients</a></li><li class="chapter-item expanded "><a href="../reference/cli.html" class="active"><strong aria-hidden="true">18.</strong> CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -165,6 +165,14 @@
                     <main>
                         <h1><a class="header" href="#cli" id="cli">CLI</a></h1>
 <p>Hadron ships with a native CLI (Command-Line Interface), called <code>hadron</code>.</p>
+<p>The best way to use the Hadron CLI is by launching a temporary pod inside of the Kubernetes cluster where your Hadron cluster is running. This makes access clean, simple, and secure because the credentials never need to leave the cluster. For a Stream named <code>events</code> deployed in the <code>default</code> namespace, and a Token named <code>app-token</code>, the following command will launch the Hadron CLI:</p>
+<pre><code class="language-bash">kubectl run hadron-cli --rm -it \
+    --env HADRON_TOKEN=$(kubectl get secret app-token -o=jsonpath='{.data.token}' | base64 --decode) \
+    --env HADRON_URL=&quot;http://events.default.svc.cluster.local:7000&quot; \
+    --image ghcr.io/hadron-project/hadron/hadron-cli:latest
+</code></pre>
+<p>Accessing Hadron from outside of the Kubernetes cluster is currently in progress, and details will be added here when ready.</p>
+<h2><a class="header" href="#commands" id="commands">Commands</a></h2>
 <pre><code>The Hadron CLI
 
 USAGE:
@@ -203,17 +211,18 @@ SUBCOMMANDS:
 <pre><code>Publish data to a stream
 
 USAGE:
-    hadron stream pub [FLAGS] [OPTIONS] &lt;data&gt; --subject &lt;subject&gt; --type &lt;type&gt;
+    hadron stream pub [FLAGS] [OPTIONS] &lt;data&gt; --type &lt;type&gt;
 
 FLAGS:
-    -b, --binary     If true, treat the data payload as a base64 encoded binary blob
+        --binary     If true, treat the data payload as a base64 encoded binary blob
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 OPTIONS:
-    -o &lt;optattrs&gt;...           Optional attributes to associate with the given payload
-    -s, --subject &lt;subject&gt;    The subject of the new event
-    -t, --type &lt;type&gt;          The type of the new event
+        --id &lt;id&gt;            The ID of the new event, else a UUID4 will be generated
+    -o &lt;optattrs&gt;...         Optional attributes to associate with the given payload
+        --source &lt;source&gt;    The source of the new event, else `hadron-cli` will be used
+        --type &lt;type&gt;        The type of the new event
 
 ARGS:
     &lt;data&gt;    The data payload to be published

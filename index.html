@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="index.html" class="active"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="usecases/service-provisioning.html"><strong aria-hidden="true">9.</strong> Service Provisioning</a></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/tokens.html"><strong aria-hidden="true">10.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="reference/streams.html"><strong aria-hidden="true">11.</strong> Streams</a></li><li class="chapter-item expanded "><a href="reference/pipelines.html"><strong aria-hidden="true">12.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="reference/exchanges.html"><strong aria-hidden="true">13.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="reference/endpoints.html"><strong aria-hidden="true">14.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="reference/clients.html"><strong aria-hidden="true">15.</strong> Clients</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">16.</strong> CLI</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="index.html" class="active"><strong aria-hidden="true">1.</strong> Introduction</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="overview/quick-start.html"><strong aria-hidden="true">1.1.</strong> Quick Start</a></li></ol></li><li class="chapter-item expanded "><a href="overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="usecases/local-development.html"><strong aria-hidden="true">9.</strong> Local Development</a></li><li class="chapter-item expanded "><a href="usecases/service-provisioning.html"><strong aria-hidden="true">10.</strong> Service Provisioning</a></li><li class="chapter-item expanded "><a href="usecases/transactional-processing.html"><strong aria-hidden="true">11.</strong> Transactional Processing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="usecases/transactional-processing/learn.html"><strong aria-hidden="true">11.1.</strong> What is Transactional Processing</a></li><li class="chapter-item expanded "><a href="usecases/transactional-processing/implement.html"><strong aria-hidden="true">11.2.</strong> Implement Transactional Processing</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/tokens.html"><strong aria-hidden="true">12.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="reference/streams.html"><strong aria-hidden="true">13.</strong> Streams</a></li><li class="chapter-item expanded "><a href="reference/pipelines.html"><strong aria-hidden="true">14.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="reference/exchanges.html"><strong aria-hidden="true">15.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="reference/endpoints.html"><strong aria-hidden="true">16.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="reference/clients.html"><strong aria-hidden="true">17.</strong> Clients</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">18.</strong> CLI</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -164,20 +164,20 @@
                 <div id="content" class="content">
                     <main>
                         <h1><a class="header" href="#introduction" id="introduction">Introduction</a></h1>
-<p>Hadron is a distributed data storage system designed to rapidly ingest large amounts of data, and to facilitate working with that data in the form of arbitrarily complex structured workflows.</p>
+<p>Hadron is a distributed data storage system designed to ingest data in the form of events, and to facilitate working with that data in the form of multi-stage structured workflows.</p>
 <p>Building distributed applications can be tough. Teams might have tens, hundreds or even thousands of microservices. Platforms may have thousands of data signals ranging from business critical application events, to telemetry signals including logs, tracing, metrics and the like. All of this data is important, and now more than ever teams need a way to not only capture this data, but also to work with this data in a scalable and extensible way.</p>
 <p>Hadron offers a powerful solution to these problems using the following primitives:</p>
 <ul>
 <li><strong>Events</strong> - all data going into and coming out of Hadron is structured in the form of events.</li>
 <li><strong>Streams</strong> - durable logs for storing arbitrary data, with absolute ordering and horizontal scalability.</li>
-<li><strong>Pipelines</strong> - workflow orchestration for data on Streams, providing structured concurrency for arbitrarily complex multi-stage tasks.</li>
-<li><strong>Exchanges</strong> - ephemeral messaging hubs used to exchange non-durable events between processes, perfect for GraphQL Subscriptions, WebSockets, Push Notifications and the like.</li>
+<li><strong>Pipelines</strong> - workflow orchestration for data on Streams, providing structured concurrency for arbitrarily complex multi-stage structured workflows.</li>
+<li><strong>Exchanges</strong> - ephemeral messaging used to exchange non-durable events between processes, perfect for GraphQL Subscriptions, WebSockets, Push Notifications and the like.</li>
 <li><strong>Endpoints</strong> - general-purpose RPC handlers for leveraging Hadron's powerful networking capabilities.</li>
-<li><strong>Producers</strong> - client processes connected to Hadron, written in any language, working to produce and publish data to Hadron.</li>
+<li><strong>Producers</strong> - client processes connected to Hadron, written in any language, working to publish data to Hadron.</li>
 <li><strong>Consumers</strong> - client processes connected to Hadron, written in any language, working to consume data from Streams, process Pipeline stages, consume ephemeral messages from Exchanges, or even handle RPC Endpoints.</li>
 </ul>
-<p>Hadron was born into the world of Kubernetes, and Kubernetes is a core assumption in the Hadron operational model. See the next section for more details.</p>
-<p>For a use case demonstrating the power of these components working together, head on over to <a href="./usecases/service-provisioning.html">Use Case: Service Provisioning</a>.</p>
+<p>Hadron was born into the world of Kubernetes, and Kubernetes is a core expection in the Hadron operational model. To learn more about how Hadron leverages the Kubernetes platform, go to <a href="./overview/kubernetes.html">the Kubernetes chapter</a> of this guide.</p>
+<p>The next chapter of this guide will walk you through the process of getting Hadron up and running. See you there.</p>
 
                     </main>
 
@@ -186,7 +186,7 @@
                         
 
                         
-                            <a rel="next" href="overview/kubernetes.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="overview/quick-start.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -200,7 +200,7 @@
                 
 
                 
-                    <a rel="next" href="overview/kubernetes.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="overview/quick-start.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 
