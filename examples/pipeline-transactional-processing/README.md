@@ -69,3 +69,7 @@ just buildDemoApp "my-tag" # Build new docker image.
 just kindLoadDemoApp "my-tag" # Load docker image into kind cluster.
 just deployDemoApp # Deploy demo app. Update `deployment.yaml` as needed.
 ```
+
+Once the demo app is up and running, you will need to publish some data to the Hadron stream in order to see it in action. Let's use the Hadron CLI for this: `just runCli`. Once this command completes, your shell will be connected to a Hadron CLI instance running within the kind cluster with credentials in place for accessing the Hadron cluster.
+
+To learn how to publish data, execute `hadron stream pub -h`. Remember that the Pipeline defined for this demo is only triggered for events of type `service.created`, so publishing events with a different event type will not trigger the consumers running in the demo app.

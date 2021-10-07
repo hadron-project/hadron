@@ -20,10 +20,10 @@ metadata:
     {{- range $label, $val := .Values.deployment.labels }}
     {{ $label }}: {{ $val }}
     {{- end }}
+  {{- if .Values.deployment.annotations }}
   annotations:
-    {{- range $annotation, $val := .Values.deployment.annotations }}
-    {{ $annotation }}: {{ $val }}
-    {{- end }}
+{{ toYaml .Values.deployment.annotations | indent 4 }}
+  {{- end}}
 spec:
   replicas: {{ .Values.deployment.replicas | default 1 }}
   selector:
@@ -31,10 +31,10 @@ spec:
       hadron.rs/component: operator
   template:
     metadata:
+      {{- if .Values.pod.annotations }}
       annotations:
-        {{- range $annotation, $val := .Values.pod.annotations }}
-        {{ $annotation }}: {{ $val }}
-        {{- end }}
+{{ toYaml .Values.pod.annotations | indent 8 }}
+      {{- end}}
       labels:
         hadron.rs/component: operator
         {{- include "chart.labels" . | indent 8 }}
