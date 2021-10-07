@@ -41,3 +41,7 @@ kindCreateCluster:
 # Load docker image into kind cluster.
 kindLoadDemoApp tag="latest":
     kind load docker-image --name hadron ghcr.io/hadron-project/hadron/pipeline-txp:{{tag}}
+
+# Run the Hadron CLI within the kind cluster.
+runCli tag="latest" pullPolicy="IfNotPresent":
+    just ../../ runCli {{tag}} {{pullPolicy}}
