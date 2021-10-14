@@ -22,7 +22,11 @@
 //! Replication is limited to 2. When there is only 1 partition, there is no replication. When
 //! there are only 2 partitions, only a single replica will be possible.
 
+#[cfg(test)]
+mod mod_test;
 mod publisher;
+#[cfg(test)]
+mod publisher_test;
 mod subscriber;
 
 use std::collections::HashMap;

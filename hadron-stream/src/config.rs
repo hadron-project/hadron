@@ -1,5 +1,7 @@
 //! Runtime configuration.
 
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
@@ -48,5 +50,27 @@ impl Config {
             .and_then(|offset_str| offset_str.parse().ok())
             .context("invalid pod name, expected offset suffix at the end of the name")?;
         Ok(config)
+    }
+
+    /// Build an instance for use in tests.
+    #[cfg(test)]
+    pub fn new_test() -> Result<(Arc<Self>, tempfile::TempDir)> {
+        let tmpdir = tempfile::tempdir_in("/tmp").context("error creating tmp dir in /tmp")?;
+        Ok((
+            Arc::new(Self {
+                rust_log: "".into(),
+                client_port: 7000,
+                server_port: 7000,
+
+                namespace: "default".into(),
+                stream: "testing".into(),
+                statefulset: "testing".into(),
+                pod_name: "testing-0".into(),
+                partition: 0,
+
+                storage_data_path: tmpdir.path().to_string_lossy().to_string(),
+            }),
+            tmpdir,
+        ))
     }
 }
