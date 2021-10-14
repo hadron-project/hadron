@@ -296,12 +296,12 @@ impl StreamSubCtl {
                 .subscription
                 .encode(&mut buf)
                 .context("error encoding subscription record")?;
-            let stream_model_key = format!("{}{}", PREFIX_STREAM_SUBS, sub.group_name);
-            let stream_offset_key = format!("{}{}", PREFIX_STREAM_SUB_OFFSETS, sub.group_name);
+            let sub_model_key = format!("{}{}", PREFIX_STREAM_SUBS, sub.group_name);
+            let sub_offset_key = format!("{}{}", PREFIX_STREAM_SUB_OFFSETS, sub.group_name);
 
             let mut batch = sled::Batch::default();
-            batch.insert(stream_model_key.as_bytes(), buf.freeze().as_ref());
-            batch.insert(stream_offset_key.as_bytes(), &utils::encode_u64(offset));
+            batch.insert(sub_model_key.as_bytes(), buf.freeze().as_ref());
+            batch.insert(sub_offset_key.as_bytes(), &utils::encode_u64(offset));
             self.tree_metadata
                 .apply_batch(batch)
                 .context("error writing subscription record and offset to disk")

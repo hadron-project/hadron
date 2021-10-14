@@ -1,4 +1,5 @@
 mod stream;
+mod stream_ext;
 
 pub type StreamSubscribeRequestAction = stream::stream_subscribe_request::Action;
 pub type StreamSubscribeSetupStartingPoint = stream::stream_subscribe_setup::StartingPoint;

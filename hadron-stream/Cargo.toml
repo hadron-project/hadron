@@ -40,3 +40,6 @@ uuid = { version="0.8", default-features=false, features=["serde", "v4"] }
 [build-dependencies]
 anyhow = "1"
 tonic-build = "0.5"
+
+[dev-dependencies]
+tempfile = "3.2.0"
