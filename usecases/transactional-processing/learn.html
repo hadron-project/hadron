@@ -177,12 +177,12 @@
 <p><strong>OutTableIdentity:</strong> this approach uses a transactional database system to generate events as part of the database transaction in which the event transpired, writing those events first to a database table, called the out-table, and then using a separate transaction to copy or move those events from the out-table into Hadron.</p>
 <ul>
 <li>Most transactional databases provide <a href="https://en.wikipedia.org/wiki/ACID">ACID guarantees</a> around this process (it is just a regular transaction).</li>
-<li>This means that the generation of the event is &quot;all or nothing&quot;. If the transaction is rolledback before it is committed, then it is as though it never happened.</li>
+<li>This means that the generation of the event is &quot;all or nothing&quot;. If the transaction is rolled-back before it is committed, then it is as though it never happened.</li>
 <li>The event should have a unique ID enforced by the database as it is written to the out-table and which will map directly to the Hadron CloudEvents <code>id</code> field.</li>
 <li>The event should also have a well established value for <code>source</code>, which will often correspond to the application's name, the out-table's name, or some other value which uniquely identifies the entity which generated the event.</li>
 <li>The process of moving events from the out-table into Hadron could still result in duplicate events, however the ID of the event from the out-table will be preserved and firmly establishes its identity.</li>
 </ul>
-<p><strong>OccurrenceIdentity:</strong> this approach establishes an identity the moment the event occures, typically using something like a UUID. The generated ID is embedded within the event when it is published to Hadron, and even though the publication could be duplicated due to retries, the generated ID firmly establishes its identity.</p>
+<p><strong>OccurrenceIdentity:</strong> this approach establishes an identity the moment the event occurs, typically using something like a UUID. The generated ID is embedded within the event when it is published to Hadron, and even though the publication could be duplicated due to retries, the generated ID firmly establishes its identity.</p>
 <ul>
 <li>The generated ID will directly map to the Hadron CloudEvents <code>id</code> field of the event when published.</li>
 <li>The event should also have a well established value for <code>source</code>, which will often correspond to the application's name or some other value which uniquely identifies the entity which generated the event.</li>
@@ -193,7 +193,7 @@
 <h3><a class="header" href="#hadron-is-transactional" id="hadron-is-transactional">Hadron is Transactional</a></h3>
 <p>Hadron itself is a transactional system.</p>
 <p>For Streams, transactions apply only to <code>ack</code>'ing that an event or event batch was processed. For Pipeline stages, <code>ack</code>'ing an event requires an output event which is transactionally recorded as part of the <code>ack</code>.</p>
-<p>For both Stream and Pipeline consumers, once an event or event batch has been <code>ack</code>'ed, those events will never be processed again by the same consumer group. However, it is important to note that Hadron does not use the aforementioned CloudEvents identity for its transactions. Hadron Stream partitions use a differnet mechanism to track processing, and users of Hadron should never have to worry about that.</p>
+<p>For both Stream and Pipeline consumers, once an event or event batch has been <code>ack</code>'ed, those events will never be processed again by the same consumer group. However, it is important to note that Hadron does not use the aforementioned CloudEvents identity for its transactions. Hadron Stream partitions use a different mechanism to track processing, and users of Hadron should never have to worry about that.</p>
 <p>For users of Hadron, processing should only ever take into account the <code>id</code> and <code>source</code> fields of an event to establish identity.</p>
 
                     </main>

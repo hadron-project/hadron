@@ -168,9 +168,9 @@
 <p>Pipelines exist side by side with their source Stream, and Streams may have any number of associated Pipelines. Pipelines are triggered for execution when an event published to a Stream has an event <code>type</code> which matches one of the trigger patterns of an associated Pipeline.</p>
 <h3><a class="header" href="#why" id="why">Why</a></h3>
 <p>So, why do Pipelines exist, and what are they for?</p>
-<p>Practically speaking, as software systems grow, they will inevitibly require sequences of tasks to be executed, usually according to some logical ordering, and often times these tasks will cross system/service/microservice boundaries.</p>
+<p>Practically speaking, as software systems grow, they will inevitably require sequences of tasks to be executed, usually according to some logical ordering, and often times these tasks will cross system/service boundaries.</p>
 <p>When a system is young, such workflows are often simple, unnamed, and involve only one or two stages. As the system evolves, these workflows will grow in the number of stages, and orchestration often becomes more difficult.</p>
-<p>Pipelines offer a way to name these workflows, to define them as code so that they can be versioned and reviewed. Pipelines are a way to avoid sprawl, confusion, and to bring clarity to how a software system actually functions.</p>
+<p>Pipelines offer a way to name these workflows, to define them as code so that they can be versioned and reviewed. Pipelines are a way to avoid sprawl, to avoid confusion, and to bring clarity to how a software system actually functions.</p>
 <p>Pipelines can be used to define the entire logical composition of a company's software systems. A specification of a system's functionality.</p>
 <h3><a class="header" href="#scaling--high-availability" id="scaling--high-availability">Scaling &amp; High Availability</a></h3>
 <p>Pipelines exist side by side with their source Stream. All scaling and availability properties of the source Stream apply to any and all Pipelines associated with that Stream. See the <a href="./streams.html">Streams Overview</a> for more details on these properties.</p>
@@ -180,9 +180,9 @@
 <p>Every Pipeline may be declared with zero or more <code>triggers</code>. When an event is published to a Pipeline's source Stream, its <code>type</code> field will be compared to each of the matcher patterns in the Pipeline's <code>triggers</code> list. If any match is found, then a new Pipeline execution will begin for that event.</p>
 <p>If a Pipeline is declared without any <code>triggers</code>, or with a trigger which is an empty string (<code>&quot;&quot;</code>), then it will match every event published to its source Stream.</p>
 <h3><a class="header" href="#consumers" id="consumers">Consumers</a></h3>
-<p>Pipelines are consumed in terms of their stages. As Hadron client programs register as Pipeline consumers, they are required to speciy the stage of the Pipeline which they intend to process. All Pipeline consumers form an implicit group per stage.</p>
+<p>Pipelines are consumed in terms of their stages. As Hadron client programs register as Pipeline consumers, they are required to specify the stage of the Pipeline which they intend to process. All Pipeline consumers form an implicit group per stage.</p>
 <h3><a class="header" href="#pipeline-evolution" id="pipeline-evolution">Pipeline Evolution</a></h3>
-<p>As software systems evolve over time, it is inevitible that Pipelines will also evolve. Pipelines may be safely updated in many different ways. The only dangerous update is to remove a Pipeline's stage. Doing so should ALWAYS be considered to result in data loss. These semantics may change in the future, however it is best avoided.</p>
+<p>As software systems evolve over time, it is inevitable that Pipelines will also evolve. Pipelines may be safely updated in many different ways. The only dangerous update is to remove a Pipeline's stage. Doing so should ALWAYS be considered to result in data loss. These semantics may change in the future, however it is best avoided.</p>
 <p>Adding new stages, changing dependencies, changing stage ordering, all of these changes are safe and Hadron will handle them as expected. See the next section below for best practices on how to make such changes.</p>
 <p>There is no renaming of Pipeline stages, this is tantamount to deleting a stage and adding a new stage with a different name.</p>
 <h4><a class="header" href="#best-practices" id="best-practices">Best Practices</a></h4>
