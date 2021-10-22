@@ -3,7 +3,7 @@ use tokio::sync::{oneshot, watch};
 
 use crate::error::{AppError, AppErrorExt, RpcResult, ShutdownError, ERR_DB_FLUSH};
 use crate::grpc::{StreamPublishRequest, StreamPublishResponse};
-use crate::stream::StreamCtl;
+use crate::stream::{StreamCtl, KEY_STREAM_LAST_WRITTEN_OFFSET, PREFIX_STREAM_EVENT, PREFIX_STREAM_TS};
 use crate::utils;
 
 impl StreamCtl {
@@ -42,13 +42,17 @@ impl StreamCtl {
             bail!(AppError::InvalidInput("entries batch was empty, no-op".into()));
         }
 
-        // Assign an offset to each entry in the payload and write as a batch.
+        // Assign an offset to each event in the batch, and record a timestamp in a secondary
+        // index for the last offset in the batch.
+        let ts = chrono::Utc::now().timestamp_millis();
         let mut batch = sled::Batch::default();
         for new_event in req.batch {
             *current_offset += 1;
             let entry = utils::encode_model(&new_event).context("error encoding stream event record for storage")?;
-            batch.insert(&utils::encode_u64(*current_offset), entry.as_slice());
+            batch.insert(&utils::encode_byte_prefix(PREFIX_STREAM_EVENT, *current_offset), entry.as_slice());
         }
+        batch.insert(&utils::encode_byte_prefix_i64(PREFIX_STREAM_TS, ts), &utils::encode_u64(*current_offset));
+        batch.insert(KEY_STREAM_LAST_WRITTEN_OFFSET, &utils::encode_u64(*current_offset));
         tree.apply_batch(batch)
             .context("error applying write batch")
             .map_err(ShutdownError::from)?;
