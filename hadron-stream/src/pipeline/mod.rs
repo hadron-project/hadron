@@ -34,11 +34,11 @@ const DEFAULT_MAX_PARALLEL: u32 = 50;
 const KEY_LAST_OFFSET_PROCESSED: &str = "/meta/last_offset_processed";
 /// A metadata key prefix used for tracking active pipeline instances.
 ///
-/// Active instances are keyed as `/a/{offset}` where `{offset}` is the offset
+/// Active instances are keyed as `a{offset}` where `{offset}` is the offset
 /// of the event from the source stream. The value is the offset.
-const PREFIX_META_ACTIVE_INSTANCES: &[u8; 3] = b"/a/";
+const PREFIX_META_ACTIVE_INSTANCES: &[u8; 1] = b"a";
 /// The key prefix under which pipeline stage outputs are stored.
-const PREFIX_PIPELINE_STAGE_OUTPUTS: &[u8; 3] = b"/s/";
+const PREFIX_PIPELINE_STAGE_OUTPUTS: &[u8; 1] = b"o";
 
 /// The liveness stream type used by a pipeline controller.
 type PipelineLivenessStream = LivenessStream<RpcResult<PipelineSubscribeResponse>, PipelineSubscribeRequest>;
@@ -596,7 +596,7 @@ impl PipelineCtl {
                 }
 
                 // Construct pipeline instance & add to batch.
-                metadata_batch.insert(&utils::encode_3_byte_prefix(PREFIX_META_ACTIVE_INSTANCES, offset), &key);
+                metadata_batch.insert(&utils::encode_byte_prefix(PREFIX_META_ACTIVE_INSTANCES, offset), &key);
                 let inst = ActivePipelineInstance {
                     root_event,
                     root_event_offset: offset,
@@ -677,7 +677,7 @@ async fn recover_pipeline_state(
                 // Iterate over all outputs currently recorded for this pipeline instance.
                 // See `try_record_delivery_response`, these are keyed as `/s/{offset}/{stage_name}`.
                 let mut outputs = HashMap::new();
-                for iter_res in pipeline_tree.scan_prefix(&utils::encode_3_byte_prefix(PREFIX_PIPELINE_STAGE_OUTPUTS, offset)) {
+                for iter_res in pipeline_tree.scan_prefix(&utils::encode_byte_prefix(PREFIX_PIPELINE_STAGE_OUTPUTS, offset)) {
                     let (key, val) = iter_res.context(ERR_ITER_FAILURE)?;
                     let key = std::str::from_utf8(&key).context("data corruption: all keys should be valid utf8")?;
                     let stage = key.split('/').last().unwrap_or("");

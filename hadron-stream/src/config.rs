@@ -1,7 +1,5 @@
 //! Runtime configuration.
 
-use std::sync::Arc;
-
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
@@ -54,10 +52,10 @@ impl Config {
 
     /// Build an instance for use in tests.
     #[cfg(test)]
-    pub fn new_test() -> Result<(Arc<Self>, tempfile::TempDir)> {
+    pub fn new_test() -> Result<(std::sync::Arc<Self>, tempfile::TempDir)> {
         let tmpdir = tempfile::tempdir_in("/tmp").context("error creating tmp dir in /tmp")?;
         Ok((
-            Arc::new(Self {
+            std::sync::Arc::new(Self {
                 rust_log: "".into(),
                 client_port: 7000,
                 server_port: 7000,

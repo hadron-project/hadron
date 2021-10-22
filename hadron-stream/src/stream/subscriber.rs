@@ -43,8 +43,6 @@ pub struct StreamSubCtl {
     _db: Database,
     /// This stream's database tree for storing stream records.
     tree: Tree,
-    /// This stream's database tree for metadata storage.
-    tree_metadata: Tree,
     /// The stream partition of this controller.
     partition: u32,
 
@@ -76,16 +74,14 @@ pub struct StreamSubCtl {
 impl StreamSubCtl {
     /// Create a new instance.
     pub fn new(
-        config: Arc<Config>, db: Database, tree: Tree, tree_metadata: Tree, partition: u32, shutdown_tx: broadcast::Sender<()>,
-        events_tx: mpsc::Sender<StreamSubCtlMsg>, events_rx: mpsc::Receiver<StreamSubCtlMsg>, stream_offset: watch::Receiver<u64>,
-        subs: Vec<(Subscription, u64)>, current_offset: u64,
+        config: Arc<Config>, db: Database, tree: Tree, partition: u32, shutdown_tx: broadcast::Sender<()>, events_tx: mpsc::Sender<StreamSubCtlMsg>,
+        events_rx: mpsc::Receiver<StreamSubCtlMsg>, stream_offset: watch::Receiver<u64>, subs: Vec<(Subscription, u64)>, current_offset: u64,
     ) -> Self {
         let subs = SubscriberInfo::new(subs);
         Self {
             config,
             _db: db,
             tree,
-            tree_metadata,
             partition,
             subs,
             current_offset,
@@ -296,17 +292,28 @@ impl StreamSubCtl {
                 .subscription
                 .encode(&mut buf)
                 .context("error encoding subscription record")?;
-            let sub_model_key = format!("{}{}", PREFIX_STREAM_SUBS, sub.group_name);
-            let sub_offset_key = format!("{}{}", PREFIX_STREAM_SUB_OFFSETS, sub.group_name);
+
+            let sub_model_key = utils::ivec_from_iter(
+                PREFIX_STREAM_SUBS
+                    .iter()
+                    .copied()
+                    .chain(sub.group_name.as_bytes().iter().copied()),
+            );
+            let sub_offset_key = utils::ivec_from_iter(
+                PREFIX_STREAM_SUB_OFFSETS
+                    .iter()
+                    .copied()
+                    .chain(sub.group_name.as_bytes().iter().copied()),
+            );
 
             let mut batch = sled::Batch::default();
-            batch.insert(sub_model_key.as_bytes(), buf.freeze().as_ref());
-            batch.insert(sub_offset_key.as_bytes(), &utils::encode_u64(offset));
-            self.tree_metadata
+            batch.insert(sub_model_key, buf.freeze().as_ref());
+            batch.insert(sub_offset_key, &utils::encode_u64(offset));
+            self.tree
                 .apply_batch(batch)
                 .context("error writing subscription record and offset to disk")
                 .map_err(ShutdownError::from)?;
-            self.tree_metadata
+            self.tree
                 .flush_async()
                 .await
                 .context(ERR_DB_FLUSH)
@@ -415,7 +422,7 @@ impl StreamSubCtl {
             _ => Err("unexpected or malformed response returned from subscriber, expected ack or nack".into()),
         };
         if group.durable {
-            Self::try_record_delivery_response(record_res, group.group_name.clone(), self.tree_metadata.clone())
+            Self::try_record_delivery_response(record_res, group.group_name.clone(), self.tree.clone())
                 .await
                 .context("error while recording subscriber delivery response")?;
         }
@@ -423,8 +430,8 @@ impl StreamSubCtl {
     }
 
     /// Record the ack/nack response from a subscriber delivery.
-    #[tracing::instrument(level = "trace", skip(res, group_name, tree_metadata))]
-    async fn try_record_delivery_response(res: std::result::Result<u64, String>, group_name: Arc<String>, tree_metadata: Tree) -> ShutdownResult<()> {
+    #[tracing::instrument(level = "trace", skip(res, group_name, tree))]
+    async fn try_record_delivery_response(res: std::result::Result<u64, String>, group_name: Arc<String>, tree: Tree) -> ShutdownResult<()> {
         let offset = match res {
             Ok(offset) => offset,
             Err(_err) => {
@@ -432,13 +439,16 @@ impl StreamSubCtl {
                 return Ok(());
             }
         };
-        let key = format!("{}{}", PREFIX_STREAM_SUB_OFFSETS, &*group_name);
-        tree_metadata
-            .insert(key.as_bytes(), &utils::encode_u64(offset))
+        let key = utils::ivec_from_iter(
+            PREFIX_STREAM_SUB_OFFSETS
+                .iter()
+                .copied()
+                .chain(group_name.as_bytes().iter().copied()),
+        );
+        tree.insert(key, &utils::encode_u64(offset))
             .context("error updating subscription offsets on disk")
             .map_err(ShutdownError::from)?;
-        tree_metadata
-            .flush_async()
+        tree.flush_async()
             .await
             .context(ERR_DB_FLUSH)
             .map_err(ShutdownError::from)?;

@@ -15,8 +15,6 @@ pub type Tree = sled::Tree;
 pub const DEFAULT_DATA_PATH: &str = "/usr/local/hadron/db";
 /// The DB tree prefix used for the partition stream.
 const TREE_STREAM: &str = "stream";
-/// The DB tree prefix used for the partition stream's metadata.
-const TREE_STREAM_METADATA: &str = "stream_metadata";
 /// The DB tree prefix used for pipelines.
 const TREE_PIPELINE_PREFIX: &str = "pipelines";
 /// The DB tree prefix used for pipeline metadata.
@@ -77,15 +75,6 @@ impl Database {
         let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
             .await
             .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", TREE_STREAM, err))))?;
-        Ok(tree)
-    }
-
-    /// Get a handle to the DB tree for a stream partition's metadata.
-    pub async fn get_stream_tree_metadata(&self) -> ShutdownResult<Tree> {
-        let (db, ivname) = (self.inner.db.clone(), IVec::from(TREE_STREAM_METADATA));
-        let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
-            .await
-            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", TREE_STREAM_METADATA, err))))?;
         Ok(tree)
     }
 

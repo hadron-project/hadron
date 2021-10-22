@@ -49,10 +49,25 @@ use crate::models::stream::Subscription;
 use crate::stream::subscriber::StreamSubCtlMsg;
 use crate::utils;
 
+/*
+TODO:
+- [x] simplify PREFIX_STREAM_SUBS & PREFIX_STREAM_SUB_OFFSETS with minimal `{byte}` prefixes
+  and use IVec::from<Iterator> to build IVec keys.
+- store the stream's last written offset under the KEY_STREAM_LAST_WRITTEN_OFFSET key.
+- store all stream entries using a `{byte}` prefix.
+- [x] collapse the metadata stream into the standard stream tree.
+*/
+
+/// The key prefix used for storing stream events.
+const PREFIX_STREAM_EVENT: &[u8; 1] = b"e";
+/// The key prefix used for storing stream event timestamps.
+const PREFIX_STREAM_TS: &[u8; 1] = b"t";
 /// The database key prefix used for storing stream subscriber data.
-const PREFIX_STREAM_SUBS: &str = "/subscribers/";
-/// The database key prefix used for storing stream subscriber data.
-const PREFIX_STREAM_SUB_OFFSETS: &str = "/subscriber_offsets/";
+const PREFIX_STREAM_SUBS: &[u8; 1] = b"s";
+/// The database key prefix used for storing stream subscriber offsets.
+const PREFIX_STREAM_SUB_OFFSETS: &[u8; 1] = b"o";
+/// The key used to store the last written offset for the stream.
+const KEY_STREAM_LAST_WRITTEN_OFFSET: &[u8; 1] = b"l";
 
 const ERR_DECODING_STREAM_META_GROUP_NAME: &str = "error decoding stream meta group name from storage";
 
@@ -64,8 +79,6 @@ pub struct StreamCtl {
     _db: Database,
     /// This stream's database tree.
     tree: Tree,
-    /// This stream's database tree for metadata storage.
-    _tree_metadata: Tree,
     /// The stream partition of this controller.
     partition: u32,
 
@@ -97,8 +110,7 @@ impl StreamCtl {
         // Recover stream state.
         let partition = config.partition;
         let tree = db.get_stream_tree().await?;
-        let tree_metadata = db.get_stream_tree_metadata().await?;
-        let (current_offset, subs) = recover_stream_state(&tree, &tree_metadata).await?;
+        let (current_offset, subs) = recover_stream_state(tree.clone()).await?;
 
         // Spawn the subscriber controller.
         let (offset_signal, offset_signal_rx) = watch::channel(current_offset);
@@ -107,7 +119,6 @@ impl StreamCtl {
             config.clone(),
             db.clone(),
             tree.clone(),
-            tree_metadata.clone(),
             partition,
             shutdown_tx.clone(),
             subs_tx.clone(),
@@ -123,7 +134,6 @@ impl StreamCtl {
                 config,
                 _db: db,
                 tree,
-                _tree_metadata: tree_metadata,
                 partition,
                 requests: ReceiverStream::new(requests),
                 subs_tx,
@@ -189,25 +199,24 @@ impl StreamCtl {
 }
 
 /// Recover this stream's last recorded state.
-async fn recover_stream_state(stream_tree: &Tree, metadata_tree: &Tree) -> Result<(u64, Vec<(Subscription, u64)>)> {
-    let (stream_tree, metadata_tree) = (stream_tree.clone(), metadata_tree.clone());
+async fn recover_stream_state(tree: Tree) -> Result<(u64, Vec<(Subscription, u64)>)> {
     let val = Database::spawn_blocking(move || -> Result<(u64, Vec<(Subscription, u64)>)> {
         // Fetch next offset info.
-        let kv_opt = stream_tree
-            .last()
+        let offset_opt = tree
+            .get(KEY_STREAM_LAST_WRITTEN_OFFSET)
             .context("error fetching next offset key during recovery")?;
-        let last_written_offset = kv_opt
-            .map(|(key, _val)| utils::decode_u64(&key).context("error decoding offset value from storage"))
+        let last_written_offset = offset_opt
+            .map(|val| utils::decode_u64(&val).context("error decoding offset value from storage"))
             .transpose()?
             .unwrap_or(0);
 
         // Fetch all stream subscriber info.
         let mut subs = HashMap::new();
-        for entry_res in metadata_tree.scan_prefix(PREFIX_STREAM_SUBS) {
+        for entry_res in tree.scan_prefix(PREFIX_STREAM_SUBS) {
             let (key, val) = entry_res.context(ERR_ITER_FAILURE)?;
             let group_name = std::str::from_utf8(key.as_ref())
                 .context(ERR_DECODING_STREAM_META_GROUP_NAME)?
-                .strip_prefix(PREFIX_STREAM_SUBS)
+                .strip_prefix(unsafe { std::str::from_utf8_unchecked(PREFIX_STREAM_SUBS) })
                 .unwrap_or("")
                 .to_string();
             let sub = Subscription::decode(val.as_ref()).context("error decoding subscriber record from storage")?;
@@ -215,11 +224,11 @@ async fn recover_stream_state(stream_tree: &Tree, metadata_tree: &Tree) -> Resul
         }
 
         // Fetch all stream subscriber offsets.
-        for entry_res in metadata_tree.scan_prefix(PREFIX_STREAM_SUB_OFFSETS) {
+        for entry_res in tree.scan_prefix(PREFIX_STREAM_SUB_OFFSETS) {
             let (key, entry) = entry_res.context(ERR_ITER_FAILURE)?;
             let group_name = std::str::from_utf8(key.as_ref())
                 .context(ERR_DECODING_STREAM_META_GROUP_NAME)?
-                .strip_prefix(PREFIX_STREAM_SUB_OFFSETS)
+                .strip_prefix(unsafe { std::str::from_utf8_unchecked(PREFIX_STREAM_SUB_OFFSETS) })
                 .unwrap_or("");
             let offset = utils::decode_u64(entry.as_ref()).context("error decoding stream offset from storage")?;
             if let Some((_sub, offset_val)) = subs.get_mut(group_name) {
