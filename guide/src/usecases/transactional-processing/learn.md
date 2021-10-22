@@ -21,12 +21,12 @@ Depending on the requirements of the system being built, there are a few differe
 
 **OutTableIdentity:** this approach uses a transactional database system to generate events as part of the database transaction in which the event transpired, writing those events first to a database table, called the out-table, and then using a separate transaction to copy or move those events from the out-table into Hadron.
 - Most transactional databases provide [ACID guarantees](https://en.wikipedia.org/wiki/ACID) around this process (it is just a regular transaction).
-- This means that the generation of the event is "all or nothing". If the transaction is rolledback before it is committed, then it is as though it never happened.
+- This means that the generation of the event is "all or nothing". If the transaction is rolled-back before it is committed, then it is as though it never happened.
 - The event should have a unique ID enforced by the database as it is written to the out-table and which will map directly to the Hadron CloudEvents `id` field.
 - The event should also have a well established value for `source`, which will often correspond to the application's name, the out-table's name, or some other value which uniquely identifies the entity which generated the event.
 - The process of moving events from the out-table into Hadron could still result in duplicate events, however the ID of the event from the out-table will be preserved and firmly establishes its identity.
 
-**OccurrenceIdentity:** this approach establishes an identity the moment the event occures, typically using something like a UUID. The generated ID is embedded within the event when it is published to Hadron, and even though the publication could be duplicated due to retries, the generated ID firmly establishes its identity.
+**OccurrenceIdentity:** this approach establishes an identity the moment the event occurs, typically using something like a UUID. The generated ID is embedded within the event when it is published to Hadron, and even though the publication could be duplicated due to retries, the generated ID firmly establishes its identity.
 - The generated ID will directly map to the Hadron CloudEvents `id` field of the event when published.
 - The event should also have a well established value for `source`, which will often correspond to the application's name or some other value which uniquely identifies the entity which generated the event.
 - This approach works well for systems which need to optimize for rapid ingest, and as such typically treat the occurrence itself as authoritative and will often not subject the event to dynamic stateful validation (which is what out-tables are good for).
@@ -40,6 +40,6 @@ Hadron itself is a transactional system.
 
 For Streams, transactions apply only to `ack`'ing that an event or event batch was processed. For Pipeline stages, `ack`'ing an event requires an output event which is transactionally recorded as part of the `ack`.
 
-For both Stream and Pipeline consumers, once an event or event batch has been `ack`'ed, those events will never be processed again by the same consumer group. However, it is important to note that Hadron does not use the aforementioned CloudEvents identity for its transactions. Hadron Stream partitions use a differnet mechanism to track processing, and users of Hadron should never have to worry about that.
+For both Stream and Pipeline consumers, once an event or event batch has been `ack`'ed, those events will never be processed again by the same consumer group. However, it is important to note that Hadron does not use the aforementioned CloudEvents identity for its transactions. Hadron Stream partitions use a different mechanism to track processing, and users of Hadron should never have to worry about that.
 
 For users of Hadron, processing should only ever take into account the `id` and `source` fields of an event to establish identity.

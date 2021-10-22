@@ -7,11 +7,11 @@ Pipelines exist side by side with their source Stream, and Streams may have any 
 ### Why
 So, why do Pipelines exist, and what are they for?
 
-Practically speaking, as software systems grow, they will inevitibly require sequences of tasks to be executed, usually according to some logical ordering, and often times these tasks will cross system/service/microservice boundaries.
+Practically speaking, as software systems grow, they will inevitably require sequences of tasks to be executed, usually according to some logical ordering, and often times these tasks will cross system/service boundaries.
 
 When a system is young, such workflows are often simple, unnamed, and involve only one or two stages. As the system evolves, these workflows will grow in the number of stages, and orchestration often becomes more difficult.
 
-Pipelines offer a way to name these workflows, to define them as code so that they can be versioned and reviewed. Pipelines are a way to avoid sprawl, confusion, and to bring clarity to how a software system actually functions.
+Pipelines offer a way to name these workflows, to define them as code so that they can be versioned and reviewed. Pipelines are a way to avoid sprawl, to avoid confusion, and to bring clarity to how a software system actually functions.
 
 Pipelines can be used to define the entire logical composition of a company's software systems. A specification of a system's functionality.
 
@@ -27,10 +27,10 @@ Every Pipeline may be declared with zero or more `triggers`. When an event is pu
 If a Pipeline is declared without any `triggers`, or with a trigger which is an empty string (`""`), then it will match every event published to its source Stream.
 
 ### Consumers
-Pipelines are consumed in terms of their stages. As Hadron client programs register as Pipeline consumers, they are required to speciy the stage of the Pipeline which they intend to process. All Pipeline consumers form an implicit group per stage.
+Pipelines are consumed in terms of their stages. As Hadron client programs register as Pipeline consumers, they are required to specify the stage of the Pipeline which they intend to process. All Pipeline consumers form an implicit group per stage.
 
 ### Pipeline Evolution
-As software systems evolve over time, it is inevitible that Pipelines will also evolve. Pipelines may be safely updated in many different ways. The only dangerous update is to remove a Pipeline's stage. Doing so should ALWAYS be considered to result in data loss. These semantics may change in the future, however it is best avoided.
+As software systems evolve over time, it is inevitable that Pipelines will also evolve. Pipelines may be safely updated in many different ways. The only dangerous update is to remove a Pipeline's stage. Doing so should ALWAYS be considered to result in data loss. These semantics may change in the future, however it is best avoided.
 
 Adding new stages, changing dependencies, changing stage ordering, all of these changes are safe and Hadron will handle them as expected. See the next section below for best practices on how to make such changes.
 
