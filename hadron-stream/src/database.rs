@@ -17,8 +17,6 @@ pub const DEFAULT_DATA_PATH: &str = "/usr/local/hadron/db";
 const TREE_STREAM: &str = "stream";
 /// The DB tree prefix used for pipelines.
 const TREE_PIPELINE_PREFIX: &str = "pipelines";
-/// The DB tree prefix used for pipeline metadata.
-const TREE_PIPELINE_METADATA: &str = "pipelines_metadata";
 
 /// The default path to use for data storage.
 pub fn default_data_path() -> String {
@@ -81,16 +79,6 @@ impl Database {
     /// Get a handle to the DB tree for a pipeline partition.
     pub async fn get_pipeline_tree(&self, name: &str) -> ShutdownResult<Tree> {
         let name = format!("{}/{}", TREE_PIPELINE_PREFIX, name);
-        let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
-        let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
-            .await
-            .and_then(|res| res.map_err(|err| ShutdownError(anyhow!("could not open DB tree {} {}", &name, err))))?;
-        Ok(tree)
-    }
-
-    /// Get a handle to the DB tree for a pipeline partition's metadata.
-    pub async fn get_pipeline_tree_metadata(&self, name: &str) -> ShutdownResult<Tree> {
-        let name = format!("{}/{}", TREE_PIPELINE_METADATA, name);
         let (db, ivname) = (self.inner.db.clone(), IVec::from(name.as_str()));
         let tree = Self::spawn_blocking(move || -> Result<Tree> { Ok(db.open_tree(ivname)?) })
             .await
