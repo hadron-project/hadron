@@ -53,24 +53,24 @@ use crate::utils;
 ///
 /// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
 /// the `utils::encode_byte_prefix*` methods.
-const PREFIX_STREAM_EVENT: &[u8; 1] = b"e";
+pub const PREFIX_STREAM_EVENT: &[u8; 1] = b"e";
 /// The key prefix used for storing stream event timestamps.
 ///
 /// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
 /// the `utils::encode_byte_prefix*` methods.
-const PREFIX_STREAM_TS: &[u8; 1] = b"t";
+pub const PREFIX_STREAM_TS: &[u8; 1] = b"t";
 /// The database key prefix used for storing stream subscriber data.
 ///
 /// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
 /// the `utils::encode_byte_prefix*` methods.
-const PREFIX_STREAM_SUBS: &[u8; 1] = b"s";
+pub const PREFIX_STREAM_SUBS: &[u8; 1] = b"s";
 /// The database key prefix used for storing stream subscriber offsets.
 ///
 /// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
 /// the `utils::encode_byte_prefix*` methods.
-const PREFIX_STREAM_SUB_OFFSETS: &[u8; 1] = b"o";
+pub const PREFIX_STREAM_SUB_OFFSETS: &[u8; 1] = b"o";
 /// The key used to store the last written offset for the stream.
-const KEY_STREAM_LAST_WRITTEN_OFFSET: &[u8; 1] = b"l";
+pub const KEY_STREAM_LAST_WRITTEN_OFFSET: &[u8; 1] = b"l";
 
 const ERR_DECODING_STREAM_META_GROUP_NAME: &str = "error decoding stream meta group name from storage";
 

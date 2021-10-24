@@ -43,8 +43,6 @@ spec:
   pvcVolumeSize: "5Gi"
 ```
 
-<!-- TODO: ensure image tag is live. -->
-
 See the [Stream Reference](../reference/streams.md) for more details on the spec fields listed above, as well as other config options available for Streams. Now apply the file to your Kubernetes cluster as shown below using the `kubectl` CLI (part of the Kubernetes distribution).
 
 ```sh
@@ -92,8 +90,6 @@ kubectl run hadron-cli --rm -it \
     --env=HADRON_URL='http://events.default.svc.cluster.local:7000' \
     --image ghcr.io/hadron-project/hadron/hadron-cli:latest
 ```
-
-<!-- TODO: ensure image tag is live. -->
 
 Here we are running a temporary pod which will be removed from the Kubernetes cluster when disconnected. Once the pod session is started, you should see the help text of the CLI displayed, and then you should have access to the shell prompt.
 
