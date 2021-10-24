@@ -11,6 +11,8 @@ mod pipeline;
 mod server;
 mod stream;
 mod utils;
+#[cfg(test)]
+mod utils_test;
 mod watchers;
 
 use std::io::Write;

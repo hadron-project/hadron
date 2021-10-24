@@ -379,7 +379,7 @@ impl Controller {
         match self.streams.get(name.as_ref()) {
             None => (),
             Some(stream) => {
-                let mut new_sts = self.build_stream_statefulset(&stream);
+                let mut new_sts = self.build_stream_statefulset(stream);
                 new_sts = match self.create_statefulset(new_sts).await {
                     Ok(new_sts) => new_sts,
                     Err(err) => {
@@ -486,6 +486,8 @@ impl Controller {
         let selector = spec.selector.get_or_insert_with(Default::default);
         set_cannonical_labels(selector);
         selector.insert(LABEL_HADRON_RS_STREAM.into(), stream.name().into());
+        spec.cluster_ip = Some("None".into());
+        spec.type_ = Some("ClusterIP".into());
         spec.ports = Some(vec![
             ServicePort {
                 name: Some("client-port".into()),
@@ -608,6 +610,7 @@ impl Controller {
             type_: Some("RollingUpdate".into()),
             rolling_update: None,
         });
+        spec.service_name = stream.name().into();
         spec.replicas = Some(stream.spec.partitions as i32);
         spec.selector = LabelSelector {
             match_labels: Some(labels.clone()),
@@ -826,7 +829,7 @@ impl Controller {
         }
         let api: Api<Secret> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let params = kube::api::PostParams::default();
-        timeout(API_TIMEOUT, api.create(&params, &secret))
+        timeout(API_TIMEOUT, api.create(&params, secret))
             .await
             .context("timeout while creating secret")?
             .context("error creating secret")

@@ -49,22 +49,25 @@ use crate::models::stream::Subscription;
 use crate::stream::subscriber::StreamSubCtlMsg;
 use crate::utils;
 
-/*
-TODO:
-- [x] simplify PREFIX_STREAM_SUBS & PREFIX_STREAM_SUB_OFFSETS with minimal `{byte}` prefixes
-  and use IVec::from<Iterator> to build IVec keys.
-- store the stream's last written offset under the KEY_STREAM_LAST_WRITTEN_OFFSET key.
-- store all stream entries using a `{byte}` prefix.
-- [x] collapse the metadata stream into the standard stream tree.
-*/
-
 /// The key prefix used for storing stream events.
+///
+/// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
+/// the `utils::encode_byte_prefix*` methods.
 const PREFIX_STREAM_EVENT: &[u8; 1] = b"e";
 /// The key prefix used for storing stream event timestamps.
+///
+/// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
+/// the `utils::encode_byte_prefix*` methods.
 const PREFIX_STREAM_TS: &[u8; 1] = b"t";
 /// The database key prefix used for storing stream subscriber data.
+///
+/// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
+/// the `utils::encode_byte_prefix*` methods.
 const PREFIX_STREAM_SUBS: &[u8; 1] = b"s";
 /// The database key prefix used for storing stream subscriber offsets.
+///
+/// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
+/// the `utils::encode_byte_prefix*` methods.
 const PREFIX_STREAM_SUB_OFFSETS: &[u8; 1] = b"o";
 /// The key used to store the last written offset for the stream.
 const KEY_STREAM_LAST_WRITTEN_OFFSET: &[u8; 1] = b"l";
