@@ -88,7 +88,7 @@ impl TokenClaims {
     /// Encode this claims body as a JWT.
     pub fn encode(&self, key: &EncodingKey) -> jsonwebtoken::errors::Result<String> {
         let header = Header::new(Algorithm::HS512);
-        jsonwebtoken::encode(&header, &self, &key)
+        jsonwebtoken::encode(&header, &self, key)
     }
 
     /// Decode the given string as a JWT with a `TokenClaims` body.
@@ -99,7 +99,7 @@ impl TokenClaims {
             validate_nbf: false,
             ..Default::default()
         };
-        jsonwebtoken::decode(token.as_ref(), &key, &validation).map(|body| body.claims)
+        jsonwebtoken::decode(token.as_ref(), key, &validation).map(|body| body.claims)
     }
 
     /// Decode the given string as a JWT with a `TokenClaims` body.

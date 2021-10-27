@@ -24,7 +24,7 @@ use crate::futures::LivenessStream;
 use crate::grpc::{Event, PipelineSubscribeRequest, PipelineSubscribeRequestAction, PipelineSubscribeResponse};
 use crate::stream::PREFIX_STREAM_EVENT;
 use crate::utils;
-use hadron_core::crd::{Pipeline, PipelineStartPointLocation, RequiredMetadata};
+use hadron_core::crd::{Pipeline, PipelineStage, PipelineStartPointLocation, RequiredMetadata};
 
 const DEFAULT_MAX_PARALLEL: u32 = 50;
 /// A pipeline metadata key used to track the last offset of the source stream to have been
@@ -39,6 +39,8 @@ const KEY_LAST_OFFSET_PROCESSED: &[u8; 1] = b"l";
 /// of the event from the source stream. The value is the corresponding root event.
 const PREFIX_ACTIVE_INSTANCES: &[u8; 1] = b"a";
 /// The key prefix under which pipeline stage outputs are stored.
+///
+/// Outputs are keyed as `o{offset}{stage_name}`.
 const PREFIX_PIPELINE_STAGE_OUTPUTS: &[u8; 1] = b"o";
 
 /// The liveness stream type used by a pipeline controller.
@@ -128,11 +130,32 @@ impl PipelineCtl {
 
     async fn run(mut self) -> Result<()> {
         tracing::debug!(
+            last_offset_processed = self.last_offset_processed,
             "pipeline controller {}/{}/{} has started",
             self.config.stream,
             self.partition,
             self.pipeline.name()
         );
+
+        // Check for active pipelines which need to be removed.
+        let (events_tx, pipeline) = (self.events_tx.clone(), &self.pipeline);
+        self.active_pipelines.retain(|offset, inst| {
+            if pipeline
+                .spec
+                .stages
+                .iter()
+                .all(|stage| inst.outputs.contains_key(&stage.name))
+            {
+                tracing::debug!(offset, "pruning old finished pipeline instance");
+                let (events_tx, offset) = (events_tx.clone(), *offset);
+                tokio::spawn(async move {
+                    let _res = events_tx.send(PipelineCtlMsg::PipelineInstanceComplete(offset)).await;
+                });
+                false
+            } else {
+                true
+            }
+        });
 
         loop {
             if self.descheduled {
@@ -148,6 +171,7 @@ impl PipelineCtl {
 
         // Begin shutdown routine.
         tracing::debug!(
+            last_offset_processed = self.last_offset_processed,
             "pipeline controller {}/{}/{} has shutdown",
             self.config.stream,
             self.partition,
@@ -168,10 +192,10 @@ impl PipelineCtl {
     /// Handle any dead channels.
     #[tracing::instrument(level = "trace", skip(self, dead_chan))]
     async fn handle_dead_subscriber(&mut self, dead_chan: (Arc<String>, Uuid, ClientChannel)) {
-        let (group_name, id, _chan) = (dead_chan.0, dead_chan.1, dead_chan.2);
-        tracing::debug!(?id, group_name = ?&*group_name, "dropping pipeline subscriber channel");
+        let (stage_name, id, _chan) = (dead_chan.0, dead_chan.1, dead_chan.2);
+        tracing::debug!(?id, group_name = ?&*stage_name, "dropping pipeline stage subscriber channel");
         self.liveness_checks.remove(&id);
-        let mut group = match self.stage_subs.remove(&*group_name) {
+        let mut group = match self.stage_subs.remove(&*stage_name) {
             Some(group) => group,
             None => return,
         };
@@ -212,6 +236,7 @@ impl PipelineCtl {
             PipelineCtlMsg::DeliveryResponse(res) => self.handle_delivery_response(res).await,
             PipelineCtlMsg::PipelineUpdated(pipeline) => self.handle_pipeline_updated(pipeline),
             PipelineCtlMsg::PipelineDeleted(pipeline) => self.handle_pipeline_deleted(pipeline),
+            PipelineCtlMsg::PipelineInstanceComplete(offset) => self.handle_pipeline_instance_complete(offset).await,
         }
     }
 
@@ -288,7 +313,7 @@ impl PipelineCtl {
     }
 
     /// Handle a request which has been sent to this controller.
-    #[tracing::instrument(level = "trace", skip(self, tx, rx, stage_name))]
+    #[tracing::instrument(level = "trace", skip(self, tx, rx))]
     async fn handle_request(&mut self, (tx, rx): ClientChannel, stage_name: String) {
         tracing::debug!("request received on pipeline controller");
         // Validate contents of setup request.
@@ -322,6 +347,42 @@ impl PipelineCtl {
             },
         );
         self.execute_delivery_pass().await;
+    }
+
+    /// Handle an event indicating that the pipeline instance at the given
+    /// offset is ready to be deleted.
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn handle_pipeline_instance_complete(&mut self, offset: u64) {
+        // Build up delete op.
+        let (tree, mut batch) = (self.tree.clone(), sled::Batch::default());
+        batch.remove(&utils::encode_byte_prefix(PREFIX_ACTIVE_INSTANCES, offset));
+        for stage_name in self.pipeline.spec.stages.iter().map(|stage| stage.name.as_str()) {
+            let key = utils::ivec_from_iter(
+                PREFIX_PIPELINE_STAGE_OUTPUTS
+                    .iter()
+                    .copied()
+                    .chain(utils::encode_u64(offset))
+                    .chain(stage_name.as_bytes().iter().copied()),
+            );
+            batch.remove(key);
+        }
+
+        // Apply batch.
+        let res = Database::spawn_blocking(move || -> Result<()> {
+            tree.apply_batch(batch)
+                .context("error applying batch delete on finished pipeline")?;
+            tree.flush().context(ERR_DB_FLUSH)?;
+            Ok(())
+        })
+        .await
+        .map_err(ShutdownError::from)
+        .and_then(|res| res.map_err(ShutdownError::from));
+
+        // Shutdown if needed.
+        if let Err(err) = res {
+            tracing::error!(error = ?err, "error deleting finished pipeline data, shutting down");
+            let _ = self.shutdown_tx.send(());
+        }
     }
 
     /// Execute a loop over all active pipeline stage subscription groups, delivering data if possible.
@@ -363,73 +424,8 @@ impl PipelineCtl {
                     None => continue, // Just skip.
                 };
 
-                // Randomly select one of the available subscriptions for the stage.
-                let chan_key_opt = sub_group
-                    .active_channels
-                    .iter()
-                    .filter(|(_, val)| matches!(val, SubChannelState::MonitoringLiveness))
-                    .choose(&mut rand::thread_rng())
-                    .map(|(key, _val)| *key);
-                let chan_id = match chan_key_opt {
-                    Some(chan_key) => chan_key,
-                    None => continue, // This would only mean that all channels are busy.
-                };
-                let _old_state = match sub_group.active_channels.remove(&chan_id) {
-                    Some(chan_data) => chan_data,
-                    None => continue, // Unreachable.
-                };
-                let mut chan = match self.liveness_checks.remove(&chan_id) {
-                    Some(chan_opt) => match chan_opt.chan {
-                        Some(chan) => chan,
-                        None => continue,
-                    },
-                    None => {
-                        tracing::error!(?chan_id, "pipeline subscription channel was not properly held in liveness stream");
-                        continue;
-                    }
-                };
-
-                // We are ready to delivery some data to the target channel. Accumulate delivery
-                // payload with all needed inputs.
-                let mut payload = PipelineSubscribeResponse {
-                    stage: stage.name.clone(),
-                    root_event: Some(inst.root_event.clone()),
-                    inputs: Default::default(),
-                };
-                stage.dependencies.iter().for_each(|dep| match inst.outputs.get(dep) {
-                    Some(input) => {
-                        payload.inputs.insert(dep.clone(), input.clone());
-                    }
-                    None => tracing::error!("failed to accumulate stage dependencies even though all were accounted for"),
-                });
-
-                // Payload is ready, send it.
-                let _res = chan
-                    .0
-                    .send(Ok(payload))
-                    .await
-                    .context("error sending pipeline delivery payload")?;
-
-                // Spawn off a task to await the response from the client.
-                inst.active_deliveries.insert(sub_group.stage_name.clone(), chan_id);
-                sub_group.active_channels.insert(chan_id, SubChannelState::OutForDelivery);
-                let (tx, group_name, id, offset) = (self.events_tx.clone(), sub_group.stage_name.clone(), chan_id, inst.root_event_offset);
-                tokio::spawn(async move {
-                    // TODO: add optional timeouts here based on pipeline config.
-                    let output = chan
-                        .1
-                        .next()
-                        .await
-                        .map(|res| res.map_err(anyhow::Error::from).map(|data| (chan, data)));
-                    let _ = tx
-                        .send(PipelineCtlMsg::DeliveryResponse(DeliveryResponse {
-                            id,
-                            offset,
-                            stage_name: group_name,
-                            output,
-                        }))
-                        .await;
-                });
+                // Create a delivery payload and send it to a randomly selected subscriber.
+                Self::spawn_payload_delivery(stage, inst, sub_group, &mut self.liveness_checks, self.events_tx.clone()).await?;
             }
         }
 
@@ -447,6 +443,81 @@ impl PipelineCtl {
             );
             self.fetch_stream_data();
         }
+        Ok(())
+    }
+
+    /// Deliver a payload to a stage consumer & spawn a task to await its response.
+    #[tracing::instrument(level = "debug", skip(stage, inst, sub_group, liveness_checks, events_tx))]
+    async fn spawn_payload_delivery(
+        stage: &PipelineStage, inst: &mut ActivePipelineInstance, sub_group: &mut SubscriptionGroup,
+        liveness_checks: &mut StreamMap<Uuid, PipelineLivenessStream>, events_tx: mpsc::Sender<PipelineCtlMsg>,
+    ) -> Result<()> {
+        // Randomly select one of the available subscriptions for the stage.
+        let chan_key_opt = sub_group
+            .active_channels
+            .iter()
+            .filter(|(_, val)| matches!(val, SubChannelState::MonitoringLiveness))
+            .choose(&mut rand::thread_rng())
+            .map(|(key, _val)| *key);
+        let chan_id = match chan_key_opt {
+            Some(chan_key) => chan_key,
+            None => return Ok(()), // This would only mean that all channels are busy.
+        };
+        let _old_state = match sub_group.active_channels.remove(&chan_id) {
+            Some(chan_data) => chan_data,
+            None => return Ok(()), // Unreachable.
+        };
+        let mut chan = match liveness_checks.remove(&chan_id) {
+            Some(chan_opt) => match chan_opt.chan {
+                Some(chan) => chan,
+                None => return Ok(()),
+            },
+            None => {
+                tracing::error!(?chan_id, "pipeline subscription channel was not properly held in liveness stream");
+                return Ok(());
+            }
+        };
+
+        // Accumulate delivery payload with all needed inputs.
+        let mut payload = PipelineSubscribeResponse {
+            stage: stage.name.clone(),
+            root_event: Some(inst.root_event.clone()),
+            inputs: Default::default(),
+        };
+        stage.dependencies.iter().for_each(|dep| match inst.outputs.get(dep) {
+            Some(input) => {
+                payload.inputs.insert(dep.clone(), input.clone());
+            }
+            None => tracing::error!("bug: failed to accumulate stage dependencies even though all were accounted for"),
+        });
+
+        // Payload is ready, send it.
+        let _res = chan
+            .0
+            .send(Ok(payload))
+            .await
+            .context("error sending pipeline delivery payload")?;
+
+        // Spawn off a task to await the response from the client.
+        inst.active_deliveries.insert(sub_group.stage_name.clone(), chan_id);
+        sub_group.active_channels.insert(chan_id, SubChannelState::OutForDelivery);
+        let (tx, group_name, id, offset) = (events_tx, sub_group.stage_name.clone(), chan_id, inst.root_event_offset);
+        tokio::spawn(async move {
+            // FUTURE: add optional timeouts here based on pipeline config.
+            let output = chan
+                .1
+                .next()
+                .await
+                .map(|res| res.map_err(anyhow::Error::from).map(|data| (chan, data)));
+            let _ = tx
+                .send(PipelineCtlMsg::DeliveryResponse(DeliveryResponse {
+                    id,
+                    offset,
+                    stage_name: group_name,
+                    output,
+                }))
+                .await;
+        });
         Ok(())
     }
 
@@ -517,6 +588,11 @@ impl PipelineCtl {
             .all(|stage| inst.outputs.contains_key(&stage.name))
         {
             self.active_pipelines.remove(&offset);
+            tracing::debug!(offset, "pipeline workflow finished");
+            let events_tx = self.events_tx.clone();
+            tokio::spawn(async move {
+                let _res = events_tx.send(PipelineCtlMsg::PipelineInstanceComplete(offset)).await;
+            });
         }
 
         Ok(())
@@ -642,6 +718,7 @@ impl PipelineCtl {
 /// source stream record's offset. The value stored here is a copy of the root event from the stream.
 /// - The output of each stage of a pipeline instance is recorded under `o{instance}{stage}` where
 /// `{instance}` is the source stream record's offset and `{stage}` is the name of the pipeline stage.
+#[tracing::instrument(level = "debug", skip(pipeline_tree, pipeline, stream_latest_offset))]
 async fn recover_pipeline_state(
     pipeline_tree: Tree, pipeline: Arc<Pipeline>, stream_latest_offset: u64,
 ) -> Result<(u64, BTreeMap<u64, ActivePipelineInstance>)> {
@@ -691,6 +768,7 @@ async fn recover_pipeline_state(
         Ok((last_offset, active_instances))
     })
     .await??;
+    tracing::debug!(last_offset = val.0, active_instances = val.1.len(), "recovered pipeline state");
     Ok(val)
 }
 
@@ -714,6 +792,8 @@ pub enum PipelineCtlMsg {
     PipelineUpdated(Arc<Pipeline>),
     /// An update indicating that this pipeline has been deleted.
     PipelineDeleted(Arc<Pipeline>),
+    /// The pipeline instance at the given offset is complete and can be deleted.
+    PipelineInstanceComplete(u64),
 }
 
 /// A result from fetching stream records for pipeline creation.
