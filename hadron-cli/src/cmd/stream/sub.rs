@@ -26,6 +26,7 @@ pub struct Sub {
     start_beginning: bool,
     /// Start from the latest offset of the stream, default.
     #[structopt(long, group = "start_point")]
+    #[allow(dead_code)]
     start_latest: bool,
     /// Start from the given offset, defaults to latest.
     #[structopt(long, group = "start_point")]
@@ -43,8 +44,6 @@ impl Sub {
                 SubscriptionStartingPoint::Offset(offset)
             } else if self.start_beginning {
                 SubscriptionStartingPoint::Beginning
-            } else if self.start_latest {
-                SubscriptionStartingPoint::Latest
             } else {
                 SubscriptionStartingPoint::Latest
             },

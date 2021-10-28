@@ -11,7 +11,15 @@ impl StreamCtl {
     pub(super) async fn handle_publisher_request(&mut self, tx: oneshot::Sender<RpcResult<StreamPublishResponse>>, data: StreamPublishRequest) {
         // Publish the new data frame.
         let _write_ack = data.ack;
-        let offset = match Self::publish_data_frame(&self.tree, &mut self.current_offset, &self.offset_signal, data).await {
+        let offset = match Self::publish_data_frame(
+            &self.tree,
+            &mut self.current_offset,
+            &mut self.earliest_timestamp,
+            &self.offset_signal,
+            data,
+        )
+        .await
+        {
             Ok(offset) => offset,
             Err(err) => {
                 tracing::error!(error = ?err, "error while publishing data to stream");
@@ -35,7 +43,8 @@ impl StreamCtl {
     /// Publish a frame of data to the target stream, returning the offset of the last entry written.
     #[tracing::instrument(level = "trace", skip(tree, current_offset, offset_signal, req))]
     pub(super) async fn publish_data_frame(
-        tree: &sled::Tree, current_offset: &mut u64, offset_signal: &watch::Sender<u64>, req: StreamPublishRequest,
+        tree: &sled::Tree, current_offset: &mut u64, earliest_timestamp: &mut Option<(i64, u64)>, offset_signal: &watch::Sender<u64>,
+        req: StreamPublishRequest,
     ) -> Result<u64> {
         tracing::debug!("writing data to stream");
         if req.batch.is_empty() {
@@ -63,6 +72,11 @@ impl StreamCtl {
                 .await
                 .context(ERR_DB_FLUSH)
                 .map_err(ShutdownError::from)?;
+        }
+
+        // If the earliest recorded timestamp is `None`, then update its value.
+        if earliest_timestamp.is_none() {
+            *earliest_timestamp = Some((ts, *current_offset));
         }
 
         tracing::debug!(current_offset, "finished writing data to stream");

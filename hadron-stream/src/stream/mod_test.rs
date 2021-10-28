@@ -14,10 +14,18 @@ async fn recover_stream_state_empty_state() -> Result<()> {
     let db = Database::new(config.clone()).await?;
     let stream_tree = db.get_stream_tree().await?;
 
-    let (offset, subscriptions) = super::recover_stream_state(stream_tree).await?;
+    let output = super::recover_stream_state(stream_tree).await?;
 
-    assert!(offset == 0, "expected offset to be 0 got {}", offset);
-    assert!(subscriptions.is_empty(), "expected subscriptions len to be 0 got {}", offset);
+    assert!(
+        output.last_written_offset == 0,
+        "expected offset to be 0 got {}",
+        output.last_written_offset
+    );
+    assert!(
+        output.subscriptions.is_empty(),
+        "expected subscriptions len to be 0 got {}",
+        output.subscriptions.len()
+    );
 
     Ok(())
 }
@@ -30,10 +38,19 @@ async fn recover_stream_state_with_previous_state() -> Result<()> {
 
     let expected_offset = setup_stream_data(&stream_tree).await?;
 
-    let (offset, subs) = super::recover_stream_state(stream_tree).await?;
+    let output = super::recover_stream_state(stream_tree).await?;
 
-    assert!(offset == expected_offset, "expected offset to be {} got {}", expected_offset, offset);
-    assert!(subs.is_empty(), "expected subscriptions len to be 0 got {}", offset);
+    assert!(
+        output.last_written_offset == expected_offset,
+        "expected offset to be {} got {}",
+        expected_offset,
+        output.last_written_offset
+    );
+    assert!(
+        output.subscriptions.is_empty(),
+        "expected subscriptions len to be 0 got {}",
+        output.subscriptions.len()
+    );
 
     Ok(())
 }
@@ -47,11 +64,20 @@ async fn recover_stream_state_with_previous_state_and_subs() -> Result<()> {
     let expected_offset = setup_stream_data(&stream_tree).await?;
     let expected_subs = setup_subs_data(&stream_tree).await?;
 
-    let (offset, mut subs) = super::recover_stream_state(stream_tree).await?;
-    subs.sort_by(|a, b| a.1.cmp(&b.1));
+    let mut output = super::recover_stream_state(stream_tree).await?;
+    output.subscriptions.sort_by(|a, b| a.1.cmp(&b.1));
 
-    assert!(offset == expected_offset, "expected offset to be {} got {}", expected_offset, offset);
-    assert_eq!(subs, expected_subs, "expected subscriptions to match {:?}\n{:?}", subs, expected_subs);
+    assert!(
+        output.last_written_offset == expected_offset,
+        "expected offset to be {} got {}",
+        expected_offset,
+        output.last_written_offset
+    );
+    assert_eq!(
+        output.subscriptions, expected_subs,
+        "expected subscriptions to match {:?}\n{:?}",
+        output.subscriptions, expected_subs
+    );
 
     Ok(())
 }

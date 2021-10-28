@@ -134,7 +134,7 @@ impl SubscriptionTask {
             self.config.max_batch_size
         };
         for (partition, chan) in conns.iter() {
-            if self.active_subs.contains(&partition) {
+            if self.active_subs.contains(partition) {
                 continue;
             }
 

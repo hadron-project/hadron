@@ -16,11 +16,11 @@ async fn publish_data_frame_err_with_empty_batch() -> Result<()> {
     let (config, _tmpdir) = Config::new_test()?;
     let db = Database::new(config.clone()).await?;
     let stream_tree = db.get_stream_tree().await?;
-    let mut current_offset = 0u64;
+    let (mut current_offset, mut earliest_timestamp) = (0u64, None);
     let (tx, rx) = watch::channel(current_offset);
     let req = StreamPublishRequest { batch: vec![], fsync: true, ack: 0 };
 
-    let res = super::StreamCtl::publish_data_frame(&stream_tree, &mut current_offset, &tx, req).await;
+    let res = super::StreamCtl::publish_data_frame(&stream_tree, &mut current_offset, &mut earliest_timestamp, &tx, req).await;
 
     let last_watcher_offset = *rx.borrow();
     assert_eq!(
@@ -35,6 +35,11 @@ async fn publish_data_frame_err_with_empty_batch() -> Result<()> {
         matches!(app_err, AppError::InvalidInput(val) if val == "entries batch was empty, no-op"),
         "unexpected error returned",
     );
+    assert!(
+        earliest_timestamp.is_none(),
+        "expected earliest_timestamp to remain `None`, got {:?}",
+        earliest_timestamp,
+    );
 
     Ok(())
 }
@@ -44,7 +49,7 @@ async fn publish_data_frame() -> Result<()> {
     let (config, _tmpdir) = Config::new_test()?;
     let db = Database::new(config.clone()).await?;
     let stream_tree = db.get_stream_tree().await?;
-    let mut current_offset = 0u64;
+    let (mut current_offset, mut earliest_timestamp) = (0u64, None);
     let (tx, rx) = watch::channel(current_offset);
     let expected_ts_min = chrono::Utc::now().timestamp_millis() - 5;
 
@@ -58,7 +63,7 @@ async fn publish_data_frame() -> Result<()> {
         });
     expected_events.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let last_offset = super::StreamCtl::publish_data_frame(&stream_tree, &mut current_offset, &tx, req).await?;
+    let last_offset = super::StreamCtl::publish_data_frame(&stream_tree, &mut current_offset, &mut earliest_timestamp, &tx, req).await?;
 
     // Check emitted info on last offset.
     let last_watcher_offset = *rx.borrow();
@@ -123,6 +128,21 @@ async fn publish_data_frame() -> Result<()> {
         "expected stream index entry timestamp {} to be > {}",
         expected_ts_min,
         ts_idx[0].0
+    );
+    assert!(earliest_timestamp.is_some(), "expected earliest_timestamp to be updated");
+    assert_eq!(
+        earliest_timestamp.map(|val| val.0),
+        Some(ts_idx[0].0),
+        "expected earliest_timestamp to be {:?}, got {:?}",
+        ts_idx[0].0,
+        earliest_timestamp.map(|val| val.0)
+    );
+    assert_eq!(
+        earliest_timestamp.map(|val| val.1),
+        Some(ts_idx[0].1),
+        "expected earliest_timestamp to be {:?}, got {:?}",
+        ts_idx[0].1,
+        earliest_timestamp.map(|val| val.1)
     );
 
     Ok(())

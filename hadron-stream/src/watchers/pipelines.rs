@@ -135,6 +135,10 @@ impl PipelineWatcher {
                 let orig = self.pipelines.load();
                 let mut new_pipelines = HashMap::new();
                 for pipeline in pipelines {
+                    // Only process Pipelines for this Stream.
+                    if pipeline.spec.source_stream != self.config.stream {
+                        continue;
+                    }
                     let name = match &pipeline.metadata.name {
                         Some(name) => name,
                         None => continue,
@@ -186,10 +190,15 @@ impl PipelineWatcher {
     /// Handle a pipeline applied/updated event.
     #[tracing::instrument(level = "debug", skip(self, pipeline))]
     async fn handle_pipeline_applied(&mut self, pipeline: Pipeline) {
+        // Only process Pipelines for this Stream.
+        if pipeline.spec.source_stream != self.config.stream {
+            return;
+        }
         let name = match &pipeline.metadata.name {
             Some(name) => name,
             None => return,
         };
+
         tracing::debug!(%name, "adding new Pipeline CR");
         let orig = self.pipelines.load_full();
 

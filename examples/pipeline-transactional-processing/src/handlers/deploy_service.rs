@@ -43,9 +43,7 @@ impl hadron::PipelineHandler for DeployServiceHandler {
             return Ok(event);
         }
 
-        // Time for BUSINESS LOGIC! Do whatever our microservice needs to do here.
-        // This is the `deploy-service` handler, so we should probably deploy something. Within
-        // this transaction, we can update state to track our progress within this task.
+        // Time for BUSINESS LOGIC! Do whatever our Pipeline stage handler needs to do here.
 
         // Once business logic has finished, we need to generate our output event, write it to our
         // in_table_pipelines along with `(id, source, stage)` to guard against duplicate processing.
