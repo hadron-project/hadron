@@ -54,7 +54,7 @@ use crate::utils;
 /// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
 /// the `utils::encode_byte_prefix*` methods.
 pub const PREFIX_STREAM_EVENT: &[u8; 1] = b"e";
-/// The key prefix used for storing stream event timestamps.
+/// The key prefix used for storing stream event timestamps, always stored as i64 milliseconds.
 ///
 /// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
 /// the `utils::encode_byte_prefix*` methods.
@@ -103,6 +103,11 @@ pub struct StreamCtl {
 
     /// The last written offset of the stream.
     current_offset: u64,
+    /// The earliest timestamp recorded in the stream.
+    ///
+    /// A `None` value indicates that no timestamp record exists on disk, and it will be populated
+    /// when the next batch is written to the stream.
+    earliest_timestamp: Option<(i64, u64)>,
 }
 
 impl StreamCtl {
@@ -113,10 +118,10 @@ impl StreamCtl {
         // Recover stream state.
         let partition = config.partition;
         let tree = db.get_stream_tree().await?;
-        let (current_offset, subs) = recover_stream_state(tree.clone()).await?;
+        let recovery_data = recover_stream_state(tree.clone()).await?;
 
         // Spawn the subscriber controller.
-        let (offset_signal, offset_signal_rx) = watch::channel(current_offset);
+        let (offset_signal, offset_signal_rx) = watch::channel(recovery_data.last_written_offset);
         let (subs_tx, subs_rx) = mpsc::channel(100);
         let sub_ctl = subscriber::StreamSubCtl::new(
             config.clone(),
@@ -127,8 +132,8 @@ impl StreamCtl {
             subs_tx.clone(),
             subs_rx,
             offset_signal_rx.clone(),
-            subs,
-            current_offset,
+            recovery_data.subscriptions,
+            recovery_data.last_written_offset,
         )
         .spawn();
 
@@ -145,7 +150,8 @@ impl StreamCtl {
                 _shutdown_tx: shutdown_tx,
                 descheduled: false,
                 sub_ctl,
-                current_offset,
+                current_offset: recovery_data.last_written_offset,
+                earliest_timestamp: recovery_data.first_timestamp_opt,
             },
             offset_signal_rx,
         ))
@@ -202,8 +208,8 @@ impl StreamCtl {
 }
 
 /// Recover this stream's last recorded state.
-async fn recover_stream_state(tree: Tree) -> Result<(u64, Vec<(Subscription, u64)>)> {
-    let val = Database::spawn_blocking(move || -> Result<(u64, Vec<(Subscription, u64)>)> {
+async fn recover_stream_state(tree: Tree) -> Result<StreamRecoveryState> {
+    let val = Database::spawn_blocking(move || -> Result<StreamRecoveryState> {
         // Fetch next offset info.
         let offset_opt = tree
             .get(KEY_STREAM_LAST_WRITTEN_OFFSET)
@@ -212,6 +218,19 @@ async fn recover_stream_state(tree: Tree) -> Result<(u64, Vec<(Subscription, u64
             .map(|val| utils::decode_u64(&val).context("error decoding offset value from storage"))
             .transpose()?
             .unwrap_or(0);
+
+        // Fetch first timestamp record.
+        let first_timestamp_opt = tree
+            .scan_prefix(PREFIX_STREAM_TS)
+            .next()
+            .transpose()
+            .context("error fetching first timestamp record")?
+            .map(|(key, val)| -> Result<(i64, u64)> {
+                let timestamp = utils::decode_i64(&key[1..])?;
+                let offset = utils::decode_u64(&val)?;
+                Ok((timestamp, offset))
+            })
+            .transpose()?;
 
         // Fetch all stream subscriber info.
         let mut subs = HashMap::new();
@@ -239,11 +258,25 @@ async fn recover_stream_state(tree: Tree) -> Result<(u64, Vec<(Subscription, u64
             }
         }
 
-        let subs: Vec<_> = subs.into_iter().map(|(_, val)| val).collect();
-        Ok((last_written_offset, subs))
+        let subscriptions: Vec<_> = subs.into_iter().map(|(_, val)| val).collect();
+        Ok(StreamRecoveryState {
+            last_written_offset,
+            subscriptions,
+            first_timestamp_opt,
+        })
     })
     .await??;
     Ok(val)
+}
+
+/// A representation of a Stream's state recovered from disk on startup.
+struct StreamRecoveryState {
+    /// The last offset to have been written to disk.
+    last_written_offset: u64,
+    /// All stream subscriber info.
+    subscriptions: Vec<(Subscription, u64)>,
+    /// The first timestamp record found, if any.
+    first_timestamp_opt: Option<(i64, u64)>,
 }
 
 /// A message bound for a stream controller.

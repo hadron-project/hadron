@@ -20,8 +20,8 @@ kindLoadCli tag="latest":
     kind load docker-image --name hadron ghcr.io/hadron-project/hadron/hadron-cli:{{tag}}
 
 # Run the Hadron CLI within the kind cluster.
-runCli tag="latest" pullPolicy="IfNotPresent":
-    kubectl --context="kind-hadron" run hadron-cli --rm -it \
+runCli num="0" tag="latest" pullPolicy="IfNotPresent":
+    kubectl --context="kind-hadron" run hadron-cli-{{num}} --rm -it \
         --env HADRON_TOKEN=$(kubectl get secret hadron-full-access -o=jsonpath='{.data.token}' | base64 --decode) \
         --env HADRON_URL="http://events.default.svc.cluster.local:7000" \
         --image ghcr.io/hadron-project/hadron/hadron-cli:{{tag}} --image-pull-policy={{pullPolicy}}

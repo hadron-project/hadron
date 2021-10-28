@@ -121,7 +121,7 @@ impl PipelineSubscriptionTask {
     async fn build_subscriptions(&mut self) {
         let conns = self.client.inner.conns.load();
         for (partition, chan) in conns.iter() {
-            if self.active_subs.contains(&partition) {
+            if self.active_subs.contains(partition) {
                 continue;
             }
 

@@ -21,13 +21,16 @@ spec:
         - jsonPath: ".spec.debug"
           name: Debug
           type: boolean
-        - jsonPath: ".spec.pvc_volume_size"
+        - jsonPath: ".spec.retentionPolicy"
+          name: Retention Policy
+          type: string
+        - jsonPath: ".spec.pvcVolumeSize"
           name: PVC Volume Size
           type: string
-        - jsonPath: ".spec.pvc_access_modes"
+        - jsonPath: ".spec.pvcAccessModes"
           name: PVC Access Modes
           type: string
-        - jsonPath: ".spec.pvc_storage_class"
+        - jsonPath: ".spec.pvcStorageClass"
           name: PVC Storage Class
           type: string
       name: v1beta1
@@ -63,6 +66,27 @@ spec:
                 pvcVolumeSize:
                   description: "The volume size to use for the Stream's backing StatefulSet PVCs."
                   type: string
+                retentionPolicy:
+                  default:
+                    retentionSeconds: 604800
+                    strategy: time
+                  description: The retention policy to use for data on the Stream.
+                  properties:
+                    retentionSeconds:
+                      description: "For `Time` retention policy, this specifies the amount of time to retain data on the Stream in seconds."
+                      format: uint64
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                    strategy:
+                      description: Retention policy to use.
+                      enum:
+                        - retain
+                        - time
+                      type: string
+                  required:
+                    - strategy
+                  type: object
               required:
                 - image
                 - partitions
