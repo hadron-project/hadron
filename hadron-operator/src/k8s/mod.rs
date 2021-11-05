@@ -25,7 +25,7 @@ use k8s_openapi::api::core::v1::{Secret, Service};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{MicroTime, ObjectMeta};
 use kube::api::{Api, ListParams};
 use kube::client::Client;
-use kube_runtime::watcher::{watcher, Error as WatcherError, Event};
+use kube::runtime::watcher::{watcher, Error as WatcherError, Event};
 use maplit::btreemap;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;

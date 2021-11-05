@@ -15,7 +15,7 @@ use k8s_openapi::api::coordination::v1::Lease;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::MicroTime;
 use kube::api::{Api, ListParams, Patch, PatchParams};
 use kube::client::Client;
-use kube_runtime::{
+use kube::runtime::{
     watcher,
     watcher::{Event, Result as WatcherResult},
 };

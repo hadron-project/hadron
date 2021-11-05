@@ -64,8 +64,6 @@ pub struct StreamSubCtl {
     shutdown_tx: broadcast::Sender<()>,
     /// A channel used for triggering graceful shutdown.
     shutdown_rx: BroadcastStream<()>,
-    /// A bool indicating that this controller has been descheduled and needs to shutdown.
-    descheduled: bool,
 
     /// A general purpose reusable bytes buffer, safe for concurrent use.
     buf: BytesMut,
@@ -91,7 +89,6 @@ impl StreamSubCtl {
             liveness_checks: StreamMap::new(),
             shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
             shutdown_tx,
-            descheduled: false,
             buf: BytesMut::with_capacity(5000),
         }
     }
@@ -104,9 +101,6 @@ impl StreamSubCtl {
         tracing::debug!("stream subscriber controller {}/{} has started", self.config.stream, self.partition,);
 
         loop {
-            if self.descheduled {
-                break;
-            }
             tokio::select! {
                 Some(msg) = self.events_rx.next() => self.handle_msg(msg).await,
                 Some(offset) = self.stream_offset.next() => self.handle_offset_update(offset).await,
@@ -127,9 +121,6 @@ impl StreamSubCtl {
             StreamSubCtlMsg::Request { tx, rx, setup } => self.handle_request(tx, rx, setup).await,
             StreamSubCtlMsg::FetchStreamRecords(res) => self.handle_fetch_stream_records_result(res).await,
             StreamSubCtlMsg::DeliveryResponse(res) => self.handle_delivery_response(res).await,
-            StreamSubCtlMsg::Shutdown => {
-                self.descheduled = true;
-            }
         }
     }
 
@@ -580,8 +571,6 @@ pub enum StreamSubCtlMsg {
     FetchStreamRecords(ShutdownResult<FetchStreamRecords>),
     /// A response from a subscriber following a delivery of data for processing.
     DeliveryResponse(DeliveryResponse),
-    /// The parent controller is shutting down, so this controller needs to do the same.
-    Shutdown,
 }
 
 pub struct FetchStreamRecords {

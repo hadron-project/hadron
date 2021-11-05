@@ -3,6 +3,8 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use hadron_core::crd::StreamRetentionSpec;
+
 /// Runtime configuration data.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -30,6 +32,10 @@ pub struct Config {
     /// The path to the database on disk.
     #[serde(default = "crate::database::default_data_path")]
     pub storage_data_path: String,
+
+    /// The retention policy to use for data on the Stream.
+    #[serde(default)]
+    pub retention_policy: StreamRetentionSpec,
 }
 
 impl Config {
@@ -67,6 +73,7 @@ impl Config {
                 partition: 0,
 
                 storage_data_path: tmpdir.path().to_string_lossy().to_string(),
+                retention_policy: StreamRetentionSpec::default(),
             }),
             tmpdir,
         ))

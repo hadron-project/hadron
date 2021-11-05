@@ -1,7 +1,7 @@
 ## Dockerfile for stream-transactional-processing (txp) demo app.
 
 # syntax=docker/dockerfile:1.3
-ARG RUST_TAG=1.56.0
+ARG RUST_TAG=1.56.1
 ARG ALPINE_TAG=3.14
 FROM rust:${RUST_TAG}-alpine${ALPINE_TAG} as builder
 

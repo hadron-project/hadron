@@ -64,7 +64,7 @@ impl App {
         let tokens_handle = tokens.spawn();
 
         let (stream_tx, stream_rx) = mpsc::channel(1000);
-        let (stream_ctl, stream_offset_signal) = StreamCtl::new(config.clone(), db.clone(), shutdown_tx.clone(), stream_rx)
+        let (stream_ctl, stream_offset_signal) = StreamCtl::new(config.clone(), db.clone(), shutdown_tx.clone(), stream_tx.clone(), stream_rx)
             .await
             .context("error spawning stream controller")?;
         let stream_handle = stream_ctl.spawn();

@@ -2,6 +2,8 @@
 
 mod app;
 mod config;
+#[cfg(test)]
+mod config_test;
 mod database;
 mod error;
 mod futures;

@@ -1,11 +1,11 @@
 [package]
 name = "pipeline-txp"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
 
 [dependencies]
-anyhow = "1.0.44"
+anyhow = "1"
 hadron = { package = "hadron-client", version = "0.1.0-beta.1" }
 sqlx = { version = "0.5", features = [ "runtime-tokio-rustls", "postgres", "offline", "time" ] }
 tokio = { version = "1", default-features = false, features = [
@@ -13,4 +13,4 @@ tokio = { version = "1", default-features = false, features = [
     "rt", "macros", "sync", "signal",
 ]}
 tracing = { version = "0.1", features = ["attributes"] }
-tracing-subscriber = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }

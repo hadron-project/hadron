@@ -11,8 +11,8 @@ mod token;
 
 use kube::Resource;
 
-pub use pipeline::{Pipeline, PipelineSpec, PipelineStage, PipelineStatus, PipelineStartPointLocation, PipelineStartPoint};
-pub use stream::{Stream, StreamSpec, StreamStatus};
+pub use pipeline::{Pipeline, PipelineSpec, PipelineStage, PipelineStartPoint, PipelineStartPointLocation, PipelineStatus};
+pub use stream::{Stream, StreamRetentionPolicy, StreamRetentionSpec, StreamSpec, StreamStatus};
 pub use token::{PubSubAccess, Token, TokenSpec, TokenStatus};
 
 /// A convenience trait built around the fact that all implementors

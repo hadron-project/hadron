@@ -6,7 +6,7 @@ use arc_swap::ArcSwap;
 use futures::stream::StreamExt;
 use kube::api::{Api, ListParams};
 use kube::client::Client;
-use kube_runtime::watcher::{watcher, Error as WatcherError, Event};
+use kube::runtime::watcher::{watcher, Error as WatcherError, Event};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::BroadcastStream;
@@ -97,6 +97,10 @@ impl PipelineWatcher {
         match event {
             Event::Applied(pipeline) => self.handle_pipeline_applied(pipeline).await,
             Event::Deleted(pipeline) => {
+                // Only process Pipelines for this Stream.
+                if pipeline.spec.source_stream != self.config.stream {
+                    return;
+                }
                 let pipeline = Arc::new(pipeline);
                 let name = match &pipeline.metadata.name {
                     Some(name) => name,
