@@ -4,7 +4,7 @@ version = "0.1.0-beta.1"
 description = "The Hadron Rust client library."
 authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
 categories = ["api-bindings", "concurrency", "database"]
-edition = "2018"
+edition = "2021"
 keywords = ["hadron", "events", "CloudEvents", "stream-processing", "workflows"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
@@ -12,23 +12,23 @@ repository = "https://github.com/hadron-project/hadron"
 
 [dependencies]
 anyhow = "1"
-arc-swap = "1.3.1"
+arc-swap = "1.3"
 async-trait = "0.1"
 base64 = "0.13"
 futures = "0.3"
 http = "0.2"
-prost = "0.8"
+prost = "0.9"
 rand = "0.8"
-seahash = "4.1.0"
+seahash = "4.1"
 tokio = { version = "1", default-features = false, features = [
     # See https://docs.rs/tokio/latest/tokio/#feature-flags
     "rt", "io-util", "net", "time", "macros", "sync", "signal",
 ]}
 tokio-stream = { version = "0.1", default-features = false, features = ["time", "net", "signal", "sync"] }
-tonic = { version = "0.5", default-features = false, features = ["transport", "codegen", "prost", "tls"] }
+tonic = { version = "0.6", default-features = false, features = ["transport", "codegen", "prost", "tls"] }
 tower = { version = "0.4", default-features = false, features = ["discover"] }
 tracing = { version = "0.1", features = ["attributes"] }
 
 [dev-dependencies]
 anyhow = "1"
-tonic-build = "0.5"
+tonic-build = "0.6"

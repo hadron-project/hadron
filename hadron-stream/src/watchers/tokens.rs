@@ -8,7 +8,7 @@ use jsonwebtoken::DecodingKey;
 use k8s_openapi::api::core::v1::Secret;
 use kube::api::{Api, ListParams};
 use kube::client::Client;
-use kube_runtime::watcher::{watcher, Error as WatcherError, Event};
+use kube::runtime::watcher::{watcher, Error as WatcherError, Event};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::BroadcastStream;

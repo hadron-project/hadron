@@ -43,11 +43,12 @@ use tonic::Streaming;
 
 use crate::config::Config;
 use crate::database::Database;
-use crate::error::{RpcResult, ERR_ITER_FAILURE};
+use crate::error::{RpcResult, ERR_DB_FLUSH, ERR_ITER_FAILURE};
 use crate::grpc::{StreamPublishRequest, StreamPublishResponse, StreamSubscribeRequest, StreamSubscribeResponse, StreamSubscribeSetup};
 use crate::models::stream::Subscription;
 use crate::stream::subscriber::StreamSubCtlMsg;
 use crate::utils;
+use hadron_core::crd::{StreamRetentionPolicy, StreamRetentionSpec};
 
 /// The key prefix used for storing stream events.
 ///
@@ -72,6 +73,7 @@ pub const PREFIX_STREAM_SUB_OFFSETS: &[u8; 1] = b"o";
 /// The key used to store the last written offset for the stream.
 pub const KEY_STREAM_LAST_WRITTEN_OFFSET: &[u8; 1] = b"l";
 
+const COMPACTION_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60 * 30);
 const ERR_DECODING_STREAM_META_GROUP_NAME: &str = "error decoding stream meta group name from storage";
 
 /// A controller encapsulating all logic for interacting with a stream.
@@ -86,18 +88,18 @@ pub struct StreamCtl {
     partition: u32,
 
     /// A channel of inbound client requests.
-    requests: ReceiverStream<StreamCtlMsg>,
+    requests_tx: mpsc::Sender<StreamCtlMsg>,
+    /// A channel of inbound client requests.
+    requests_rx: ReceiverStream<StreamCtlMsg>,
     /// A channel of requests for stream subscription.
     subs_tx: mpsc::Sender<StreamSubCtlMsg>,
 
     /// A channel used for communicating the stream's last written offset value.
     offset_signal: watch::Sender<u64>,
     /// A channel used for triggering graceful shutdown.
-    _shutdown_tx: broadcast::Sender<()>,
+    shutdown_tx: broadcast::Sender<()>,
     /// A channel used for triggering graceful shutdown.
     shutdown_rx: BroadcastStream<()>,
-    /// A bool indicating that this controller has been descheduled and needs to shutdown.
-    descheduled: bool,
     /// A handle to this controller's spawned subscription controller.
     sub_ctl: JoinHandle<Result<()>>,
 
@@ -108,12 +110,15 @@ pub struct StreamCtl {
     /// A `None` value indicates that no timestamp record exists on disk, and it will be populated
     /// when the next batch is written to the stream.
     earliest_timestamp: Option<(i64, u64)>,
+    /// A bool indicating if the stream is currently undergoing a compaction routine.
+    is_compacting: bool,
 }
 
 impl StreamCtl {
     /// Create a new instance.
     pub async fn new(
-        config: Arc<Config>, db: Database, shutdown_tx: broadcast::Sender<()>, requests: mpsc::Receiver<StreamCtlMsg>,
+        config: Arc<Config>, db: Database, shutdown_tx: broadcast::Sender<()>, requests_tx: mpsc::Sender<StreamCtlMsg>,
+        requests_rx: mpsc::Receiver<StreamCtlMsg>,
     ) -> Result<(Self, watch::Receiver<u64>)> {
         // Recover stream state.
         let partition = config.partition;
@@ -143,15 +148,16 @@ impl StreamCtl {
                 _db: db,
                 tree,
                 partition,
-                requests: ReceiverStream::new(requests),
+                requests_tx,
+                requests_rx: ReceiverStream::new(requests_rx),
                 subs_tx,
                 offset_signal,
                 shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
-                _shutdown_tx: shutdown_tx,
-                descheduled: false,
+                shutdown_tx,
                 sub_ctl,
                 current_offset: recovery_data.last_written_offset,
                 earliest_timestamp: recovery_data.first_timestamp_opt,
+                is_compacting: false,
             },
             offset_signal_rx,
         ))
@@ -164,12 +170,15 @@ impl StreamCtl {
     async fn run(mut self) -> Result<()> {
         tracing::debug!("stream controller {}/{} has started", self.config.stream, self.partition);
 
+        let compaction_timer = tokio::time::sleep(COMPACTION_INTERVAL);
+        tokio::pin!(compaction_timer);
         loop {
-            if self.descheduled {
-                break;
-            }
             tokio::select! {
-                msg_opt = self.requests.next() => self.handle_ctl_msg(msg_opt).await,
+                msg_opt = self.requests_rx.next() => self.handle_ctl_msg(msg_opt).await,
+                _ = &mut compaction_timer => {
+                    compaction_timer.set(tokio::time::sleep(COMPACTION_INTERVAL));
+                    self.spawn_compaction_task();
+                }
                 _ = self.shutdown_rx.next() => break,
             }
         }
@@ -188,14 +197,14 @@ impl StreamCtl {
         let msg = match msg_opt {
             Some(msg) => msg,
             None => {
-                let _ = self.subs_tx.send(StreamSubCtlMsg::Shutdown).await;
-                self.descheduled = true;
+                let _res = self.shutdown_tx.send(());
                 return;
             }
         };
         match msg {
             StreamCtlMsg::RequestPublish { tx, request } => self.handle_publisher_request(tx, request).await,
             StreamCtlMsg::RequestSubscribe { tx, rx, setup } => self.handle_request_subscribe(tx, rx, setup).await,
+            StreamCtlMsg::CompactionFinished { earliest_timestamp } => self.handle_compaction_finished(earliest_timestamp).await,
         }
     }
 
@@ -205,6 +214,126 @@ impl StreamCtl {
     ) {
         let _ = self.subs_tx.send(StreamSubCtlMsg::Request { tx, rx, setup }).await;
     }
+
+    /// Begin a compaction routine, if possible.
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn spawn_compaction_task(&mut self) {
+        // FUTURE: instrument the compaction routine so that we can generate metrics over durations.
+        if self.is_compacting {
+            return;
+        }
+        self.is_compacting = true;
+        let (config, tree, ts, stream_tx, shutdown_tx) = (
+            self.config.clone(),
+            self.tree.clone(),
+            self.earliest_timestamp,
+            self.requests_tx.clone(),
+            self.shutdown_tx.clone(),
+        );
+        let _handle = tokio::spawn(async move {
+            match compact_stream(config, tree, ts).await {
+                Ok(earliest_timestamp) => {
+                    let _res = stream_tx
+                        .send(StreamCtlMsg::CompactionFinished { earliest_timestamp })
+                        .await;
+                }
+                Err(err) => {
+                    tracing::error!(error = ?err, "error during compaction routine, shutting down");
+                    let _res = shutdown_tx.send(());
+                }
+            }
+        });
+    }
+
+    /// Handle a compaction finalization.
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn handle_compaction_finished(&mut self, earliest_timestamp: Option<(i64, u64)>) {
+        self.is_compacting = false;
+        self.earliest_timestamp = earliest_timestamp;
+    }
+}
+
+/// Execute a compaction routine on the given DB tree.
+///
+/// If compaction is not configured for the stream, then this routine will immediately finish and
+/// will return the given `earliest_timestamp` as its output.
+///
+/// This routine currently supports time based compaction, and its algorithm is as follows:
+/// - Extract the configured TTL of the policy.
+/// - Calculate an invalidation threshold based on a delta of now and the configured TTL.
+/// - Search the secondary time index for all records which fall behind the threshold.
+/// - Delete any records which fall behind the threshold.
+/// - Return the next earliest timestamp record as output.
+///
+/// **NOTE: any error returned from this routine will cause a shutdown to be issued.**
+#[tracing::instrument(level = "trace", skip(config, tree, earliest_timestamp))]
+async fn compact_stream(config: Arc<Config>, tree: Tree, earliest_timestamp: Option<(i64, u64)>) -> Result<Option<(i64, u64)>> {
+    tracing::debug!("compaction routine is starting");
+
+    // Extract the configured retention policy.
+    let ttl = match &config.retention_policy.strategy {
+        StreamRetentionPolicy::Retain => return Ok(earliest_timestamp),
+        StreamRetentionPolicy::Time => {
+            let ttl = config
+                .retention_policy
+                .retention_seconds
+                .unwrap_or_else(StreamRetentionSpec::retention_seconds_default);
+            chrono::Duration::seconds(i64::try_from(ttl).unwrap_or(i64::MAX))
+        }
+    };
+    let threshold = (chrono::Utc::now() - ttl).timestamp_millis();
+
+    // Search for all timestamps falling behind the calculated threshold.
+    let earliest_timestamp_opt = Database::spawn_blocking(move || -> Result<Option<(i64, u64)>> {
+        // Scan over timestamp index entries, adding to batch for deletion.
+        let mut batch = sled::Batch::default();
+        let ts_start: &[u8] = PREFIX_STREAM_TS;
+        let ts_threshold: &[u8] = &utils::encode_byte_prefix_i64(PREFIX_STREAM_TS, threshold);
+        let mut last_ts_offset_opt = None; // Last event u64 offset targeted based on timestamp index.
+        for kv_res in tree.range(ts_start..=ts_threshold) {
+            let (key, val) = kv_res.context(ERR_ITER_FAILURE)?;
+            batch.remove(key);
+            last_ts_offset_opt = Some(utils::decode_u64(&val).context("error decoding timestamp index offset, data corrupted")?);
+        }
+        let last_ts_offset = match last_ts_offset_opt {
+            Some(last_ts_offset) => last_ts_offset,
+            None => return Ok(None),
+        };
+
+        // Scan over stream event entries, adding to batch for deletion, stopping at the offset
+        // of the last timestamp index offset of the compaction threshold.
+        let event_start: &[u8] = PREFIX_STREAM_EVENT;
+        let event_stop: &[u8] = &utils::encode_byte_prefix(PREFIX_STREAM_EVENT, last_ts_offset);
+        for key_res in tree.range(event_start..=event_stop).keys() {
+            let key = key_res.context(ERR_ITER_FAILURE)?;
+            batch.remove(key);
+        }
+
+        // Find the next timestamp index which takes the place of the earliest timestamp.
+        let ts_stop: &[u8] = &utils::encode_byte_prefix_i64(PREFIX_STREAM_TS, i64::MAX);
+        let next_earliest_timestamp = tree
+            .range(ts_threshold..=ts_stop)
+            .next()
+            .transpose()
+            .context(ERR_ITER_FAILURE)?
+            .map(|(key, val)| -> Result<(i64, u64)> {
+                let ts = utils::decode_i64(&key[1..]).context("error decoding timestamp index key, data corrupted")?;
+                let offset = utils::decode_u64(&val).context("error decoding timestamp index value, data corrupted")?;
+                Ok((ts, offset))
+            })
+            .transpose()?;
+
+        // Apply the batch.
+        tracing::debug!("compacting timestamp and event records up through offset {}", last_ts_offset);
+        tree.apply_batch(batch)
+            .context("error applying compaction batch to stream tree")?;
+        tree.flush().context(ERR_DB_FLUSH)?;
+        Ok(next_earliest_timestamp)
+    })
+    .await
+    .context("error from compaction routine")
+    .and_then(|res| res)?;
+    Ok(earliest_timestamp_opt)
 }
 
 /// Recover this stream's last recorded state.
@@ -291,5 +420,10 @@ pub enum StreamCtlMsg {
         tx: mpsc::Sender<RpcResult<StreamSubscribeResponse>>,
         rx: Streaming<StreamSubscribeRequest>,
         setup: StreamSubscribeSetup,
+    },
+    /// A compaction routine has finished.
+    CompactionFinished {
+        /// The new earliest timestamp of data on disk.
+        earliest_timestamp: Option<(i64, u64)>,
     },
 }

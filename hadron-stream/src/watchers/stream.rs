@@ -4,7 +4,7 @@ use anyhow::Result;
 use futures::stream::StreamExt;
 use kube::api::{Api, ListParams};
 use kube::client::Client;
-use kube_runtime::watcher::{watcher, Error as WatcherError, Event};
+use kube::runtime::watcher::{watcher, Error as WatcherError, Event};
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::BroadcastStream;

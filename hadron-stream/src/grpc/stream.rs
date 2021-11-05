@@ -9,28 +9,28 @@ pub struct Empty {}
 pub struct Event {
     /// The application defined ID of this event.
     ///
-    /// See [`id`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#id).
+    /// See \[`id`\](<https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#id>).
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
     /// The application defined source of this event.
     ///
-    /// See [`source`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1).
+    /// See \[`source`\](<https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#source-1>).
     #[prost(string, tag = "2")]
     pub source: ::prost::alloc::string::String,
     /// The CloudEvents specification version which the event uses.
     ///
-    /// See [`specversion`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#specversion).
+    /// See \[`specversion`\](<https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#specversion>).
     #[prost(string, tag = "3")]
     pub specversion: ::prost::alloc::string::String,
     /// The type identifier of this event.
     ///
-    /// See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
+    /// See \[`type`\](<https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type>).
     #[prost(string, tag = "4")]
     pub r#type: ::prost::alloc::string::String,
     /// Any additional optional attributes or extension attributes of this event.
     ///
-    /// See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
-    /// and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
+    /// See [`optional attributes`](<https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes>)
+    /// and [`extension context attributes`](<https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes>).
     #[prost(map = "string, string", tag = "5")]
     pub optattrs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     /// The data payload of this event.
@@ -228,7 +228,7 @@ pub mod stream_controller_server {
     #[async_trait]
     pub trait StreamController: Send + Sync + 'static {
         #[doc = "Server streaming response type for the Metadata method."]
-        type MetadataStream: futures_core::Stream<Item = Result<super::MetadataResponse, tonic::Status>> + Send + Sync + 'static;
+        type MetadataStream: futures_core::Stream<Item = Result<super::MetadataResponse, tonic::Status>> + Send + 'static;
         #[doc = " Open a metadata stream."]
         async fn metadata(&self, request: tonic::Request<super::MetadataRequest>) -> Result<tonic::Response<Self::MetadataStream>, tonic::Status>;
         #[doc = " Open a stream publisher channel."]
@@ -236,13 +236,13 @@ pub mod stream_controller_server {
             &self, request: tonic::Request<super::StreamPublishRequest>,
         ) -> Result<tonic::Response<super::StreamPublishResponse>, tonic::Status>;
         #[doc = "Server streaming response type for the StreamSubscribe method."]
-        type StreamSubscribeStream: futures_core::Stream<Item = Result<super::StreamSubscribeResponse, tonic::Status>> + Send + Sync + 'static;
+        type StreamSubscribeStream: futures_core::Stream<Item = Result<super::StreamSubscribeResponse, tonic::Status>> + Send + 'static;
         #[doc = " Open a stream subscriber channel."]
         async fn stream_subscribe(
             &self, request: tonic::Request<tonic::Streaming<super::StreamSubscribeRequest>>,
         ) -> Result<tonic::Response<Self::StreamSubscribeStream>, tonic::Status>;
         #[doc = "Server streaming response type for the PipelineSubscribe method."]
-        type PipelineSubscribeStream: futures_core::Stream<Item = Result<super::PipelineSubscribeResponse, tonic::Status>> + Send + Sync + 'static;
+        type PipelineSubscribeStream: futures_core::Stream<Item = Result<super::PipelineSubscribeResponse, tonic::Status>> + Send + 'static;
         #[doc = " Open a pipeline subscriber channel."]
         async fn pipeline_subscribe(
             &self, request: tonic::Request<tonic::Streaming<super::PipelineSubscribeRequest>>,
@@ -276,7 +276,7 @@ pub mod stream_controller_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for StreamControllerServer<T>
     where
         T: StreamController,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;

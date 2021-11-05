@@ -1,13 +1,13 @@
 [package]
 authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
-edition = "2018"
+edition = "2021"
 name = "hadron-cli"
 version = "0.1.0-beta.0"
 description = "The Hadron CLI."
 
 [dependencies]
 anyhow = "1"
-base64 = "0.13.0"
+base64 = "0.13"
 futures = "0.3"
 hadron = { package = "hadron-client", version = "0.1.0-beta.0" }
 lazy_static = "1"
@@ -20,5 +20,5 @@ tokio = { version = "1", default-features = false, features = [
 ]}
 tokio-stream = { version = "0.1", default-features = false, features = ["time", "net", "signal", "sync"] }
 tracing = { version = "0.1", features = ["attributes"] }
-tracing-subscriber = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
 uuid = { version = "0.8", default-features = false, features = ["v4"] }

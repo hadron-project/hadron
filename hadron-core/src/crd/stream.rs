@@ -76,11 +76,18 @@ pub struct StreamRetentionSpec {
     pub retention_seconds: Option<u64>,
 }
 
+impl StreamRetentionSpec {
+    /// The default retention seconds value, which is 7 days.
+    pub fn retention_seconds_default() -> u64 {
+        604_800 // 7 days.
+    }
+}
+
 impl Default for StreamRetentionSpec {
     fn default() -> Self {
         Self {
             strategy: StreamRetentionPolicy::Time,
-            retention_seconds: Some(604_800), // 7 days.
+            retention_seconds: Some(StreamRetentionSpec::retention_seconds_default()),
         }
     }
 }
@@ -93,4 +100,17 @@ pub enum StreamRetentionPolicy {
     Retain,
     /// Retain data on the Stream based on secondary timestamp index.
     Time,
+}
+
+impl std::fmt::Display for StreamRetentionPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Retain => "retain",
+                Self::Time => "time",
+            }
+        )
+    }
 }

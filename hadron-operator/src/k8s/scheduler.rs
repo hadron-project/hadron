@@ -700,6 +700,21 @@ impl Controller {
                             value: Some(STREAM_DATA_PATH.into()),
                             ..Default::default()
                         },
+                        EnvVar {
+                            name: "RETENTION_POLICY_STRATEGY".into(),
+                            value: Some(stream.spec.retention_policy.strategy.to_string()),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "RETENTION_POLICY_RETENTION_SECONDS".into(),
+                            value: stream
+                                .spec
+                                .retention_policy
+                                .retention_seconds
+                                .as_ref()
+                                .map(|val| format!("{}", val)),
+                            ..Default::default()
+                        },
                     ]),
                     volume_mounts: Some(vec![VolumeMount {
                         name: "data".into(),

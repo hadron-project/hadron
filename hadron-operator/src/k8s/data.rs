@@ -15,8 +15,8 @@ use std::time::Duration;
 
 use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::core::v1::{Secret, Service};
+use kube::runtime::watcher::Event;
 use kube::Resource;
-use kube_runtime::watcher::Event;
 
 use crate::k8s::scheduler::SchedulerTask;
 use crate::k8s::{Controller, EventResult};

@@ -33,7 +33,7 @@ pub mod operator_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for OperatorServer<T>
     where
         T: Operator,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;

@@ -167,15 +167,7 @@ async fn diff_and_update_endpoints(
                 continue;
             }
         };
-        let chan = match endpoint.connect_lazy() {
-            Ok(chan) => chan,
-            Err(err) => {
-                // NOTE: as of tonic@0.5, this actually can not fail, but returns
-                // a result for API future-proofing.
-                tracing::error!(error = ?err, "error building connection to endpoint");
-                continue;
-            }
-        };
+        let chan = endpoint.connect_lazy();
         let conn = StreamControllerClient::new(chan);
         changes.push(Change::Insert(partition.partition, conn.clone()));
         tracing::debug!(endpoint = new_endpoint_str, "new endpoint connection established");
