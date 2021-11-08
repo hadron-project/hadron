@@ -51,7 +51,7 @@ async fn publish_data_frame() -> Result<()> {
     let stream_tree = db.get_stream_tree().await?;
     let (mut current_offset, mut earliest_timestamp) = (0u64, None);
     let (tx, rx) = watch::channel(current_offset);
-    let expected_ts_min = chrono::Utc::now().timestamp_millis() - 5;
+    let expected_ts_min = time::OffsetDateTime::now_utc().unix_timestamp() - 5;
 
     let mut req = StreamPublishRequest { batch: vec![], fsync: true, ack: 0 };
     let (mut expected_events, expected_offset) =

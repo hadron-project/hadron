@@ -55,7 +55,7 @@ use hadron_core::crd::{StreamRetentionPolicy, StreamRetentionSpec};
 /// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
 /// the `utils::encode_byte_prefix*` methods.
 pub const PREFIX_STREAM_EVENT: &[u8; 1] = b"e";
-/// The key prefix used for storing stream event timestamps, always stored as i64 milliseconds.
+/// The key prefix used for storing stream event timestamps, always stored as i64 seconds timestamp.
 ///
 /// NOTE: in order to preserve lexicographical ordering of keys, it is important to always use
 /// the `utils::encode_byte_prefix*` methods.
@@ -72,6 +72,8 @@ pub const PREFIX_STREAM_SUBS: &[u8; 1] = b"s";
 pub const PREFIX_STREAM_SUB_OFFSETS: &[u8; 1] = b"o";
 /// The key used to store the last written offset for the stream.
 pub const KEY_STREAM_LAST_WRITTEN_OFFSET: &[u8; 1] = b"l";
+/// The key used to store the seconds timestamp of the last compaction event.
+pub const KEY_STREAM_LAST_COMPACTION: &[u8; 1] = b"c";
 
 const COMPACTION_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60 * 30);
 const ERR_DECODING_STREAM_META_GROUP_NAME: &str = "error decoding stream meta group name from storage";
@@ -112,6 +114,8 @@ pub struct StreamCtl {
     earliest_timestamp: Option<(i64, u64)>,
     /// A bool indicating if the stream is currently undergoing a compaction routine.
     is_compacting: bool,
+    /// The timestamp of the last compaction event.
+    last_compaction_event: Option<i64>,
 }
 
 impl StreamCtl {
@@ -158,6 +162,7 @@ impl StreamCtl {
                 current_offset: recovery_data.last_written_offset,
                 earliest_timestamp: recovery_data.first_timestamp_opt,
                 is_compacting: false,
+                last_compaction_event: recovery_data.last_compaction_opt,
             },
             offset_signal_rx,
         ))
@@ -170,8 +175,11 @@ impl StreamCtl {
     async fn run(mut self) -> Result<()> {
         tracing::debug!("stream controller {}/{} has started", self.config.stream, self.partition);
 
-        let compaction_timer = tokio::time::sleep(COMPACTION_INTERVAL);
+        // Calculate the delay to be used for the initial compaction event.
+        let delay = calculate_initial_compaction_delay(self.last_compaction_event);
+        let compaction_timer = tokio::time::sleep(delay);
         tokio::pin!(compaction_timer);
+
         loop {
             tokio::select! {
                 msg_opt = self.requests_rx.next() => self.handle_ctl_msg(msg_opt).await,
@@ -253,6 +261,21 @@ impl StreamCtl {
     }
 }
 
+/// Calculate the initial compaction delay based on the given last compaction timestamp.
+fn calculate_initial_compaction_delay(last_compaction_timestamp: Option<i64>) -> std::time::Duration {
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    match last_compaction_timestamp {
+        Some(last_timestamp) => {
+            let delay_seconds = time::Duration::seconds(now.saturating_sub(last_timestamp));
+            std::time::Duration::try_from(delay_seconds).unwrap_or_else(|err| {
+                tracing::error!(error = ?err, "error converting last compaction timestamp into std duration");
+                COMPACTION_INTERVAL
+            })
+        }
+        None => COMPACTION_INTERVAL,
+    }
+}
+
 /// Execute a compaction routine on the given DB tree.
 ///
 /// If compaction is not configured for the stream, then this routine will immediately finish and
@@ -278,10 +301,11 @@ async fn compact_stream(config: Arc<Config>, tree: Tree, earliest_timestamp: Opt
                 .retention_policy
                 .retention_seconds
                 .unwrap_or_else(StreamRetentionSpec::retention_seconds_default);
-            chrono::Duration::seconds(i64::try_from(ttl).unwrap_or(i64::MAX))
+            time::Duration::seconds(i64::try_from(ttl).unwrap_or(i64::MAX))
         }
     };
-    let threshold = (chrono::Utc::now() - ttl).timestamp_millis();
+    let now = time::OffsetDateTime::now_utc();
+    let threshold = (now - ttl).unix_timestamp();
 
     // Search for all timestamps falling behind the calculated threshold.
     let earliest_timestamp_opt = Database::spawn_blocking(move || -> Result<Option<(i64, u64)>> {
@@ -323,6 +347,9 @@ async fn compact_stream(config: Arc<Config>, tree: Tree, earliest_timestamp: Opt
             })
             .transpose()?;
 
+        // Record the timestamp of this compaction event.
+        batch.insert(KEY_STREAM_LAST_COMPACTION, &utils::encode_i64(now.unix_timestamp()));
+
         // Apply the batch.
         tracing::debug!("compacting timestamp and event records up through offset {}", last_ts_offset);
         tree.apply_batch(batch)
@@ -361,6 +388,13 @@ async fn recover_stream_state(tree: Tree) -> Result<StreamRecoveryState> {
             })
             .transpose()?;
 
+        // Fetch timestamp of last compaction event.
+        let last_compaction_opt = tree
+            .get(KEY_STREAM_LAST_COMPACTION)
+            .context("error fetching last compaction key during recovery")?
+            .map(|val| utils::decode_i64(&val).context("error decoding last compaction event timestamp, data corrupted"))
+            .transpose()?;
+
         // Fetch all stream subscriber info.
         let mut subs = HashMap::new();
         for entry_res in tree.scan_prefix(PREFIX_STREAM_SUBS) {
@@ -392,6 +426,7 @@ async fn recover_stream_state(tree: Tree) -> Result<StreamRecoveryState> {
             last_written_offset,
             subscriptions,
             first_timestamp_opt,
+            last_compaction_opt,
         })
     })
     .await??;
@@ -406,6 +441,8 @@ struct StreamRecoveryState {
     subscriptions: Vec<(Subscription, u64)>,
     /// The first timestamp record found, if any.
     first_timestamp_opt: Option<(i64, u64)>,
+    /// The timestamp of the last compaction event.
+    last_compaction_opt: Option<i64>,
 }
 
 /// A message bound for a stream controller.

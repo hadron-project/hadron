@@ -14,7 +14,6 @@ anyhow = "1"
 arc-swap = "1"
 base64 = "0.13"
 bytes = "1"
-chrono = "0.4"
 envy = "0.4"
 futures = "0.3"
 hadron-core = { path = "../hadron-core" }
@@ -27,6 +26,7 @@ rand = "0.8"
 serde = { version="1", features = ["derive"] }
 sled = "0.34"
 thiserror = "1"
+time = "0.3.4"
 tokio = { version = "1", default-features = false, features = [
     # See https://docs.rs/tokio/latest/tokio/#feature-flags
     "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs",
