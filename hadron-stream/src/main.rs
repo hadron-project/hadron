@@ -51,6 +51,8 @@ async fn main() -> Result<()> {
         pod_name = %cfg.pod_name,
         partition = %cfg.partition,
         storage_data_path = %cfg.storage_data_path,
+        retention_policy_strategy = ?cfg.retention_policy.strategy,
+        retention_policy_seconds = ?cfg.retention_policy.retention_seconds,
         "starting Hadron Stream controller",
     );
     if let Err(err) = App::new(cfg).await?.spawn().await {

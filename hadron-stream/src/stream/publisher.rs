@@ -53,7 +53,7 @@ impl StreamCtl {
 
         // Assign an offset to each event in the batch, and record a timestamp in a secondary
         // index for the last offset in the batch.
-        let ts = chrono::Utc::now().timestamp_millis();
+        let ts = time::OffsetDateTime::now_utc().unix_timestamp();
         let mut batch = sled::Batch::default();
         for new_event in req.batch {
             *current_offset += 1;

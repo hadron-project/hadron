@@ -156,7 +156,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "serde",
- "time",
+ "time 0.1.44",
  "winapi",
 ]
 
@@ -549,6 +549,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "thiserror",
+ "time 0.3.4",
  "tonic",
  "uuid",
 ]
@@ -561,7 +562,6 @@ dependencies = [
  "arc-swap",
  "base64 0.13.0",
  "bytes",
- "chrono",
  "envy",
  "futures",
  "hadron-core",
@@ -575,6 +575,7 @@ dependencies = [
  "sled",
  "tempfile",
  "thiserror",
+ "time 0.3.4",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1749,6 +1750,15 @@ dependencies = [
  "libc",
  "wasi",
  "winapi",
+]
+
+[[package]]
+name = "time"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99beeb0daeac2bd1e86ac2c21caddecb244b39a093594da1a661ec2060c7aedd"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

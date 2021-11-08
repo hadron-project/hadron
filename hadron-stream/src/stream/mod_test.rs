@@ -149,15 +149,25 @@ async fn compact_stream_deletes_all_data() -> Result<()> {
     Arc::make_mut(&mut config).retention_policy.retention_seconds = Some(0); // Should ensure that all data is removed.
     let db = Database::new(config.clone()).await?;
     let stream_tree = db.get_stream_tree().await?;
-    let last_offset = setup_stream_data(&stream_tree).await?.1;
+    let (last_ts, last_offset) = setup_stream_data(&stream_tree).await?;
+    let ts_two_weeks_ago = (time::OffsetDateTime::now_utc() - time::Duration::weeks(2)).unix_timestamp();
+    stream_tree
+        .insert(
+            &utils::encode_byte_prefix_i64(PREFIX_STREAM_TS, ts_two_weeks_ago),
+            &utils::encode_u64(last_offset),
+        )
+        .context("error inserting older timestamp index record for compaction test")?;
+    stream_tree
+        .remove(&utils::encode_byte_prefix_i64(PREFIX_STREAM_TS, last_ts))
+        .context("error removing original timestamp record for compaction test setup")?;
 
     let earliest_timestamp_opt = super::compact_stream(config, stream_tree.clone(), None)
         .await
         .context("unexpected error from compaction")?;
 
     assert!(
-        last_offset > 50,
-        "expected at least offset 50 from setup_stream_data, got {}",
+        last_offset >= 49,
+        "expected at least offset 49 from setup_stream_data, got {}",
         last_offset
     );
     assert!(
@@ -181,7 +191,7 @@ async fn compact_stream_deletes_only_old_data() -> Result<()> {
     let db = Database::new(config.clone()).await?;
     let stream_tree = db.get_stream_tree().await?;
     let (last_ts, last_offset) = setup_stream_data(&stream_tree).await?;
-    let ts_two_weeks_ago = (chrono::Utc::now() - chrono::Duration::weeks(2)).timestamp_millis();
+    let ts_two_weeks_ago = (time::OffsetDateTime::now_utc() - time::Duration::weeks(2)).unix_timestamp();
     let old_offset = last_offset / 2;
     stream_tree
         .insert(
@@ -218,11 +228,23 @@ async fn compact_stream_deletes_only_old_data() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn calculate_initial_compaction_delay_returns_delta_under_30_min() {
+    let expected_seconds = time::OffsetDateTime::now_utc().unix_timestamp() - (60 * 25);
+    let expected_output = time::Duration::seconds(expected_seconds);
+    let output = super::calculate_initial_compaction_delay(Some(60 * 25));
+    assert_eq!(
+        output, expected_output,
+        "unexpected duration returned, expected {:?}, got {:?}",
+        expected_output, output,
+    );
+}
+
 /// Setup some stream data in the given DB tree returning the last written offset.
 async fn setup_stream_data(db: &sled::Tree) -> Result<(i64, u64)> {
     let mut batch = sled::Batch::default();
     let mut last_offset = 0;
-    let ts = chrono::Utc::now().timestamp_millis();
+    let ts = time::OffsetDateTime::now_utc().unix_timestamp();
     for offset in 0..rand::thread_rng().gen_range(50..100) {
         let event = Event::new_test(offset, "test", "empty");
         let event_bytes = utils::encode_model(&event)?;
