@@ -28,6 +28,8 @@ mod publisher;
 #[cfg(test)]
 mod publisher_test;
 mod subscriber;
+#[cfg(test)]
+mod subscriber_test;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -121,8 +123,7 @@ pub struct StreamCtl {
 impl StreamCtl {
     /// Create a new instance.
     pub async fn new(
-        config: Arc<Config>, db: Database, shutdown_tx: broadcast::Sender<()>, requests_tx: mpsc::Sender<StreamCtlMsg>,
-        requests_rx: mpsc::Receiver<StreamCtlMsg>,
+        config: Arc<Config>, db: Database, shutdown_tx: broadcast::Sender<()>, requests_tx: mpsc::Sender<StreamCtlMsg>, requests_rx: mpsc::Receiver<StreamCtlMsg>,
     ) -> Result<(Self, watch::Receiver<u64>)> {
         // Recover stream state.
         let partition = config.partition;
@@ -217,9 +218,7 @@ impl StreamCtl {
     }
 
     /// Handle a request to setup a subscriber channel.
-    async fn handle_request_subscribe(
-        &mut self, tx: mpsc::Sender<RpcResult<StreamSubscribeResponse>>, rx: Streaming<StreamSubscribeRequest>, setup: StreamSubscribeSetup,
-    ) {
+    async fn handle_request_subscribe(&mut self, tx: mpsc::Sender<RpcResult<StreamSubscribeResponse>>, rx: Streaming<StreamSubscribeRequest>, setup: StreamSubscribeSetup) {
         let _ = self.subs_tx.send(StreamSubCtlMsg::Request { tx, rx, setup }).await;
     }
 
@@ -231,19 +230,11 @@ impl StreamCtl {
             return;
         }
         self.is_compacting = true;
-        let (config, tree, ts, stream_tx, shutdown_tx) = (
-            self.config.clone(),
-            self.tree.clone(),
-            self.earliest_timestamp,
-            self.requests_tx.clone(),
-            self.shutdown_tx.clone(),
-        );
+        let (config, tree, ts, stream_tx, shutdown_tx) = (self.config.clone(), self.tree.clone(), self.earliest_timestamp, self.requests_tx.clone(), self.shutdown_tx.clone());
         let _handle = tokio::spawn(async move {
             match compact_stream(config, tree, ts).await {
                 Ok(earliest_timestamp) => {
-                    let _res = stream_tx
-                        .send(StreamCtlMsg::CompactionFinished { earliest_timestamp })
-                        .await;
+                    let _res = stream_tx.send(StreamCtlMsg::CompactionFinished { earliest_timestamp }).await;
                 }
                 Err(err) => {
                     tracing::error!(error = ?err, "error during compaction routine, shutting down");
@@ -297,10 +288,7 @@ async fn compact_stream(config: Arc<Config>, tree: Tree, earliest_timestamp: Opt
     let ttl = match &config.retention_policy.strategy {
         StreamRetentionPolicy::Retain => return Ok(earliest_timestamp),
         StreamRetentionPolicy::Time => {
-            let ttl = config
-                .retention_policy
-                .retention_seconds
-                .unwrap_or_else(StreamRetentionSpec::retention_seconds_default);
+            let ttl = config.retention_policy.retention_seconds.unwrap_or_else(StreamRetentionSpec::retention_seconds_default);
             time::Duration::seconds(i64::try_from(ttl).unwrap_or(i64::MAX))
         }
     };
@@ -352,8 +340,7 @@ async fn compact_stream(config: Arc<Config>, tree: Tree, earliest_timestamp: Opt
 
         // Apply the batch.
         tracing::debug!("compacting timestamp and event records up through offset {}", last_ts_offset);
-        tree.apply_batch(batch)
-            .context("error applying compaction batch to stream tree")?;
+        tree.apply_batch(batch).context("error applying compaction batch to stream tree")?;
         tree.flush().context(ERR_DB_FLUSH)?;
         Ok(next_earliest_timestamp)
     })
@@ -367,9 +354,7 @@ async fn compact_stream(config: Arc<Config>, tree: Tree, earliest_timestamp: Opt
 async fn recover_stream_state(tree: Tree) -> Result<StreamRecoveryState> {
     let val = Database::spawn_blocking(move || -> Result<StreamRecoveryState> {
         // Fetch next offset info.
-        let offset_opt = tree
-            .get(KEY_STREAM_LAST_WRITTEN_OFFSET)
-            .context("error fetching next offset key during recovery")?;
+        let offset_opt = tree.get(KEY_STREAM_LAST_WRITTEN_OFFSET).context("error fetching next offset key during recovery")?;
         let last_written_offset = offset_opt
             .map(|val| utils::decode_u64(&val).context("error decoding offset value from storage"))
             .transpose()?

@@ -232,21 +232,15 @@ pub mod stream_controller_server {
         #[doc = " Open a metadata stream."]
         async fn metadata(&self, request: tonic::Request<super::MetadataRequest>) -> Result<tonic::Response<Self::MetadataStream>, tonic::Status>;
         #[doc = " Open a stream publisher channel."]
-        async fn stream_publish(
-            &self, request: tonic::Request<super::StreamPublishRequest>,
-        ) -> Result<tonic::Response<super::StreamPublishResponse>, tonic::Status>;
+        async fn stream_publish(&self, request: tonic::Request<super::StreamPublishRequest>) -> Result<tonic::Response<super::StreamPublishResponse>, tonic::Status>;
         #[doc = "Server streaming response type for the StreamSubscribe method."]
         type StreamSubscribeStream: futures_core::Stream<Item = Result<super::StreamSubscribeResponse, tonic::Status>> + Send + 'static;
         #[doc = " Open a stream subscriber channel."]
-        async fn stream_subscribe(
-            &self, request: tonic::Request<tonic::Streaming<super::StreamSubscribeRequest>>,
-        ) -> Result<tonic::Response<Self::StreamSubscribeStream>, tonic::Status>;
+        async fn stream_subscribe(&self, request: tonic::Request<tonic::Streaming<super::StreamSubscribeRequest>>) -> Result<tonic::Response<Self::StreamSubscribeStream>, tonic::Status>;
         #[doc = "Server streaming response type for the PipelineSubscribe method."]
         type PipelineSubscribeStream: futures_core::Stream<Item = Result<super::PipelineSubscribeResponse, tonic::Status>> + Send + 'static;
         #[doc = " Open a pipeline subscriber channel."]
-        async fn pipeline_subscribe(
-            &self, request: tonic::Request<tonic::Streaming<super::PipelineSubscribeRequest>>,
-        ) -> Result<tonic::Response<Self::PipelineSubscribeStream>, tonic::Status>;
+        async fn pipeline_subscribe(&self, request: tonic::Request<tonic::Streaming<super::PipelineSubscribeRequest>>) -> Result<tonic::Response<Self::PipelineSubscribeStream>, tonic::Status>;
     }
     #[doc = " The Hadron stream controller interface."]
     #[derive(Debug)]
@@ -308,8 +302,7 @@ pub mod stream_controller_server {
                         let inner = inner.0;
                         let method = MetadataSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc =
-                            tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
                         let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
@@ -334,8 +327,7 @@ pub mod stream_controller_server {
                         let inner = inner.0;
                         let method = StreamPublishSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc =
-                            tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -361,8 +353,7 @@ pub mod stream_controller_server {
                         let inner = inner.0;
                         let method = StreamSubscribeSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc =
-                            tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
                         let res = grpc.streaming(method, req).await;
                         Ok(res)
                     };
@@ -388,8 +379,7 @@ pub mod stream_controller_server {
                         let inner = inner.0;
                         let method = PipelineSubscribeSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc =
-                            tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
                         let res = grpc.streaming(method, req).await;
                         Ok(res)
                     };
