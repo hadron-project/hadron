@@ -13,7 +13,6 @@ codegen-units = 1
 anyhow = "1"
 arc-swap = "1"
 base64 = "0.13"
-bytes = "1"
 envy = "0.4"
 futures = "0.3"
 hadron-core = { path = "../hadron-core" }

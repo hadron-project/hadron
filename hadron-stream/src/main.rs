@@ -6,6 +6,8 @@ mod config;
 mod config_test;
 mod database;
 mod error;
+#[cfg(test)]
+mod fixtures;
 mod futures;
 mod grpc;
 mod models;

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use bytes::BytesMut;
 use futures::stream::StreamExt;
 use prost::Message;
 use rand::seq::IteratorRandom;
@@ -20,12 +19,12 @@ use crate::config::Config;
 use crate::database::Database;
 use crate::error::{AppError, AppErrorExt, RpcResult, ShutdownError, ShutdownResult, ERR_DB_FLUSH, ERR_ITER_FAILURE};
 use crate::futures::LivenessStream;
-use crate::grpc::{
-    Event, StreamSubscribeRequest, StreamSubscribeRequestAction, StreamSubscribeResponse, StreamSubscribeSetup, StreamSubscribeSetupStartingPoint,
-};
+use crate::grpc::{Event, StreamSubscribeRequest, StreamSubscribeRequestAction, StreamSubscribeResponse, StreamSubscribeSetup, StreamSubscribeSetupStartingPoint};
 use crate::models::stream::Subscription;
 use crate::stream::{PREFIX_STREAM_SUBS, PREFIX_STREAM_SUB_OFFSETS};
 use crate::utils;
+
+use super::PREFIX_STREAM_EVENT;
 
 /// The default max batch size for subscription groups.
 const DEFAULT_MAX_BATCH_SIZE: u32 = 1;
@@ -64,16 +63,13 @@ pub struct StreamSubCtl {
     shutdown_tx: broadcast::Sender<()>,
     /// A channel used for triggering graceful shutdown.
     shutdown_rx: BroadcastStream<()>,
-
-    /// A general purpose reusable bytes buffer, safe for concurrent use.
-    buf: BytesMut,
 }
 
 impl StreamSubCtl {
     /// Create a new instance.
     pub fn new(
-        config: Arc<Config>, db: Database, tree: Tree, partition: u32, shutdown_tx: broadcast::Sender<()>, events_tx: mpsc::Sender<StreamSubCtlMsg>,
-        events_rx: mpsc::Receiver<StreamSubCtlMsg>, stream_offset: watch::Receiver<u64>, subs: Vec<(Subscription, u64)>, current_offset: u64,
+        config: Arc<Config>, db: Database, tree: Tree, partition: u32, shutdown_tx: broadcast::Sender<()>, events_tx: mpsc::Sender<StreamSubCtlMsg>, events_rx: mpsc::Receiver<StreamSubCtlMsg>,
+        stream_offset: watch::Receiver<u64>, subs: Vec<(Subscription, u64)>, current_offset: u64,
     ) -> Self {
         let subs = SubscriberInfo::new(subs);
         Self {
@@ -89,7 +85,6 @@ impl StreamSubCtl {
             liveness_checks: StreamMap::new(),
             shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
             shutdown_tx,
-            buf: BytesMut::with_capacity(5000),
         }
     }
 
@@ -142,32 +137,24 @@ impl StreamSubCtl {
             None => return,
         };
         group.active_channels.remove(&id);
-        self.subs
-            .groups
-            .retain(|_, group| group.durable || !group.active_channels.is_empty());
+        self.subs.groups.retain(|_, group| group.durable || !group.active_channels.is_empty());
     }
 
     /// Handle a request which has been sent to this controller.
     #[tracing::instrument(level = "trace", skip(self, tx, rx, setup))]
-    async fn handle_request(
-        &mut self, tx: mpsc::Sender<RpcResult<StreamSubscribeResponse>>, rx: Streaming<StreamSubscribeRequest>, setup: StreamSubscribeSetup,
-    ) {
+    async fn handle_request(&mut self, tx: mpsc::Sender<RpcResult<StreamSubscribeResponse>>, rx: Streaming<StreamSubscribeRequest>, setup: StreamSubscribeSetup) {
         // Validate contents of setup request.
         if setup.group_name.is_empty() {
-            let _res = tx
-                .send(Err(Status::invalid_argument("subscriber group name may not be an empty string")))
-                .await;
+            let _res = tx.send(Err(Status::invalid_argument("subscriber group name may not be an empty string"))).await;
             return;
         }
         if setup.max_batch_size == 0 {
-            let _res = tx
-                .send(Err(Status::invalid_argument("subscriber batch size must be greater than 0")))
-                .await;
+            let _res = tx.send(Err(Status::invalid_argument("subscriber batch size must be greater than 0"))).await;
             return;
         }
 
         // Ensure the subscription is properly recorded.
-        let group = match self.ensure_subscriber_record(&setup).await {
+        let group = match ensure_subscriber_record(&self.tree, &setup, &mut self.subs, self.current_offset).await {
             Ok(group) => group,
             Err(err) => {
                 if err.downcast_ref::<ShutdownError>().is_some() {
@@ -225,7 +212,10 @@ impl StreamSubCtl {
                 return;
             }
         };
-        let msg = StreamSubscribeResponse { last_included_offset, batch: fetched_data.data };
+        let msg = StreamSubscribeResponse {
+            last_included_offset,
+            batch: fetched_data.data,
+        };
         group.delivery_cache = SubGroupDataCache::NeedsDelivery(Arc::new(msg));
 
         // Attempt to deliver the data.
@@ -244,74 +234,6 @@ impl StreamSubCtl {
         }
         // Drive another delivery pass.
         self.execute_delivery_pass().await;
-    }
-
-    /// Ensure a subscription record exists if it does not already exist in the index.
-    #[tracing::instrument(level = "trace", skip(self, sub))]
-    async fn ensure_subscriber_record(&mut self, sub: &StreamSubscribeSetup) -> Result<&mut SubscriptionGroup> {
-        // Get a handle to the group subscriber data, creating one if not present.
-        let already_exists = self.subs.groups.contains_key(&sub.group_name);
-        let offset = match &sub.starting_point {
-            Some(StreamSubscribeSetupStartingPoint::Beginning(_empty)) => 0,
-            Some(StreamSubscribeSetupStartingPoint::Latest(_empty)) => self.current_offset,
-            Some(StreamSubscribeSetupStartingPoint::Offset(offset)) => {
-                let offset = if *offset == 0 { 0 } else { offset - 1 };
-                if offset > self.current_offset {
-                    self.current_offset
-                } else {
-                    offset
-                }
-            }
-            None => self.current_offset,
-        };
-        let entry = self.subs.groups.entry(sub.group_name.clone())
-            // Ensure the subscription model exists.
-            .or_insert_with(|| {
-                let durable = sub.durable;
-                let max_batch_size = if sub.max_batch_size == 0 { DEFAULT_MAX_BATCH_SIZE } else { sub.max_batch_size };
-                let sub = Subscription {
-                    group_name: sub.group_name.clone(),
-                    max_batch_size,
-                };
-                SubscriptionGroup::new(sub, offset, durable)
-            });
-
-        // If the subscription is durable & did not already exist, then write the subscription model to disk.
-        if sub.durable && !already_exists {
-            let mut buf = self.buf.split();
-            entry
-                .subscription
-                .encode(&mut buf)
-                .context("error encoding subscription record")?;
-
-            let sub_model_key = utils::ivec_from_iter(
-                PREFIX_STREAM_SUBS
-                    .iter()
-                    .copied()
-                    .chain(sub.group_name.as_bytes().iter().copied()),
-            );
-            let sub_offset_key = utils::ivec_from_iter(
-                PREFIX_STREAM_SUB_OFFSETS
-                    .iter()
-                    .copied()
-                    .chain(sub.group_name.as_bytes().iter().copied()),
-            );
-
-            let mut batch = sled::Batch::default();
-            batch.insert(sub_model_key, buf.freeze().as_ref());
-            batch.insert(sub_offset_key, &utils::encode_u64(offset));
-            self.tree
-                .apply_batch(batch)
-                .context("error writing subscription record and offset to disk")
-                .map_err(ShutdownError::from)?;
-            self.tree
-                .flush_async()
-                .await
-                .context(ERR_DB_FLUSH)
-                .map_err(ShutdownError::from)?;
-        }
-
-        Ok(entry)
     }
 
     /// Execute a loop over all active subscription groups, delivering data if possible.
@@ -353,13 +275,7 @@ impl StreamSubCtl {
 
             // This group is ready to have some data fetched, so spawn a task to do so.
             group.is_fetching_data = true;
-            Self::spawn_group_fetch(
-                group.group_name.clone(),
-                group.offset + 1,
-                group.subscription.max_batch_size,
-                self.tree.clone(),
-                self.events_tx.clone(),
-            );
+            spawn_group_fetch(group.group_name.clone(), group.offset + 1, group.subscription.max_batch_size, self.tree.clone(), self.events_tx.clone());
         }
     }
 
@@ -367,28 +283,19 @@ impl StreamSubCtl {
     async fn try_handle_delivery_response(&mut self, delivery_res: DeliveryResponse) -> Result<()> {
         // Get a mutable handle to subscription group to which this response applies.
         let (chan_id, group_name) = (&delivery_res.id, &*delivery_res.group_name);
-        let group = self
-            .subs
-            .groups
-            .get_mut(group_name)
-            .context("response from subscription delivery dropped as group no longer exists")?;
+        let group = self.subs.groups.get_mut(group_name).context("response from subscription delivery dropped as group no longer exists")?;
 
         // Unpack response body.
         let last_offset = delivery_res.orig_data.last_included_offset;
         group.delivery_cache = SubGroupDataCache::NeedsDelivery(delivery_res.orig_data);
-        let res = delivery_res
-            .output
-            .context("subscriber channel closed while awaiting delivery response")
-            .map_err(|err| {
-                let _ = group.active_channels.remove(chan_id);
-                err
-            })?;
-        let (client_chan, body) = res
-            .context("error returned while awaiting subscriber delivery response")
-            .map_err(|err| {
-                let _ = group.active_channels.remove(chan_id);
-                err
-            })?;
+        let res = delivery_res.output.context("subscriber channel closed while awaiting delivery response").map_err(|err| {
+            let _ = group.active_channels.remove(chan_id);
+            err
+        })?;
+        let (client_chan, body) = res.context("error returned while awaiting subscriber delivery response").map_err(|err| {
+            let _ = group.active_channels.remove(chan_id);
+            err
+        })?;
         if let Some(chan_wrapper) = group.active_channels.get_mut(chan_id) {
             *chan_wrapper = SubChannelState::MonitoringLiveness;
             self.liveness_checks.insert(
@@ -413,44 +320,16 @@ impl StreamSubCtl {
             _ => Err("unexpected or malformed response returned from subscriber, expected ack or nack".into()),
         };
         if group.durable {
-            Self::try_record_delivery_response(record_res, group.group_name.clone(), self.tree.clone())
+            try_record_delivery_response(record_res, group.group_name.clone(), self.tree.clone())
                 .await
                 .context("error while recording subscriber delivery response")?;
         }
         Ok(())
     }
 
-    /// Record the ack/nack response from a subscriber delivery.
-    #[tracing::instrument(level = "trace", skip(res, group_name, tree))]
-    async fn try_record_delivery_response(res: std::result::Result<u64, String>, group_name: Arc<String>, tree: Tree) -> ShutdownResult<()> {
-        let offset = match res {
-            Ok(offset) => offset,
-            Err(_err) => {
-                // TODO[telemetry]: in the future, we will record this for observability system.
-                return Ok(());
-            }
-        };
-        let key = utils::ivec_from_iter(
-            PREFIX_STREAM_SUB_OFFSETS
-                .iter()
-                .copied()
-                .chain(group_name.as_bytes().iter().copied()),
-        );
-        tree.insert(key, &utils::encode_u64(offset))
-            .context("error updating subscription offsets on disk")
-            .map_err(ShutdownError::from)?;
-        tree.flush_async()
-            .await
-            .context(ERR_DB_FLUSH)
-            .map_err(ShutdownError::from)?;
-        Ok(())
-    }
-
     /// Attempt to deliver a payload of data to the target group.
     #[tracing::instrument(level = "trace", skip(group, liveness_stream, tx))]
-    async fn try_deliver_data_to_sub(
-        group: &mut SubscriptionGroup, liveness_stream: &mut StreamMap<Uuid, SubLivenessStream>, tx: mpsc::Sender<StreamSubCtlMsg>,
-    ) {
+    async fn try_deliver_data_to_sub(group: &mut SubscriptionGroup, liveness_stream: &mut StreamMap<Uuid, SubLivenessStream>, tx: mpsc::Sender<StreamSubCtlMsg>) {
         // Get a handle to the group's cached data, else there is nothing to do here.
         let data = match &group.delivery_cache {
             SubGroupDataCache::NeedsDelivery(data) => data.clone(),
@@ -508,58 +387,118 @@ impl StreamSubCtl {
             let (tx, group_name, id, orig_data) = (tx.clone(), group.group_name.clone(), chan_id, data);
             tokio::spawn(async move {
                 // TODO: add optional timeouts here based on subscription group config.
-                let output = chan
-                    .1
-                    .next()
-                    .await
-                    .map(|res| res.map_err(anyhow::Error::from).map(|data| (chan, data)));
-                let _ = tx
-                    .send(StreamSubCtlMsg::DeliveryResponse(DeliveryResponse { id, group_name, output, orig_data }))
-                    .await;
+                let output = chan.1.next().await.map(|res| res.map_err(anyhow::Error::from).map(|data| (chan, data)));
+                let _ = tx.send(StreamSubCtlMsg::DeliveryResponse(DeliveryResponse { id, group_name, output, orig_data })).await;
             });
             return;
         }
     }
+}
 
-    /// Spawn a data fetch operation to pull data from the stream for a subscription group.
-    #[tracing::instrument(level = "trace", skip(group_name, max_batch_size, tree, tx))]
-    fn spawn_group_fetch(group_name: Arc<String>, next_offset: u64, max_batch_size: u32, tree: Tree, tx: mpsc::Sender<StreamSubCtlMsg>) {
-        tokio::spawn(async move {
-            // Spawn a blocking read of the stream.
-            let res = Database::spawn_blocking(move || -> Result<FetchStreamRecords> {
-                let start = utils::encode_u64(next_offset);
-                let stop = utils::encode_u64(next_offset + max_batch_size as u64);
-                let mut data = Vec::with_capacity(max_batch_size as usize);
-                let mut last_included_offset = None;
-                for iter_res in tree.range(start..stop) {
-                    let (key, val) = iter_res.context(ERR_ITER_FAILURE).map_err(ShutdownError::from)?;
-                    let offset = utils::decode_u64(&key)
-                        .context("error decoding event offset")
-                        .map_err(ShutdownError::from)?;
-                    let event: Event = utils::decode_model(val.as_ref())
-                        .context("error decoding event from storage")
-                        .map_err(ShutdownError::from)?;
-                    data.push(event);
-                    last_included_offset = Some(offset);
-                }
-                Ok(FetchStreamRecords { group_name, data, last_included_offset })
-            })
-            .await
-            .and_then(|res| res.map_err(ShutdownError::from));
-
-            match res {
-                Ok(fetched_data) => {
-                    let _ = tx.send(StreamSubCtlMsg::FetchStreamRecords(Ok(fetched_data))).await;
-                }
-                Err(err) => {
-                    let _ = tx.send(StreamSubCtlMsg::FetchStreamRecords(Err(err))).await;
-                }
+/// Ensure a subscription record exists if it does not already exist in the index.
+#[tracing::instrument(level = "trace", skip(tree, sub, subs, current_offset))]
+pub(super) async fn ensure_subscriber_record<'a>(tree: &Tree, sub: &StreamSubscribeSetup, subs: &'a mut SubscriberInfo, current_offset: u64) -> Result<&'a mut SubscriptionGroup> {
+    // Get a handle to the group subscriber data, creating one if not present.
+    let already_exists = subs.groups.contains_key(&sub.group_name);
+    let offset = match &sub.starting_point {
+        Some(StreamSubscribeSetupStartingPoint::Beginning(_empty)) => 0,
+        Some(StreamSubscribeSetupStartingPoint::Latest(_empty)) => current_offset,
+        Some(StreamSubscribeSetupStartingPoint::Offset(offset)) => {
+            let offset = if *offset == 0 { 0 } else { offset - 1 };
+            if offset > current_offset {
+                current_offset
+            } else {
+                offset
             }
+        }
+        None => current_offset,
+    };
+    let entry = subs.groups.entry(sub.group_name.clone())
+        // Ensure the subscription model exists.
+        .or_insert_with(|| {
+            let durable = sub.durable;
+            let max_batch_size = if sub.max_batch_size == 0 { DEFAULT_MAX_BATCH_SIZE } else { sub.max_batch_size };
+            let sub = Subscription {
+                group_name: sub.group_name.clone(),
+                max_batch_size,
+            };
+            SubscriptionGroup::new(sub, offset, durable)
         });
+
+    // If the subscription is durable & did not already exist, then write the subscription model to disk.
+    if sub.durable && !already_exists {
+        let model = entry.subscription.encode_to_vec();
+
+        let sub_model_key = utils::ivec_from_iter(PREFIX_STREAM_SUBS.iter().copied().chain(sub.group_name.as_bytes().iter().copied()));
+        let sub_offset_key = utils::ivec_from_iter(PREFIX_STREAM_SUB_OFFSETS.iter().copied().chain(sub.group_name.as_bytes().iter().copied()));
+
+        let mut batch = sled::Batch::default();
+        batch.insert(sub_model_key, model.as_slice());
+        batch.insert(sub_offset_key, &utils::encode_u64(offset));
+        tree.apply_batch(batch).context("error writing subscription record and offset to disk").map_err(ShutdownError::from)?;
+        tree.flush_async().await.context(ERR_DB_FLUSH).map_err(ShutdownError::from)?;
     }
+
+    Ok(entry)
+}
+
+/// Spawn a data fetch operation to pull data from the stream for a subscription group.
+#[tracing::instrument(level = "trace", skip(group_name, max_batch_size, tree, tx))]
+pub(super) fn spawn_group_fetch(group_name: Arc<String>, next_offset: u64, max_batch_size: u32, tree: Tree, tx: mpsc::Sender<StreamSubCtlMsg>) {
+    tokio::spawn(async move {
+        // Spawn a blocking read of the stream.
+        let res = Database::spawn_blocking(move || -> Result<FetchStreamRecords> {
+            let start = utils::encode_byte_prefix(PREFIX_STREAM_EVENT, next_offset);
+            let stop = utils::encode_byte_prefix(PREFIX_STREAM_EVENT, next_offset + max_batch_size as u64);
+            let mut data = Vec::with_capacity(max_batch_size as usize);
+            let mut last_included_offset = None;
+            for iter_res in tree.range(start..stop) {
+                let (key, val) = iter_res.context(ERR_ITER_FAILURE).map_err(ShutdownError::from)?;
+                let offset = utils::decode_u64(&key[1..]).context("error decoding event offset").map_err(ShutdownError::from)?;
+                let event: Event = utils::decode_model(val.as_ref()).context("error decoding event from storage").map_err(ShutdownError::from)?;
+                data.push(event);
+                last_included_offset = Some(offset);
+            }
+            Ok(FetchStreamRecords {
+                group_name,
+                data,
+                last_included_offset,
+            })
+        })
+        .await
+        .and_then(|res| res.map_err(ShutdownError::from));
+
+        match res {
+            Ok(fetched_data) => {
+                let _ = tx.send(StreamSubCtlMsg::FetchStreamRecords(Ok(fetched_data))).await;
+            }
+            Err(err) => {
+                let _ = tx.send(StreamSubCtlMsg::FetchStreamRecords(Err(err))).await;
+            }
+        }
+    });
+}
+
+/// Record the ack/nack response from a subscriber delivery.
+#[tracing::instrument(level = "trace", skip(res, group_name, tree))]
+pub(super) async fn try_record_delivery_response(res: std::result::Result<u64, String>, group_name: Arc<String>, tree: Tree) -> ShutdownResult<()> {
+    let offset = match res {
+        Ok(offset) => offset,
+        Err(_err) => {
+            // TODO[telemetry]: in the future, we will record this for observability system.
+            return Ok(());
+        }
+    };
+    let key = utils::ivec_from_iter(PREFIX_STREAM_SUB_OFFSETS.iter().copied().chain(group_name.as_bytes().iter().copied()));
+    tree.insert(key, &utils::encode_u64(offset))
+        .context("error updating subscription offsets on disk")
+        .map_err(ShutdownError::from)?;
+    tree.flush_async().await.context(ERR_DB_FLUSH).map_err(ShutdownError::from)?;
+    Ok(())
 }
 
 /// A message bound for a stream subscription controller.
+#[derive(Debug)]
 pub enum StreamSubCtlMsg {
     /// A client request being routed to the controller.
     Request {
@@ -573,28 +512,31 @@ pub enum StreamSubCtlMsg {
     DeliveryResponse(DeliveryResponse),
 }
 
+#[derive(Debug)]
 pub struct FetchStreamRecords {
-    group_name: Arc<String>,
-    data: Vec<Event>,
-    last_included_offset: Option<u64>,
+    pub group_name: Arc<String>,
+    pub data: Vec<Event>,
+    pub last_included_offset: Option<u64>,
 }
 
+#[derive(Debug)]
 pub struct DeliveryResponse {
     /// The ID of the subscription channel.
-    id: Uuid,
+    pub id: Uuid,
     /// The name of the subscription group.
-    group_name: Arc<String>,
+    pub group_name: Arc<String>,
     /// The output of awaiting for the subscriber's response.
-    output: Option<Result<(ClientChannel, StreamSubscribeRequest)>>,
+    pub output: Option<Result<(ClientChannel, StreamSubscribeRequest)>>,
     /// The original data delivered.
-    orig_data: Arc<StreamSubscribeResponse>,
+    pub orig_data: Arc<StreamSubscribeResponse>,
 }
 
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 
 /// Data on all subscriptions along with their active subscriber channels.
-struct SubscriberInfo {
+#[derive(Default)]
+pub(super) struct SubscriberInfo {
     /// A mapping of all subscriptions by group name.
     pub groups: HashMap<String, SubscriptionGroup>,
 }
@@ -614,22 +556,22 @@ impl SubscriberInfo {
 }
 
 /// Data on a subscription group.
-struct SubscriptionGroup {
+pub(super) struct SubscriptionGroup {
     /// An Arc'd copy of the group's name for easy sharing across threads
     /// without the need for additional allocations.
-    group_name: Arc<String>,
+    pub group_name: Arc<String>,
     /// The data model of this subscription.
-    subscription: Subscription,
+    pub subscription: Subscription,
     /// A bool indicating if this is a durable group or not.
-    durable: bool,
+    pub durable: bool,
     /// The last offset to have been processed by this subscription.
-    offset: u64,
+    pub offset: u64,
     /// A mapping of all active subscribers of this group.
-    active_channels: HashMap<Uuid, SubChannelState>,
+    pub active_channels: HashMap<Uuid, SubChannelState>,
     /// The possible states of this group's data delivery cache.
-    delivery_cache: SubGroupDataCache,
+    pub delivery_cache: SubGroupDataCache,
     /// A bool indicating if data is currently being fetched for this group.
-    is_fetching_data: bool,
+    pub is_fetching_data: bool,
 }
 
 impl SubscriptionGroup {
@@ -648,7 +590,7 @@ impl SubscriptionGroup {
 }
 
 /// A type wrapping an H2 data channel which be unavailable while out deliverying data.
-enum SubChannelState {
+pub(super) enum SubChannelState {
     /// The channel is currently out as it is being used to deliver data.
     OutForDelivery,
     /// The channel is currently held in a stream monitoring its liveness.
@@ -656,7 +598,7 @@ enum SubChannelState {
 }
 
 /// The possible states of a subscription group's data delivery cache.
-enum SubGroupDataCache {
+pub(super) enum SubGroupDataCache {
     /// No data is currently cached.
     None,
     /// Data is cached and needs to be delivered.
