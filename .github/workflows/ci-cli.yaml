@@ -4,7 +4,7 @@ on:
     branches:
       - "*"
     paths:
-      - 'hadron-cli/**'
+      - "hadron-cli/**"
       - "!**.md"
     tags-ignore:
       - "*"

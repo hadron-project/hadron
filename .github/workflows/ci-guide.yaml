@@ -2,9 +2,9 @@ name: CI Guide
 on:
   push:
     branches:
-      - *
+      - "*"
     paths:
-      - guide/**
+      - "guide/**"
 
 jobs:
   deploy:

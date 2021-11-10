@@ -4,7 +4,7 @@ on:
     branches:
       - "*"
     paths:
-      - 'hadron-stream/**'
+      - "hadron-stream/**"
       - "!**.md"
     tags-ignore:
       - "*"

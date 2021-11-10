@@ -2,10 +2,10 @@ name: Pages
 on:
   push:
     branches:
-      - main
+      - "main"
     paths:
-      - guide/**
-      - .github/workflows/pages.yaml
+      - "guide/**"
+      - ".github/workflows/pages.yaml"
 
 jobs:
   deploy:
