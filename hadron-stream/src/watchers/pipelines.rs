@@ -44,9 +44,7 @@ pub struct PipelineWatcher {
 
 impl PipelineWatcher {
     /// Create a new instance.
-    pub fn new(
-        client: Client, config: Arc<Config>, db: Database, stream_signal: watch::Receiver<u64>, shutdown_tx: broadcast::Sender<()>,
-    ) -> (Self, PipelinesMap) {
+    pub fn new(client: Client, config: Arc<Config>, db: Database, stream_signal: watch::Receiver<u64>, shutdown_tx: broadcast::Sender<()>) -> (Self, PipelinesMap) {
         let pipelines: PipelinesMap = Default::default();
         (
             Self {
@@ -120,11 +118,7 @@ impl PipelineWatcher {
                 self.pipelines.store(Arc::new(updated));
                 let _res = old.tx.send(PipelineCtlMsg::PipelineDeleted(pipeline.clone())).await;
                 if let Some(handle) = self.pipeline_handles.remove(name) {
-                    if let Err(err) = handle
-                        .await
-                        .context("error joining pipeline controller handle")
-                        .and_then(|res| res)
-                    {
+                    if let Err(err) = handle.await.context("error joining pipeline controller handle").and_then(|res| res) {
                         tracing::error!(error = ?err, "error shutting down pipeline controller");
                     }
                 }
@@ -151,35 +145,37 @@ impl PipelineWatcher {
                         // Pipeline already exists, so just re-index & pass along the updated model.
                         Some((k, v)) => {
                             let pipeline = Arc::new(pipeline);
-                            new_pipelines.insert(k.clone(), PipelineHandle { pipeline: pipeline.clone(), tx: v.tx.clone() });
+                            new_pipelines.insert(
+                                k.clone(),
+                                PipelineHandle {
+                                    pipeline: pipeline.clone(),
+                                    tx: v.tx.clone(),
+                                },
+                            );
                             let _res = v.tx.send(PipelineCtlMsg::PipelineUpdated(pipeline)).await;
                         }
                         None => {
                             let (pipeline_name, pipeline) = (Arc::new(name.to_string()), Arc::new(pipeline));
-                            let events_tx = match self
-                                .spawn_pipeline_controller(pipeline_name.clone(), pipeline.clone())
-                                .await
-                            {
+                            let events_tx = match self.spawn_pipeline_controller(pipeline_name.clone(), pipeline.clone()).await {
                                 Some(events_tx) => events_tx,
                                 None => continue,
                             };
-                            new_pipelines.insert(pipeline_name.clone(), PipelineHandle { pipeline: pipeline.clone(), tx: events_tx });
+                            new_pipelines.insert(
+                                pipeline_name.clone(),
+                                PipelineHandle {
+                                    pipeline: pipeline.clone(),
+                                    tx: events_tx,
+                                },
+                            );
                         }
                     };
                 }
 
                 // For any old pipelines which are about to be dropped, we need to stop them first.
                 for (old_name, old_val) in orig.iter().filter(|(k, _v)| !new_pipelines.contains_key(k.as_ref())) {
-                    let _res = old_val
-                        .tx
-                        .send(PipelineCtlMsg::PipelineDeleted(old_val.pipeline.clone()))
-                        .await;
+                    let _res = old_val.tx.send(PipelineCtlMsg::PipelineDeleted(old_val.pipeline.clone())).await;
                     if let Some(handle) = self.pipeline_handles.remove(old_name) {
-                        if let Err(err) = handle
-                            .await
-                            .context("error joining pipeline controller handle")
-                            .and_then(|res| res)
-                        {
+                        if let Err(err) = handle.await.context("error joining pipeline controller handle").and_then(|res| res) {
                             tracing::error!(error = ?err, "error shutting down pipeline controller");
                         }
                     }
@@ -215,15 +211,18 @@ impl PipelineWatcher {
         // Else, spawn new pipeline.
         let mut updated = orig.as_ref().clone();
         let (pipeline_name, pipeline) = (Arc::new(name.to_string()), Arc::new(pipeline));
-        let events_tx = match self
-            .spawn_pipeline_controller(pipeline_name.clone(), pipeline.clone())
-            .await
-        {
+        let events_tx = match self.spawn_pipeline_controller(pipeline_name.clone(), pipeline.clone()).await {
             Some(events_tx) => events_tx,
             None => return,
         };
 
-        updated.insert(pipeline_name.clone(), PipelineHandle { pipeline: pipeline.clone(), tx: events_tx });
+        updated.insert(
+            pipeline_name.clone(),
+            PipelineHandle {
+                pipeline: pipeline.clone(),
+                tx: events_tx,
+            },
+        );
         self.pipelines.store(Arc::new(updated));
     }
 

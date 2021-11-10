@@ -1,0 +1,105 @@
+name: CI Base
+on:
+  workflow_call:
+    inputs:
+      project:
+        type: string
+        required: true
+        description: 'The Rust project to target'
+      dir:
+        type: string
+        required: false
+        default: '.'
+        description: 'The directory to start from'
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ inputs.dir }}/${{ inputs.project }}/target
+          key: cargo-${{ hashFiles(format('{0}/{1}/Cargo.lock', inputs.dir, inputs.project)) }}
+          restore-keys: |
+            ${{ inputs.project }}-cargo-
+
+      - name: Setup | Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          default: true
+          components: clippy,rustfmt
+
+      - name: Build | Clippy
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --manifest-path ${{ inputs.dir }}/${{ inputs.project }}/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build | Rustfmt
+        run: cargo fmt --manifest-path ${{ inputs.dir }}/${{ inputs.project }}/Cargo.toml -- --check
+
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup | Cache Cargo
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ inputs.dir }}/${{ inputs.project }}/target
+          key: cargo-${{ hashFiles(format('{0}/{1}/Cargo.lock', inputs.dir, inputs.project)) }}
+          restore-keys: |
+            ${{ inputs.project }}-cargo-
+
+      - name: Setup | Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
+      - name: Build | Check
+        run: cargo check --all --manifest-path ${{ inputs.dir }}/${{ inputs.project }}/Cargo.toml
+
+  test:
+    name: test
+    needs: check # Ensure check is run first.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup | Cache Cargo
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ inputs.dir }}/${{ inputs.project }}/target
+          key: cargo-${{ hashFiles(format('{0}/{1}/Cargo.lock', inputs.dir, inputs.project)) }}
+          restore-keys: |
+            ${{ inputs.project }}-cargo-
+
+      - name: Setup | Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
+      - name: Build | Test
+        run: cargo test --manifest-path ${{ inputs.dir }}/${{ inputs.project }}/Cargo.toml
+
+      - name: Build | Debug
+        run: cargo build --manifest-path ${{ inputs.dir }}/${{ inputs.project }}/Cargo.toml

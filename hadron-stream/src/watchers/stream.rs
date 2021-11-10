@@ -38,7 +38,15 @@ impl StreamWatcher {
     pub fn new(client: Client, config: Arc<Config>, shutdown: broadcast::Receiver<()>) -> (Self, StreamMetadataRx) {
         let shutdown = BroadcastStream::new(shutdown);
         let (tx, rx) = watch::channel(vec![]);
-        (Self { client, config, shutdown, metadata: tx }, rx)
+        (
+            Self {
+                client,
+                config,
+                shutdown,
+                metadata: tx,
+            },
+            rx,
+        )
     }
 
     pub fn spawn(self) -> JoinHandle<Result<()>> {

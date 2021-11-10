@@ -1,0 +1,22 @@
+name: CI Guide
+on:
+  push:
+    branches:
+      - *
+    paths:
+      - guide/**
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup mdBook
+        uses: peaceiris/actions-mdbook@v1
+        with:
+          mdbook-version: '0.4.6'
+
+      - name: Build
+        run: mdbook build guide

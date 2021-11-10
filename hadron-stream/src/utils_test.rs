@@ -46,16 +46,8 @@ async fn test_exhaustive_scan_prefix_and_range_behavior() -> Result<()> {
         }
         let key = utils::decode_u64(&key[1..])?;
         let val = utils::decode_u64(&val)?;
-        assert_eq!(
-            key, current_offset,
-            "db.range with prefix iterated out of order, expected key {} got {}",
-            current_offset, key
-        );
-        assert_eq!(
-            val, current_offset,
-            "db.range with prefix iterated out of order, expected val {} got {}",
-            current_offset, val
-        );
+        assert_eq!(key, current_offset, "db.range with prefix iterated out of order, expected key {} got {}", current_offset, key);
+        assert_eq!(val, current_offset, "db.range with prefix iterated out of order, expected val {} got {}", current_offset, val);
         current_offset += 1;
     }
     assert_eq!(count, NUM_ENTRIES, "expected range to find {} entries, got {}", NUM_ENTRIES, count);
@@ -68,13 +60,7 @@ fn test_ivec_and_encoding_compat() {
     let i0 = utils::ivec_from_iter(PREFIX_B.iter().copied().chain(u64::MIN.to_be_bytes().iter().copied()));
     let i1 = utils::ivec_from_iter(PREFIX_B.iter().copied().chain(1u64.to_be_bytes().iter().copied()));
     let i2 = utils::ivec_from_iter(PREFIX_B.iter().copied().chain(10u64.to_be_bytes().iter().copied()));
-    let i3 = utils::ivec_from_iter(
-        PREFIX_B
-            .iter()
-            .copied()
-            .chain(utils::encode_u64(10))
-            .chain("stage_name".as_bytes().iter().copied()),
-    );
+    let i3 = utils::ivec_from_iter(PREFIX_B.iter().copied().chain(utils::encode_u64(10)).chain("stage_name".as_bytes().iter().copied()));
 
     let e0 = utils::encode_byte_prefix(PREFIX_B, u64::MIN);
     let e1 = utils::encode_byte_prefix(PREFIX_B, 1u64);
@@ -83,13 +69,7 @@ fn test_ivec_and_encoding_compat() {
     assert_eq!(&i0, &e0, "ivec slice i0 is different from encoded slice:\n{:?}\n{:?}", &i0, &e0);
     assert_eq!(&i1, &e1, "ivec slice i1 is different from encoded slice:\n{:?}\n{:?}", &i1, &e1);
     assert_eq!(&i2, &e2, "ivec slice i2 is different from encoded slice:\n{:?}\n{:?}", &i2, &e2);
-    assert_eq!(
-        &i3[..9],
-        &e2,
-        "the first 9 bytes of i3 do not match the byte encoded prefix:\n{:?}\n{:?}",
-        &i3[..9],
-        &e2
-    );
+    assert_eq!(&i3[..9], &e2, "the first 9 bytes of i3 do not match the byte encoded prefix:\n{:?}\n{:?}", &i3[..9], &e2);
     assert_eq!(
         &i3[9..],
         b"stage_name",

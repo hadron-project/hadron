@@ -1,0 +1,16 @@
+name: CI Core
+on:
+  push:
+    branches:
+      - "*"
+    paths:
+      - 'hadron-core/**'
+      - "!**.md"
+    tags-ignore:
+      - "*"
+
+jobs:
+  ci:
+    uses: hadron-project/hadron/.github/workflows/_rust-ci-base.yaml@99-compaction
+    with:
+      project: hadron-core

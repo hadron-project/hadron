@@ -42,9 +42,7 @@ impl Database {
     pub async fn new(config: Arc<Config>) -> Result<Self> {
         // Determine the database path, and ensure it exists.
         let dbpath = PathBuf::from(&config.storage_data_path).join(config.pod_name.as_str());
-        tokio::fs::create_dir_all(&dbpath)
-            .await
-            .context("error creating dir for hadron core database")?;
+        tokio::fs::create_dir_all(&dbpath).await.context("error creating dir for hadron core database")?;
 
         Self::spawn_blocking(move || -> Result<Self> {
             let db = SledConfig::new().path(dbpath).mode(sled::Mode::HighThroughput).open()?;
@@ -62,9 +60,7 @@ impl Database {
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        tokio::task::spawn_blocking(f)
-            .await
-            .map_err(|err| ShutdownError::from(anyhow::Error::from(err)))
+        tokio::task::spawn_blocking(f).await.map_err(|err| ShutdownError::from(anyhow::Error::from(err)))
     }
 
     /// Get a handle to the DB tree for a stream partition.
