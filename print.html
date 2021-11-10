@@ -212,7 +212,6 @@ spec:
   image: ghcr.io/hadron-project/hadron/hadron-stream:latest
   pvcVolumeSize: &quot;5Gi&quot;
 </code></pre>
-<!-- TODO: ensure image tag is live. -->
 <p>See the <a href="overview/../reference/streams.html">Stream Reference</a> for more details on the spec fields listed above, as well as other config options available for Streams. Now apply the file to your Kubernetes cluster as shown below using the <code>kubectl</code> CLI (part of the Kubernetes distribution).</p>
 <pre><code class="language-sh">kubectl apply -f stream.yaml
 </code></pre>
@@ -242,7 +241,6 @@ spec:
     --env=HADRON_URL='http://events.default.svc.cluster.local:7000' \
     --image ghcr.io/hadron-project/hadron/hadron-cli:latest
 </code></pre>
-<!-- TODO: ensure image tag is live. -->
 <p>Here we are running a temporary pod which will be removed from the Kubernetes cluster when disconnected. Once the pod session is started, you should see the help text of the CLI displayed, and then you should have access to the shell prompt.</p>
 <p>From here, we can execute CLI commands to interact with our new Stream. Let's publish a simple event:</p>
 <pre><code class="language-sh">hadron stream pub --subject demo --type example.event '{&quot;demo&quot;: &quot;live&quot;}'
