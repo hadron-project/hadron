@@ -18,54 +18,19 @@ fn config_deserializes_from_full_env() -> Result<()> {
         ("RETENTION_POLICY_RETENTION_SECONDS".into(), "604800".into()),
     ])?;
 
-    assert!(
-        config.rust_log == "error",
-        "unexpected value parsed for RUST_LOG, got {}, expected {}",
-        config.rust_log,
-        ""
-    );
-    assert!(
-        config.client_port == 7000,
-        "unexpected value parsed for CLIENT_PORT, got {}, expected {}",
-        config.client_port,
-        "7000"
-    );
-    assert!(
-        config.server_port == 7001,
-        "unexpected value parsed for SERVER_PORT, got {}, expected {}",
-        config.server_port,
-        "7001"
-    );
-    assert!(
-        config.namespace == "default",
-        "unexpected value parsed for NAMESPACE, got {}, expected {}",
-        config.namespace,
-        "default"
-    );
-    assert!(
-        config.stream == "events",
-        "unexpected value parsed for STREAM, got {}, expected {}",
-        config.stream,
-        "events"
-    );
+    assert!(config.rust_log == "error", "unexpected value parsed for RUST_LOG, got {}, expected {}", config.rust_log, "");
+    assert!(config.client_port == 7000, "unexpected value parsed for CLIENT_PORT, got {}, expected {}", config.client_port, "7000");
+    assert!(config.server_port == 7001, "unexpected value parsed for SERVER_PORT, got {}, expected {}", config.server_port, "7001");
+    assert!(config.namespace == "default", "unexpected value parsed for NAMESPACE, got {}, expected {}", config.namespace, "default");
+    assert!(config.stream == "events", "unexpected value parsed for STREAM, got {}, expected {}", config.stream, "events");
     assert!(
         config.statefulset == "events",
         "unexpected value parsed for STATEFULSET, got {}, expected {}",
         config.statefulset,
         "events"
     );
-    assert!(
-        config.pod_name == "events-0",
-        "unexpected value parsed for POD_NAME, got {}, expected {}",
-        config.pod_name,
-        "events-0"
-    );
-    assert!(
-        config.partition == 0,
-        "unexpected value derived for partition, got {}, expected {}",
-        config.partition,
-        0
-    );
+    assert!(config.pod_name == "events-0", "unexpected value parsed for POD_NAME, got {}, expected {}", config.pod_name, "events-0");
+    assert!(config.partition == 0, "unexpected value derived for partition, got {}, expected {}", config.partition, 0);
     assert!(
         config.storage_data_path == "/usr/local/hadron-stream/data",
         "unexpected value parsed for STORAGE_DATA_PATH, got {}, expected {}",
@@ -102,54 +67,19 @@ fn config_deserializes_from_sparse_env() -> Result<()> {
         ("RETENTION_POLICY_STRATEGY".into(), "time".into()),
     ])?;
 
-    assert!(
-        config.rust_log == "error",
-        "unexpected value parsed for RUST_LOG, got {}, expected {}",
-        config.rust_log,
-        ""
-    );
-    assert!(
-        config.client_port == 7000,
-        "unexpected value parsed for CLIENT_PORT, got {}, expected {}",
-        config.client_port,
-        "7000"
-    );
-    assert!(
-        config.server_port == 7001,
-        "unexpected value parsed for SERVER_PORT, got {}, expected {}",
-        config.server_port,
-        "7001"
-    );
-    assert!(
-        config.namespace == "default",
-        "unexpected value parsed for NAMESPACE, got {}, expected {}",
-        config.namespace,
-        "default"
-    );
-    assert!(
-        config.stream == "events",
-        "unexpected value parsed for STREAM, got {}, expected {}",
-        config.stream,
-        "events"
-    );
+    assert!(config.rust_log == "error", "unexpected value parsed for RUST_LOG, got {}, expected {}", config.rust_log, "");
+    assert!(config.client_port == 7000, "unexpected value parsed for CLIENT_PORT, got {}, expected {}", config.client_port, "7000");
+    assert!(config.server_port == 7001, "unexpected value parsed for SERVER_PORT, got {}, expected {}", config.server_port, "7001");
+    assert!(config.namespace == "default", "unexpected value parsed for NAMESPACE, got {}, expected {}", config.namespace, "default");
+    assert!(config.stream == "events", "unexpected value parsed for STREAM, got {}, expected {}", config.stream, "events");
     assert!(
         config.statefulset == "events",
         "unexpected value parsed for STATEFULSET, got {}, expected {}",
         config.statefulset,
         "events"
     );
-    assert!(
-        config.pod_name == "events-0",
-        "unexpected value parsed for POD_NAME, got {}, expected {}",
-        config.pod_name,
-        "events-0"
-    );
-    assert!(
-        config.partition == 0,
-        "unexpected value derived for partition, got {}, expected {}",
-        config.partition,
-        0
-    );
+    assert!(config.pod_name == "events-0", "unexpected value parsed for POD_NAME, got {}, expected {}", config.pod_name, "events-0");
+    assert!(config.partition == 0, "unexpected value derived for partition, got {}, expected {}", config.partition, 0);
     assert!(
         config.storage_data_path == "/usr/local/hadron-stream/data",
         "unexpected value parsed for STORAGE_DATA_PATH, got {}, expected {}",

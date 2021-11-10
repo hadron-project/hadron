@@ -221,9 +221,7 @@ impl SecretWithDecodingKey {
 /// Extract the decoding key from the given Secret.
 fn extract_decoding_key_from_secret(secret: &Secret) -> Result<DecodingKey<'static>> {
     let data = secret.data.as_ref().context("no data found in secret")?;
-    let hmac_key = data
-        .get(hadron_core::auth::SECRET_HMAC_KEY)
-        .context("no secret data found for HMAC key")?;
+    let hmac_key = data.get(hadron_core::auth::SECRET_HMAC_KEY).context("no secret data found for HMAC key")?;
     Ok(DecodingKey::from_secret(&hmac_key.0).into_static())
 }
 

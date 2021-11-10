@@ -19,8 +19,7 @@ pub async fn setup_stream_data(db: &sled::Tree) -> Result<(i64, u64)> {
     }
     batch.insert(KEY_STREAM_LAST_WRITTEN_OFFSET, &utils::encode_u64(last_offset));
     batch.insert(&utils::encode_byte_prefix_i64(PREFIX_STREAM_TS, ts), &utils::encode_u64(last_offset));
-    db.apply_batch(batch)
-        .context("error applying batch to write test data to stream")?;
+    db.apply_batch(batch).context("error applying batch to write test data to stream")?;
     Ok((ts, last_offset))
 }
 
@@ -29,26 +28,18 @@ pub async fn setup_subs_data(db: &sled::Tree) -> Result<Vec<(Subscription, u64)>
     let mut batch = sled::Batch::default();
     let mut subs = vec![];
     for offset in 0..rand::thread_rng().gen_range(50..100) {
-        let sub = Subscription { group_name: offset.to_string(), max_batch_size: 50 };
+        let sub = Subscription {
+            group_name: offset.to_string(),
+            max_batch_size: 50,
+        };
         let sub_encoded = utils::encode_model(&sub)?;
-        let sub_model_key = utils::ivec_from_iter(
-            PREFIX_STREAM_SUBS
-                .iter()
-                .copied()
-                .chain(sub.group_name.as_bytes().iter().copied()),
-        );
-        let sub_offset_key = utils::ivec_from_iter(
-            PREFIX_STREAM_SUB_OFFSETS
-                .iter()
-                .copied()
-                .chain(sub.group_name.as_bytes().iter().copied()),
-        );
+        let sub_model_key = utils::ivec_from_iter(PREFIX_STREAM_SUBS.iter().copied().chain(sub.group_name.as_bytes().iter().copied()));
+        let sub_offset_key = utils::ivec_from_iter(PREFIX_STREAM_SUB_OFFSETS.iter().copied().chain(sub.group_name.as_bytes().iter().copied()));
         batch.insert(sub_model_key, sub_encoded.as_slice());
         batch.insert(sub_offset_key, &utils::encode_u64(offset));
         subs.push((sub, offset));
     }
-    db.apply_batch(batch)
-        .context("error applying batch to write test data to stream")?;
+    db.apply_batch(batch).context("error applying batch to write test data to stream")?;
     subs.sort_by(|a, b| a.1.cmp(&b.1));
     Ok(subs)
 }

@@ -1,0 +1,16 @@
+name: CI CLI
+on:
+  push:
+    branches:
+      - "*"
+    paths:
+      - 'hadron-cli/**'
+      - "!**.md"
+    tags-ignore:
+      - "*"
+
+jobs:
+  ci:
+    uses: hadron-project/hadron/.github/workflows/_rust-ci-base.yaml@99-compaction
+    with:
+      project: hadron-cli

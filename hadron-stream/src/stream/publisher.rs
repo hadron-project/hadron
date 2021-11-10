@@ -11,15 +11,7 @@ impl StreamCtl {
     pub(super) async fn handle_publisher_request(&mut self, tx: oneshot::Sender<RpcResult<StreamPublishResponse>>, data: StreamPublishRequest) {
         // Publish the new data frame.
         let _write_ack = data.ack;
-        let offset = match Self::publish_data_frame(
-            &self.tree,
-            &mut self.current_offset,
-            &mut self.earliest_timestamp,
-            &self.offset_signal,
-            data,
-        )
-        .await
-        {
+        let offset = match Self::publish_data_frame(&self.tree, &mut self.current_offset, &mut self.earliest_timestamp, &self.offset_signal, data).await {
             Ok(offset) => offset,
             Err(err) => {
                 tracing::error!(error = ?err, "error while publishing data to stream");
@@ -43,8 +35,7 @@ impl StreamCtl {
     /// Publish a frame of data to the target stream, returning the offset of the last entry written.
     #[tracing::instrument(level = "trace", skip(tree, current_offset, offset_signal, req))]
     pub(super) async fn publish_data_frame(
-        tree: &sled::Tree, current_offset: &mut u64, earliest_timestamp: &mut Option<(i64, u64)>, offset_signal: &watch::Sender<u64>,
-        req: StreamPublishRequest,
+        tree: &sled::Tree, current_offset: &mut u64, earliest_timestamp: &mut Option<(i64, u64)>, offset_signal: &watch::Sender<u64>, req: StreamPublishRequest,
     ) -> Result<u64> {
         tracing::debug!("writing data to stream");
         if req.batch.is_empty() {
@@ -62,16 +53,11 @@ impl StreamCtl {
         }
         batch.insert(&utils::encode_byte_prefix_i64(PREFIX_STREAM_TS, ts), &utils::encode_u64(*current_offset));
         batch.insert(KEY_STREAM_LAST_WRITTEN_OFFSET, &utils::encode_u64(*current_offset));
-        tree.apply_batch(batch)
-            .context("error applying write batch")
-            .map_err(ShutdownError::from)?;
+        tree.apply_batch(batch).context("error applying write batch").map_err(ShutdownError::from)?;
 
         // Fsync if requested.
         if req.fsync {
-            tree.flush_async()
-                .await
-                .context(ERR_DB_FLUSH)
-                .map_err(ShutdownError::from)?;
+            tree.flush_async().await.context(ERR_DB_FLUSH).map_err(ShutdownError::from)?;
         }
 
         // If the earliest recorded timestamp is `None`, then update its value.

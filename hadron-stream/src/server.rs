@@ -42,8 +42,7 @@ pub struct AppServer {
 impl AppServer {
     /// Create a new instance.
     pub fn new(
-        config: Arc<Config>, pipelines: PipelinesMap, tokens: TokensMap, secrets: SecretsMap, metadata_rx: StreamMetadataRx,
-        shutdown: broadcast::Sender<()>, stream_tx: mpsc::Sender<StreamCtlMsg>,
+        config: Arc<Config>, pipelines: PipelinesMap, tokens: TokensMap, secrets: SecretsMap, metadata_rx: StreamMetadataRx, shutdown: broadcast::Sender<()>, stream_tx: mpsc::Sender<StreamCtlMsg>,
     ) -> Self {
         Self {
             config,
@@ -61,11 +60,9 @@ impl AppServer {
         let addr = CLIENT_ADDR.parse().context("failed to parse listener address")?;
         let (shutdown, mut shutdown_rx) = (self.shutdown.clone(), self.shutdown.subscribe());
         let service = grpc::StreamControllerServer::new(self);
-        let fut = Server::builder()
-            .add_service(service)
-            .serve_with_shutdown(addr, async move {
-                let _res = shutdown_rx.recv().await;
-            });
+        let fut = Server::builder().add_service(service).serve_with_shutdown(addr, async move {
+            let _res = shutdown_rx.recv().await;
+        });
         Ok(tokio::spawn(async move {
             if let Err(err) = fut.await {
                 tracing::error!(error = ?err, "error from client gRPC server");
@@ -77,11 +74,7 @@ impl AppServer {
     /// Extract the given request's auth token, else fail.
     fn must_get_token<T>(&self, req: &Request<T>) -> Result<auth::UnverifiedTokenCredentials> {
         // Extract the authorization header.
-        let header_val = req
-            .metadata()
-            .get("authorization")
-            .cloned()
-            .ok_or(AppError::Unauthorized)?;
+        let header_val = req.metadata().get("authorization").cloned().ok_or(AppError::Unauthorized)?;
         auth::UnverifiedTokenCredentials::from_auth_header(header_val)
     }
 
@@ -102,11 +95,7 @@ impl AppServer {
     #[allow(dead_code)]
     fn must_get_user<T>(&self, req: &Request<T>) -> Result<auth::UserCredentials> {
         // Extract the authorization header.
-        let header_val = req
-            .metadata()
-            .get("authorization")
-            .cloned()
-            .ok_or(AppError::Unauthorized)?;
+        let header_val = req.metadata().get("authorization").cloned().ok_or(AppError::Unauthorized)?;
         auth::UserCredentials::from_auth_header(header_val)
     }
 }
@@ -159,9 +148,7 @@ impl grpc::StreamController for AppServer {
             .send(StreamCtlMsg::RequestPublish { tx, request: request.into_inner() })
             .await
             .map_err(|_err| AppError::grpc(anyhow!("error communicating with stream controller")))?;
-        let res = rx
-            .await
-            .map_err(|_err| AppError::grpc(anyhow!("error awaiting response from stream controller")))??;
+        let res = rx.await.map_err(|_err| AppError::grpc(anyhow!("error awaiting response from stream controller")))??;
         Ok(Response::new(res))
     }
 
@@ -181,46 +168,35 @@ impl grpc::StreamController for AppServer {
             .ok_or_else(|| Status::invalid_argument("no action variant received in request"))?;
         let setup: grpc::StreamSubscribeSetup = match req_action {
             grpc::StreamSubscribeRequestAction::Setup(setup) => setup,
-            _ => {
-                return Err(Status::invalid_argument(
-                    "invalid action variant received in request, expected `setup` variant",
-                ))
-            }
+            _ => return Err(Status::invalid_argument("invalid action variant received in request, expected `setup` variant")),
         };
 
         let (res_tx, res_rx) = mpsc::channel(10);
         self.stream_tx
-            .send(StreamCtlMsg::RequestSubscribe { tx: res_tx, rx: request_stream, setup })
+            .send(StreamCtlMsg::RequestSubscribe {
+                tx: res_tx,
+                rx: request_stream,
+                setup,
+            })
             .await
             .map_err(|_err| AppError::grpc(anyhow!("error communicating with stream controller")))?;
         Ok(Response::new(ReceiverStream::new(res_rx)))
     }
 
     /// Open a pipeline subscriber channel.
-    async fn pipeline_subscribe(
-        &self, request: Request<Streaming<grpc::PipelineSubscribeRequest>>,
-    ) -> RpcResult<Response<Self::PipelineSubscribeStream>> {
+    async fn pipeline_subscribe(&self, request: Request<Streaming<grpc::PipelineSubscribeRequest>>) -> RpcResult<Response<Self::PipelineSubscribeStream>> {
         let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
         let (claims, _creds) = self.must_get_token_claims(creds).map_err(AppError::grpc)?;
         claims.check_stream_sub_auth(&self.config.stream).map_err(AppError::grpc)?;
 
         // Await initial setup payload and use it to find the target controller.
         let mut request_stream = request.into_inner();
-        let setup_request = request_stream
-            .message()
-            .await?
-            .ok_or_else(|| Status::invalid_argument("no subscription setup request received"))?;
+        let setup_request = request_stream.message().await?.ok_or_else(|| Status::invalid_argument("no subscription setup request received"))?;
         let pipeline = &setup_request.pipeline;
-        let req_action = setup_request
-            .action
-            .ok_or_else(|| Status::invalid_argument("no action variant received in request"))?;
+        let req_action = setup_request.action.ok_or_else(|| Status::invalid_argument("no action variant received in request"))?;
         let stage_name = match req_action {
             grpc::PipelineSubscribeRequestAction::StageName(stage) => stage,
-            _ => {
-                return Err(Status::invalid_argument(
-                    "invalid action variant received in request, expected `StageName` variant",
-                ))
-            }
+            _ => return Err(Status::invalid_argument("invalid action variant received in request, expected `StageName` variant")),
         };
 
         // Find the target controller & forward the request.
@@ -233,7 +209,11 @@ impl grpc::StreamController for AppServer {
         let (res_tx, res_rx) = mpsc::channel(10);
         pipeline_handle
             .tx
-            .send(PipelineCtlMsg::Request { tx: res_tx, rx: request_stream, stage_name })
+            .send(PipelineCtlMsg::Request {
+                tx: res_tx,
+                rx: request_stream,
+                stage_name,
+            })
             .await
             .map_err(|_err| AppError::grpc(anyhow!("error communicating with pipeline controller")))?;
 

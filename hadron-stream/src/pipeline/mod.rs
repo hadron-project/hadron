@@ -94,8 +94,8 @@ pub struct PipelineCtl {
 impl PipelineCtl {
     /// Create a new instance.
     pub async fn new(
-        config: Arc<Config>, db: Database, pipeline: Arc<Pipeline>, partition: u32, stream_signal: watch::Receiver<u64>,
-        shutdown_tx: broadcast::Sender<()>, events_tx: mpsc::Sender<PipelineCtlMsg>, events_rx: mpsc::Receiver<PipelineCtlMsg>,
+        config: Arc<Config>, db: Database, pipeline: Arc<Pipeline>, partition: u32, stream_signal: watch::Receiver<u64>, shutdown_tx: broadcast::Sender<()>, events_tx: mpsc::Sender<PipelineCtlMsg>,
+        events_rx: mpsc::Receiver<PipelineCtlMsg>,
     ) -> Result<Self> {
         let tree = db.get_pipeline_tree(pipeline.name()).await?;
         let stream_tree = db.get_stream_tree().await?;
@@ -140,12 +140,7 @@ impl PipelineCtl {
         // Check for active pipelines which need to be removed.
         let (events_tx, pipeline) = (self.events_tx.clone(), &self.pipeline);
         self.active_pipelines.retain(|offset, inst| {
-            if pipeline
-                .spec
-                .stages
-                .iter()
-                .all(|stage| inst.outputs.contains_key(&stage.name))
-            {
+            if pipeline.spec.stages.iter().all(|stage| inst.outputs.contains_key(&stage.name)) {
                 tracing::debug!(offset, "pruning old finished pipeline instance");
                 let (events_tx, offset) = (events_tx.clone(), *offset);
                 tokio::spawn(async move {
@@ -262,8 +257,7 @@ impl PipelineCtl {
     #[tracing::instrument(level = "trace", skip(self, new))]
     fn handle_pipeline_updated(&mut self, new: Arc<Pipeline>) {
         self.pipeline = new.clone();
-        self.stage_subs
-            .retain(|group, _| new.spec.stages.iter().any(|stage| stage.name.as_str() == group.as_str()));
+        self.stage_subs.retain(|group, _| new.spec.stages.iter().any(|stage| stage.name.as_str() == group.as_str()));
     }
 
     #[tracing::instrument(level = "trace", skip(self, new))]
@@ -287,11 +281,7 @@ impl PipelineCtl {
         };
         self.last_offset_processed = data.last_offset_processed;
         tracing::debug!(data.last_offset_processed, "response from pipeline data fetch");
-        self.active_pipelines.extend(
-            data.new_pipeline_instances
-                .into_iter()
-                .map(|inst| (inst.root_event_offset, inst)),
-        );
+        self.active_pipelines.extend(data.new_pipeline_instances.into_iter().map(|inst| (inst.root_event_offset, inst)));
 
         // Drive another delivery pass.
         self.execute_delivery_pass().await;
@@ -330,10 +320,7 @@ impl PipelineCtl {
 
         // Add the new stage subscriber to its corresponding group.
         let stage_name = Arc::new(stage_name.clone());
-        let group = self
-            .stage_subs
-            .entry(stage_name.clone())
-            .or_insert_with(|| SubscriptionGroup::new(stage_name.clone()));
+        let group = self.stage_subs.entry(stage_name.clone()).or_insert_with(|| SubscriptionGroup::new(stage_name.clone()));
 
         // Roll a new ID for the channel & add it to the group's active channels.
         let id = Uuid::new_v4();
@@ -369,8 +356,7 @@ impl PipelineCtl {
 
         // Apply batch.
         let res = Database::spawn_blocking(move || -> Result<()> {
-            tree.apply_batch(batch)
-                .context("error applying batch delete on finished pipeline")?;
+            tree.apply_batch(batch).context("error applying batch delete on finished pipeline")?;
             tree.flush().context(ERR_DB_FLUSH)?;
             Ok(())
         })
@@ -431,10 +417,7 @@ impl PipelineCtl {
 
         // If number of active instances is < the pipeline's max parallel settings, then fetch
         // more data from the source stream to find matching records for pipeline instantiation.
-        if self.active_pipelines.len() < self.max_parallel() as usize
-            && self.stream_offset > self.last_offset_processed
-            && !self.is_fetching_stream_data
-        {
+        if self.active_pipelines.len() < self.max_parallel() as usize && self.stream_offset > self.last_offset_processed && !self.is_fetching_stream_data {
             tracing::info!(
                 active_pipelines = self.active_pipelines.len(),
                 stream_offset = self.stream_offset,
@@ -449,8 +432,8 @@ impl PipelineCtl {
     /// Deliver a payload to a stage consumer & spawn a task to await its response.
     #[tracing::instrument(level = "debug", skip(stage, inst, sub_group, liveness_checks, events_tx))]
     async fn spawn_payload_delivery(
-        stage: &PipelineStage, inst: &mut ActivePipelineInstance, sub_group: &mut SubscriptionGroup,
-        liveness_checks: &mut StreamMap<Uuid, PipelineLivenessStream>, events_tx: mpsc::Sender<PipelineCtlMsg>,
+        stage: &PipelineStage, inst: &mut ActivePipelineInstance, sub_group: &mut SubscriptionGroup, liveness_checks: &mut StreamMap<Uuid, PipelineLivenessStream>,
+        events_tx: mpsc::Sender<PipelineCtlMsg>,
     ) -> Result<()> {
         // Randomly select one of the available subscriptions for the stage.
         let chan_key_opt = sub_group
@@ -492,11 +475,7 @@ impl PipelineCtl {
         });
 
         // Payload is ready, send it.
-        let _res = chan
-            .0
-            .send(Ok(payload))
-            .await
-            .context("error sending pipeline delivery payload")?;
+        let _res = chan.0.send(Ok(payload)).await.context("error sending pipeline delivery payload")?;
 
         // Spawn off a task to await the response from the client.
         inst.active_deliveries.insert(sub_group.stage_name.clone(), chan_id);
@@ -504,11 +483,7 @@ impl PipelineCtl {
         let (tx, group_name, id, offset) = (events_tx, sub_group.stage_name.clone(), chan_id, inst.root_event_offset);
         tokio::spawn(async move {
             // FUTURE: add optional timeouts here based on pipeline config.
-            let output = chan
-                .1
-                .next()
-                .await
-                .map(|res| res.map_err(anyhow::Error::from).map(|data| (chan, data)));
+            let output = chan.1.next().await.map(|res| res.map_err(anyhow::Error::from).map(|data| (chan, data)));
             let _ = tx
                 .send(PipelineCtlMsg::DeliveryResponse(DeliveryResponse {
                     id,
@@ -539,19 +514,14 @@ impl PipelineCtl {
             .context("response from pipeline subscription delivery dropped as stage subscription group no longer exists")?;
 
         // Unpack response body.
-        let res = res
-            .output
-            .context("subscriber channel closed while awaiting delivery response")
-            .map_err(|err| {
-                let _ = group.active_channels.remove(chan_id);
-                err
-            })?;
-        let (client_chan, body) = res
-            .context("error returned while awaiting subscriber delivery response")
-            .map_err(|err| {
-                let _ = group.active_channels.remove(chan_id);
-                err
-            })?;
+        let res = res.output.context("subscriber channel closed while awaiting delivery response").map_err(|err| {
+            let _ = group.active_channels.remove(chan_id);
+            err
+        })?;
+        let (client_chan, body) = res.context("error returned while awaiting subscriber delivery response").map_err(|err| {
+            let _ = group.active_channels.remove(chan_id);
+            err
+        })?;
         if let Some(chan_wrapper) = group.active_channels.get_mut(chan_id) {
             *chan_wrapper = SubChannelState::MonitoringLiveness;
             self.liveness_checks.insert(
@@ -580,13 +550,7 @@ impl PipelineCtl {
 
         // Finally, if this was the last outstanding stage of the pipeline instance, then remove
         // it from the active instances set.
-        if self
-            .pipeline
-            .spec
-            .stages
-            .iter()
-            .all(|stage| inst.outputs.contains_key(&stage.name))
-        {
+        if self.pipeline.spec.stages.iter().all(|stage| inst.outputs.contains_key(&stage.name)) {
             self.active_pipelines.remove(&offset);
             tracing::debug!(offset, "pipeline workflow finished");
             let events_tx = self.events_tx.clone();
@@ -600,9 +564,7 @@ impl PipelineCtl {
 
     /// Record the ack/nack response from a subscriber delivery.
     #[tracing::instrument(level = "trace", skip(res, offset, stage_name, pipeline_tree))]
-    async fn try_record_delivery_response(
-        res: std::result::Result<Event, String>, offset: u64, stage_name: Arc<String>, pipeline_tree: Tree,
-    ) -> ShutdownResult<()> {
+    async fn try_record_delivery_response(res: std::result::Result<Event, String>, offset: u64, stage_name: Arc<String>, pipeline_tree: Tree) -> ShutdownResult<()> {
         let event = match res {
             Ok(event) => event,
             Err(_err) => {
@@ -622,11 +584,7 @@ impl PipelineCtl {
             .insert(key, event_bytes.as_slice())
             .context("error recording pipeline stage output on disk")
             .map_err(ShutdownError::from)?;
-        pipeline_tree
-            .flush_async()
-            .await
-            .context(ERR_DB_FLUSH)
-            .map_err(ShutdownError::from)?;
+        pipeline_tree.flush_async().await.context(ERR_DB_FLUSH).map_err(ShutdownError::from)?;
         Ok(())
     }
 
@@ -646,10 +604,7 @@ impl PipelineCtl {
     }
 
     #[tracing::instrument(level = "trace", skip(tree_stream, tree_pipeline, last_offset_processed, pipeline, max_parallel, tx))]
-    async fn try_fetch_stream_data(
-        tree_stream: Tree, tree_pipeline: Tree, last_offset_processed: u64, pipeline: Arc<Pipeline>, max_parallel: u32,
-        tx: mpsc::Sender<PipelineCtlMsg>,
-    ) {
+    async fn try_fetch_stream_data(tree_stream: Tree, tree_pipeline: Tree, last_offset_processed: u64, pipeline: Arc<Pipeline>, max_parallel: u32, tx: mpsc::Sender<PipelineCtlMsg>) {
         tracing::debug!("fetching stream data for pipeline");
         let data_res = Database::spawn_blocking(move || -> Result<FetchStreamRecords> {
             // Iterate over the records of the stream up to the maximum parallel allowed.
@@ -719,9 +674,7 @@ impl PipelineCtl {
 /// - The output of each stage of a pipeline instance is recorded under `o{instance}{stage}` where
 /// `{instance}` is the source stream record's offset and `{stage}` is the name of the pipeline stage.
 #[tracing::instrument(level = "debug", skip(pipeline_tree, pipeline, stream_latest_offset))]
-async fn recover_pipeline_state(
-    pipeline_tree: Tree, pipeline: Arc<Pipeline>, stream_latest_offset: u64,
-) -> Result<(u64, BTreeMap<u64, ActivePipelineInstance>)> {
+async fn recover_pipeline_state(pipeline_tree: Tree, pipeline: Arc<Pipeline>, stream_latest_offset: u64) -> Result<(u64, BTreeMap<u64, ActivePipelineInstance>)> {
     let val = Database::spawn_blocking(move || -> Result<(u64, BTreeMap<u64, ActivePipelineInstance>)> {
         // Fetch last source stream offset to have been processed by this pipeline.
         let last_offset = pipeline_tree
@@ -738,9 +691,9 @@ async fn recover_pipeline_state(
             });
 
         // Fetch active instances.
-        let active_instances = pipeline_tree.scan_prefix(PREFIX_ACTIVE_INSTANCES).try_fold(
-            BTreeMap::new(),
-            |mut acc, kv_res| -> Result<BTreeMap<u64, ActivePipelineInstance>> {
+        let active_instances = pipeline_tree
+            .scan_prefix(PREFIX_ACTIVE_INSTANCES)
+            .try_fold(BTreeMap::new(), |mut acc, kv_res| -> Result<BTreeMap<u64, ActivePipelineInstance>> {
                 let (key, val) = kv_res.context(ERR_ITER_FAILURE)?;
                 let offset = utils::decode_u64(&key[1..]).context("error decoding active pipeline offset")?;
                 let root_event: Event = utils::decode_model(&val).context("error decoding event from storage")?;
@@ -762,8 +715,7 @@ async fn recover_pipeline_state(
                 };
                 acc.insert(offset, inst);
                 Ok(acc)
-            },
-        )?;
+            })?;
 
         Ok((last_offset, active_instances))
     })
@@ -828,7 +780,10 @@ struct SubscriptionGroup {
 impl SubscriptionGroup {
     /// Create a new instance.
     pub fn new(stage_name: Arc<String>) -> Self {
-        Self { stage_name, active_channels: Default::default() }
+        Self {
+            stage_name,
+            active_channels: Default::default(),
+        }
     }
 }
 

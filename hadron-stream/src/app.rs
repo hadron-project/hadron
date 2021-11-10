@@ -55,9 +55,7 @@ impl App {
         let db = Database::new(config.clone()).await.context("error opening database")?;
 
         // Initialize K8s client.
-        let client = kube::Client::try_default()
-            .await
-            .context("error initializing K8s client")?;
+        let client = kube::Client::try_default().await.context("error initializing K8s client")?;
 
         // Spawn various core tasks.
         let (tokens, tokens_map, secrets_map) = TokensWatcher::new(client.clone(), config.clone(), shutdown_tx.subscribe());
@@ -109,14 +107,8 @@ impl App {
 
     async fn run(mut self) -> Result<()> {
         let mut signals = StreamMap::new();
-        signals.insert(
-            "sigterm",
-            SignalStream::new(signal(SignalKind::terminate()).context("error building signal stream")?),
-        );
-        signals.insert(
-            "sigint",
-            SignalStream::new(signal(SignalKind::interrupt()).context("error building signal stream")?),
-        );
+        signals.insert("sigterm", SignalStream::new(signal(SignalKind::terminate()).context("error building signal stream")?));
+        signals.insert("sigint", SignalStream::new(signal(SignalKind::interrupt()).context("error building signal stream")?));
 
         loop {
             tokio::select! {
@@ -131,36 +123,16 @@ impl App {
 
         // Begin shutdown routine.
         tracing::debug!("Hadron is shutting down");
-        if let Err(err) = self
-            .tokens_handle
-            .await
-            .context("error joining token watcher handle")
-            .and_then(|res| res)
-        {
+        if let Err(err) = self.tokens_handle.await.context("error joining token watcher handle").and_then(|res| res) {
             tracing::error!(error = ?err, "error shutting down tokens watcher");
         }
-        if let Err(err) = self
-            .pipelines_handle
-            .await
-            .context("error joining pipelines watcher handle")
-            .and_then(|res| res)
-        {
+        if let Err(err) = self.pipelines_handle.await.context("error joining pipelines watcher handle").and_then(|res| res) {
             tracing::error!(error = ?err, "error shutting down pipelines watcher");
         }
-        if let Err(err) = self
-            .stream_handle
-            .await
-            .context("error joining stream controller handle")
-            .and_then(|res| res)
-        {
+        if let Err(err) = self.stream_handle.await.context("error joining stream controller handle").and_then(|res| res) {
             tracing::error!(error = ?err, "error shutting down stream controller");
         }
-        if let Err(err) = self
-            .stream_watcher_handle
-            .await
-            .context("error joining stream CR watcher handle")
-            .and_then(|res| res)
-        {
+        if let Err(err) = self.stream_watcher_handle.await.context("error joining stream CR watcher handle").and_then(|res| res) {
             tracing::error!(error = ?err, "error shutting down stream CR watcher");
         }
         if let Err(err) = self.client_server.await {
