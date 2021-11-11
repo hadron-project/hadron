@@ -185,6 +185,13 @@
 <p>All consumers must declare their group name when they first establish a connection to the backing Stream partitions. When multiple consumers connect to the Hadron cluster bearing the same group name, then they are treated as members of the same group.</p>
 <h4><a class="header" href="#durable-or-ephemeral" id="durable-or-ephemeral">Durable or Ephemeral</a></h4>
 <p>Stream Consumers may be durable or ephemeral. Durable groups will have their progress recorded on each respective Stream partition. Ephemeral groups only have their progress tracked in memory, which is erased once all group members disconnect per partition.</p>
+<h3><a class="header" href="#data-lifecycle" id="data-lifecycle">Data Lifecycle</a></h3>
+<p>Data residing within a Hadron Stream has a configurable retention policy. There are 2 retention policy strategies currently available:</p>
+<ul>
+<li><code>&quot;time&quot;</code>: (default) this strategy will preserve the data on the Stream for a configurable amount of time (defaults to 7 days). After the data has resided on the Stream for longer than the configured period of time, it will be deleted.</li>
+<li><code>&quot;retain&quot;</code>: this strategy will preserve the data on the Stream indefinitely.</li>
+</ul>
+<p>These configuration options are controlled via the <a href="../reference/streams.html">Stream CRD</a>.</p>
 
                     </main>
 

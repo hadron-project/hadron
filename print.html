@@ -315,6 +315,13 @@ spec:
 <p>All consumers must declare their group name when they first establish a connection to the backing Stream partitions. When multiple consumers connect to the Hadron cluster bearing the same group name, then they are treated as members of the same group.</p>
 <h4><a class="header" href="#durable-or-ephemeral" id="durable-or-ephemeral">Durable or Ephemeral</a></h4>
 <p>Stream Consumers may be durable or ephemeral. Durable groups will have their progress recorded on each respective Stream partition. Ephemeral groups only have their progress tracked in memory, which is erased once all group members disconnect per partition.</p>
+<h3><a class="header" href="#data-lifecycle" id="data-lifecycle">Data Lifecycle</a></h3>
+<p>Data residing within a Hadron Stream has a configurable retention policy. There are 2 retention policy strategies currently available:</p>
+<ul>
+<li><code>&quot;time&quot;</code>: (default) this strategy will preserve the data on the Stream for a configurable amount of time (defaults to 7 days). After the data has resided on the Stream for longer than the configured period of time, it will be deleted.</li>
+<li><code>&quot;retain&quot;</code>: this strategy will preserve the data on the Stream indefinitely.</li>
+</ul>
+<p>These configuration options are controlled via the <a href="overview/../reference/streams.html">Stream CRD</a>.</p>
 <h1><a class="header" href="#pipelines" id="pipelines">Pipelines</a></h1>
 <p>Pipelines are workflow orchestration for data on Streams, providing structured concurrency for arbitrarily complex multi-stage workflows.</p>
 <p>Pipelines exist side by side with their source Stream, and Streams may have any number of associated Pipelines. Pipelines are triggered for execution when an event published to a Stream has an event <code>type</code> which matches one of the trigger patterns of an associated Pipeline.</p>
@@ -347,6 +354,9 @@ spec:
 </ul>
 <p>In essence: add your Pipeline stage consumers first.</p>
 <p>If this protocol is not adhered to, then the only danger is that the Pipeline will eventually stop making progress, as too many parallel executions will remain in an incomplete state as they wait for the new Pipeline stages to be processed. Avoid this by deploying your updated application code first.</p>
+<h3><a class="header" href="#data-lifecycle-1" id="data-lifecycle-1">Data Lifecycle</a></h3>
+<p>All Pipeline stage outputs are stored on disk per Pipeline instance. This data is preserved per Pipeline instance until all stages of the Pipeline instance have completed, at which point all data of that Pipeline instance is deleted.</p>
+<p>For cases where Pipelines need to produce outputs which should be transactionally written back to the source Stream of the Pipeline, the <a href="https://github.com/hadron-project/hadron/issues/50">Transactional Pipeline to Stream outputs</a> feature will solve this use case nicely.</p>
 <h1><a class="header" href="#exchanges" id="exchanges">Exchanges</a></h1>
 <p>These docs are currently under construction.</p>
 <ul>
@@ -769,6 +779,20 @@ spec:
 
   ## When true, the Stream processes will use `debug` level logging.
   debug: :bool
+
+  ## The data retention policy for data residing on this Stream.
+  retentionPolicy:
+    ## The retention strategy to use.
+    ##
+    ## Allowed values:
+    ## - &quot;retain&quot;: this strategy preserves the data on the Stream indefinitely.
+    ## - &quot;time&quot;: this strategy preserves the data on the Stream for the amount of time
+    ##   specified in `.spec.retentionPolicy.retentionSeconds`.
+    strategy: :string (default &quot;time&quot;)
+    ## The number of seconds which data is to be retained on the Stream before it is deleted.
+    ##
+    ## This field is optional and is only evaluated when using the &quot;time&quot; strategy.
+    retentionSeconds: :integer (default 604800) # Default 7 days.
 
   ## The full image name, including tag, to use for the backing StatefulSet pods.
   image: :string
