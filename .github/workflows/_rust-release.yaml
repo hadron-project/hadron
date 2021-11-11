@@ -71,7 +71,7 @@ jobs:
     - name: Build | Publish Pre-Release
       uses: softprops/action-gh-release@v1
       with:
-        name: Hadron Stream ${{ steps.git_tag.outputs.TAG }}
+        name: Hadron ${{ inputs.project }} ${{ steps.git_tag.outputs.TAG }}
         body_path: RELEASE_LOG.md
         draft: true
       env:
