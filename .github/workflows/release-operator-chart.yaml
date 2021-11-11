@@ -1,0 +1,46 @@
+name: Release Operator Chart
+on:
+  push:
+    tags:
+      - "operator-chart-v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Setup | Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup | Git Tag
+      id: git_tag
+      run: |
+        echo ::set-output name=TAG::"${GITHUB_REF/refs\/tags\/operator-chart-/}"
+        echo ::set-output name=TAG_NUMERAL::"${GITHUB_REF/refs\/tags\/operator-chart-v/}"
+      shell: bash
+
+    - name: Setup | Login ghcr.io
+      run: helm registry login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
+
+    - name: Build | Package Chart
+      run: helm package charts/hadron-operator -d charts/
+
+    - name: Build | Check Packack Version
+      run: |
+        if [ -e charts/hadron-operator-${{ steps.git_tag.outputs.TAG_NUMERAL }}.tgz ]; then
+          echo "::info title=Packaging Successful::found chart charts/hadron-operator-${{ steps.git_tag.outputs.TAG_NUMERAL }}.tgz"
+        else
+          echo "::error title=Bad Chart Version::could not find chart at charts/hadron-operator-${{ steps.git_tag.outputs.TAG_NUMERAL }}.tgz, probably a version mismatch"
+          exit 1
+        fi
+
+    - name: Build | Push Chart
+      run: helm push charts/hadron-operator-${{ steps.git_tag.outputs.TAG_NUMERAL }}.tgz oci://ghcr.io/hadron-project/charts/
+
+    - name: Build | Publish Pre-Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Hadron Operator Chart ${{ steps.git_tag.outputs.TAG }}
+        body: "See https://artifacthub.io/packages/helm/hadron-operator/hadron-operator?modal=changelog for the chart's changelog.\n\nNOTE: allow a few minutes for the changes to be detected by ArtifactHub."
+        draft: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
