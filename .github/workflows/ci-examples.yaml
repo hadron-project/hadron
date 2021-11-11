@@ -1,4 +1,4 @@
-name: CI Core
+name: CI Examples
 on:
   push:
     branches:
@@ -15,7 +15,7 @@ jobs:
     with:
       project: pipeline-transactional-processing
       dir: examples
-  pipeline-txp:
+  stream-txp:
     uses: hadron-project/hadron/.github/workflows/_rust-ci.yaml@main
     with:
       project: stream-transactional-processing
