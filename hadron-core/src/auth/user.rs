@@ -13,16 +13,11 @@ pub struct UserCredentials(String);
 impl UserCredentials {
     /// Extract a user name & PW hash from the given header.
     pub fn from_auth_header(header: AsciiMetadataValue) -> Result<Self> {
-        let header_str = header
-            .to_str()
-            .map_err(|_| AppError::InvalidCredentials("must be a valid string value".into()))?;
+        let header_str = header.to_str().map_err(|_| AppError::InvalidCredentials("must be a valid string value".into()))?;
 
         // Split the header on the basic auth prefix & ensure the leading segment is empty.
         let mut splits = header_str.splitn(2, BASIC_PREFIX);
-        ensure!(
-            splits.next() == Some(""),
-            AppError::InvalidCredentials("authorization header value must begin with 'basic '".into()),
-        );
+        ensure!(splits.next() == Some(""), AppError::InvalidCredentials("authorization header value must begin with 'basic '".into()),);
 
         // Decode the credentials value.
         let datab64 = match splits.next() {
@@ -32,9 +27,7 @@ impl UserCredentials {
         let creds = match base64::decode(&datab64) {
             Ok(creds_bytes) => match String::from_utf8(creds_bytes) {
                 Ok(creds) => creds,
-                Err(_) => bail!(AppError::InvalidCredentials(
-                    "decoded basic auth credentials were not a valid string value".into()
-                )),
+                Err(_) => bail!(AppError::InvalidCredentials("decoded basic auth credentials were not a valid string value".into())),
             },
             Err(_) => bail!(AppError::InvalidCredentials("could not base64 decode basic auth credentials".into())),
         };

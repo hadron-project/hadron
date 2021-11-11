@@ -513,7 +513,7 @@ dependencies = [
 
 [[package]]
 name = "hadron-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.13.0",
@@ -535,7 +535,7 @@ dependencies = [
 
 [[package]]
 name = "hadron-operator"
-version = "0.1.0-beta.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
  "axum",

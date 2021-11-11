@@ -77,10 +77,7 @@ pub struct LeaderElectionConfig {
 
 impl LeaderElectionConfig {
     // Create a new `LeaderElectionConfig` instance, validating given inputs.
-    pub fn new(
-        namespace: impl AsRef<str>, name: impl AsRef<str>, identity: String, lease_duration: Duration, renew_deadline: Duration,
-        retry_period: Duration,
-    ) -> Result<Self> {
+    pub fn new(namespace: impl AsRef<str>, name: impl AsRef<str>, identity: String, lease_duration: Duration, renew_deadline: Duration, retry_period: Duration) -> Result<Self> {
         ensure!(lease_duration > renew_deadline, "lease_duration must be greater than renew_deadline");
         ensure!(
             renew_deadline > Duration::seconds((JITTER_FACTOR * retry_period.num_seconds() as f64) as i64),
@@ -125,9 +122,7 @@ pub struct LeaderElector {
 
 impl LeaderElector {
     // Create a new `LeaderElector` instance.
-    pub fn new(
-        lease: Lease, config: LeaderElectionConfig, manager: impl AsRef<str>, client: Client, shutdown: broadcast::Receiver<()>,
-    ) -> (Self, watch::Receiver<LeaderState>) {
+    pub fn new(lease: Lease, config: LeaderElectionConfig, manager: impl AsRef<str>, client: Client, shutdown: broadcast::Receiver<()>) -> (Self, watch::Receiver<LeaderState>) {
         let (state_tx, state_rx) = watch::channel(LeaderState::Standby);
         (
             LeaderElector {

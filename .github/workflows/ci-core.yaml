@@ -11,6 +11,6 @@ on:
 
 jobs:
   ci:
-    uses: hadron-project/hadron/.github/workflows/_rust-ci-base.yaml@main
+    uses: hadron-project/hadron/.github/workflows/_rust-ci.yaml@main
     with:
       project: hadron-core

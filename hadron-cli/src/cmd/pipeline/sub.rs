@@ -23,10 +23,7 @@ impl Sub {
         tracing::info!("subscribing to pipeline {} on stage {}", self.pipeline, self.stage);
         let handler = Arc::new(StdoutHandler { stage: self.stage.clone() });
         let client = base.get_client().await?;
-        let sub = client
-            .pipeline(&self.pipeline, &self.stage, handler)
-            .await
-            .context("error creating pipeline subscription")?;
+        let sub = client.pipeline(&self.pipeline, &self.stage, handler).await.context("error creating pipeline subscription")?;
         let _ = tokio::signal::ctrl_c().await;
         sub.cancel().await;
         Ok(())

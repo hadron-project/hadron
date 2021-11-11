@@ -49,10 +49,7 @@ impl Sub {
             },
         });
         let client = base.get_client().await?;
-        let sub = client
-            .subscribe(&self.group, config, handler)
-            .await
-            .context("error building subscription")?;
+        let sub = client.subscribe(&self.group, config, handler).await.context("error building subscription")?;
         let _ = tokio::signal::ctrl_c().await;
         sub.cancel().await;
         Ok(())

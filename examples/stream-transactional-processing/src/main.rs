@@ -24,10 +24,7 @@ async fn main() -> Result<()> {
 
     // Build the Postgres connection pool & execute migrations.
     let pg_pool = PgPoolOptions::new().max_connections(5).connect(&pg_url).await?;
-    MIGRATOR
-        .run(&pg_pool)
-        .await
-        .context("error running database migrations for Postgres")?;
+    MIGRATOR.run(&pg_pool).await.context("error running database migrations for Postgres")?;
 
     // Construct our Stream handler and begin handling events from the Stream.
     let handler = Arc::new(TxpHandler::new(pg_pool));
@@ -36,10 +33,7 @@ async fn main() -> Result<()> {
         max_batch_size: 1,
         starting_point: SubscriptionStartingPoint::Beginning,
     };
-    let sub = client
-        .subscribe("txp-demo", Some(sub_config), handler)
-        .await
-        .context("error building Stream subscription")?;
+    let sub = client.subscribe("txp-demo", Some(sub_config), handler).await.context("error building Stream subscription")?;
 
     tracing::info!("subscriber started");
     wait_for_shutdown_signal().await?;
@@ -71,9 +65,7 @@ impl hadron::StreamHandler for TxpHandler {
         // have not yet processed the event.
         for event in payload.batch {
             // Materialize into `in_table` and check for PK error. If so, continue to next event.
-            let res = sqlx::query!("INSERT INTO in_table (id, source) VALUES ($1, $2);", &event.id, &event.source)
-                .execute(&mut tx)
-                .await;
+            let res = sqlx::query!("INSERT INTO in_table (id, source) VALUES ($1, $2);", &event.id, &event.source).execute(&mut tx).await;
             match res {
                 Ok(_) => (),
                 // Check for `unique_violation` (https://www.postgresql.org/docs/current/errcodes-appendix.html).

@@ -24,28 +24,17 @@ async fn main() -> Result<()> {
 
     // Build the Postgres connection pool & execute migrations.
     let pg_pool = PgPoolOptions::new().max_connections(5).connect(&pg_url).await?;
-    MIGRATOR
-        .run(&pg_pool)
-        .await
-        .context("error running database migrations for Postgres")?;
+    MIGRATOR.run(&pg_pool).await.context("error running database migrations for Postgres")?;
 
     // Construct our Pipeline handlers and begin handling events from all stages.
     let deploy_service_handler = handlers::DeployServiceHandler::new(pg_pool.clone());
-    let deploy_service_sub = client
-        .pipeline("service-creation", "deploy-service", deploy_service_handler)
-        .await?;
+    let deploy_service_sub = client.pipeline("service-creation", "deploy-service", deploy_service_handler).await?;
     let setup_billing_handler = handlers::SetupBillingHandler::new(pg_pool.clone());
-    let setup_billing_sub = client
-        .pipeline("service-creation", "setup-billing", setup_billing_handler)
-        .await?;
+    let setup_billing_sub = client.pipeline("service-creation", "setup-billing", setup_billing_handler).await?;
     let setup_monitoring_handler = handlers::SetupMonitoringHandler::new(pg_pool.clone());
-    let setup_monitoring_sub = client
-        .pipeline("service-creation", "setup-monitoring", setup_monitoring_handler)
-        .await?;
+    let setup_monitoring_sub = client.pipeline("service-creation", "setup-monitoring", setup_monitoring_handler).await?;
     let notify_user_handler = handlers::NotifyUserHandler::new(pg_pool.clone());
-    let notify_user_sub = client
-        .pipeline("service-creation", "notify-user", notify_user_handler)
-        .await?;
+    let notify_user_sub = client.pipeline("service-creation", "notify-user", notify_user_handler).await?;
     let cleanup_handler = handlers::CleanupHandler::new(pg_pool.clone());
     let cleanup_sub = client.pipeline("service-creation", "cleanup", cleanup_handler).await?;
 

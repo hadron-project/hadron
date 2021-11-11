@@ -254,10 +254,7 @@ pub mod stream_controller_client {
         pub fn with_interceptor<F>(inner: T, interceptor: F) -> StreamControllerClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
-            T: tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<<T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody>,
-            >,
+            T: tonic::codegen::Service<http::Request<tonic::body::BoxBody>, Response = http::Response<<T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody>>,
             <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error: Into<StdError> + Send + Sync,
         {
             StreamControllerClient::new(InterceptedService::new(inner, interceptor))
@@ -276,9 +273,7 @@ pub mod stream_controller_client {
             self
         }
         #[doc = " Open a metadata stream."]
-        pub async fn metadata(
-            &mut self, request: impl tonic::IntoRequest<super::MetadataRequest>,
-        ) -> Result<tonic::Response<tonic::codec::Streaming<super::MetadataResponse>>, tonic::Status> {
+        pub async fn metadata(&mut self, request: impl tonic::IntoRequest<super::MetadataRequest>) -> Result<tonic::Response<tonic::codec::Streaming<super::MetadataResponse>>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -288,9 +283,7 @@ pub mod stream_controller_client {
             self.inner.server_streaming(request.into_request(), path, codec).await
         }
         #[doc = " Open a stream publisher channel."]
-        pub async fn stream_publish(
-            &mut self, request: impl tonic::IntoRequest<super::StreamPublishRequest>,
-        ) -> Result<tonic::Response<super::StreamPublishResponse>, tonic::Status> {
+        pub async fn stream_publish(&mut self, request: impl tonic::IntoRequest<super::StreamPublishRequest>) -> Result<tonic::Response<super::StreamPublishResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await

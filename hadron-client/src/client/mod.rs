@@ -92,9 +92,7 @@ pub enum Mode {
     External,
 }
 
-async fn metadata_task(
-    metadata_endpoint: Endpoint, mut tx: EndpointChangeTx, conns: ArcSwapConns, creds: ClientCreds, mode: Mode, shutdown: broadcast::Receiver<()>,
-) {
+async fn metadata_task(metadata_endpoint: Endpoint, mut tx: EndpointChangeTx, conns: ArcSwapConns, creds: ClientCreds, mode: Mode, shutdown: broadcast::Receiver<()>) {
     // Establish initial metadata stream.
     let mut shutdown = BroadcastStream::new(shutdown);
     let mut changes: ChangeBuf = Vec::with_capacity(50); // A buffer used to collect change batches.
@@ -135,19 +133,13 @@ async fn try_metadata_task(metadata_endpoint: Endpoint, req: Request<MetadataReq
     let mut conn = StreamControllerClient::connect(metadata_endpoint.clone())
         .await
         .context("error establishing connection to Hadron cluster for metadata connection")?;
-    let metadata = conn
-        .metadata(req)
-        .await
-        .context("error opening metadata stream with Hadron cluster")?
-        .into_inner();
+    let metadata = conn.metadata(req).await.context("error opening metadata stream with Hadron cluster")?.into_inner();
     Ok(metadata)
 }
 
 /// Diff and update connection endpoints.
 #[tracing::instrument(level = "debug", skip(updated, arc_conns, changes, mode, tx))]
-async fn diff_and_update_endpoints(
-    updated: MetadataResponse, arc_conns: ArcSwapConns, changes: &mut ChangeBuf, mode: Mode, tx: &mut EndpointChangeTx,
-) {
+async fn diff_and_update_endpoints(updated: MetadataResponse, arc_conns: ArcSwapConns, changes: &mut ChangeBuf, mode: Mode, tx: &mut EndpointChangeTx) {
     tracing::debug!("metadata update received");
 
     // Look for new endpoints.

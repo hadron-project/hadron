@@ -1,0 +1,12 @@
+name: Release Stream
+on:
+  push:
+    tags:
+      - "stream-v*"
+
+jobs:
+  release:
+    uses: hadron-project/hadron/.github/workflows/_rust-release.yaml@main
+    with:
+      project: hadron-stream
+      tagPrefix: stream-

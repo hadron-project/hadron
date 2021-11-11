@@ -32,10 +32,7 @@ pub mod operator_client {
         pub fn with_interceptor<F>(inner: T, interceptor: F) -> OperatorClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
-            T: tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<<T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody>,
-            >,
+            T: tonic::codegen::Service<http::Request<tonic::body::BoxBody>, Response = http::Response<<T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody>>,
             <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error: Into<StdError> + Send + Sync,
         {
             OperatorClient::new(InterceptedService::new(inner, interceptor))

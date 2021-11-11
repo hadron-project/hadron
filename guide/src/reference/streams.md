@@ -29,6 +29,20 @@ spec:
   ## When true, the Stream processes will use `debug` level logging.
   debug: :bool
 
+  ## The data retention policy for data residing on this Stream.
+  retentionPolicy:
+    ## The retention strategy to use.
+    ##
+    ## Allowed values:
+    ## - "retain": this strategy preserves the data on the Stream indefinitely.
+    ## - "time": this strategy preserves the data on the Stream for the amount of time
+    ##   specified in `.spec.retentionPolicy.retentionSeconds`.
+    strategy: :string (default "time")
+    ## The number of seconds which data is to be retained on the Stream before it is deleted.
+    ##
+    ## This field is optional and is only evaluated when using the "time" strategy.
+    retentionSeconds: :integer (default 604800) # Default 7 days.
+
   ## The full image name, including tag, to use for the backing StatefulSet pods.
   image: :string
 

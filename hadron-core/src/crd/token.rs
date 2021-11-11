@@ -74,11 +74,7 @@ impl TokenCRD {
             return Ok(());
         }
         ensure!(
-            self.spec
-                .streams
-                .as_ref()
-                .map(|streams| streams.r#pub.iter().by_ref().any(|name| name == stream))
-                .unwrap_or(false),
+            self.spec.streams.as_ref().map(|streams| streams.r#pub.iter().by_ref().any(|name| name == stream)).unwrap_or(false),
             AppError::Unauthorized,
         );
         Ok(())
@@ -90,11 +86,7 @@ impl TokenCRD {
             return Ok(());
         }
         ensure!(
-            self.spec
-                .streams
-                .as_ref()
-                .map(|streams| streams.sub.iter().by_ref().any(|name| name == stream))
-                .unwrap_or(false),
+            self.spec.streams.as_ref().map(|streams| streams.sub.iter().by_ref().any(|name| name == stream)).unwrap_or(false),
             AppError::Unauthorized,
         );
         Ok(())

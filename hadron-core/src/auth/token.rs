@@ -27,16 +27,11 @@ pub struct UnverifiedTokenCredentials {
 impl UnverifiedTokenCredentials {
     /// Extract a token from the given header value bytes.
     pub fn from_auth_header(header: AsciiMetadataValue) -> Result<Self> {
-        let header_str = header
-            .to_str()
-            .map_err(|_| AppError::InvalidCredentials("must be a valid string value".into()))?;
+        let header_str = header.to_str().map_err(|_| AppError::InvalidCredentials("must be a valid string value".into()))?;
 
         // Split the header on the bearer prefix & ensure the leading segment is empty.
         let mut splits = header_str.splitn(2, BEARER_PREFIX);
-        ensure!(
-            splits.next() == Some(""),
-            AppError::InvalidCredentials("authorization header value must begin with 'bearer '".into()),
-        );
+        ensure!(splits.next() == Some(""), AppError::InvalidCredentials("authorization header value must begin with 'bearer '".into()),);
 
         // Check the final segment and ensure we have a populated value.
         let token = match splits.next() {
@@ -50,7 +45,11 @@ impl UnverifiedTokenCredentials {
     /// Verify the integrity of these credentials using the given key.
     pub fn verify(self, key: &DecodingKey) -> Result<TokenCredentials> {
         let claims = TokenClaims::decode(&self.token, key).map_err(|err| AppError::InvalidCredentials(err.to_string()))?;
-        Ok(TokenCredentials { claims, header: self.header, token: self.token })
+        Ok(TokenCredentials {
+            claims,
+            header: self.header,
+            token: self.token,
+        })
     }
 }
 

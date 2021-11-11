@@ -23,8 +23,7 @@ const ANNOTATION_ALLOW_DESTRUCTIVE: &str = "hadron.rs/allow-destructive-update";
 /// Max length of a RFC 1123 label name allowed.
 const NAME_1123_LABEL_LEN: usize = 63;
 /// Error message for a RFC 1123 label name.
-const NAME_1123_LABEL_MSG: &str =
-    "must be a RFC 1123 label consisting of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character";
+const NAME_1123_LABEL_MSG: &str = "must be a RFC 1123 label consisting of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character";
 
 /// CRD spec for the Pipeline resource.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, CustomResource, JsonSchema)]
@@ -179,11 +178,7 @@ impl PipelineCRD {
         let mut triggers = BTreeSet::new();
         for trigger in self.spec.triggers.iter() {
             if !triggers.insert(trigger) {
-                errors.push(format!(
-                    "trigger '{}' of pipeline '{}' is a duplicate and must be removed",
-                    trigger,
-                    self.name()
-                ));
+                errors.push(format!("trigger '{}' of pipeline '{}' is a duplicate and must be removed", trigger, self.name()));
             }
         }
 
@@ -192,12 +187,7 @@ impl PipelineCRD {
         let mut graph = GraphMap::<_, (), Directed>::new();
         for stage in self.spec.stages.iter() {
             if !NAME_1123_LABEL_RE.is_match(stage.name.as_str()) {
-                errors.push(format!(
-                    "stage '{}' of pipeline {} {}",
-                    stage.name.as_str(),
-                    self.name(),
-                    NAME_1123_LABEL_MSG
-                ));
+                errors.push(format!("stage '{}' of pipeline {} {}", stage.name.as_str(), self.name(), NAME_1123_LABEL_MSG));
             }
             if stage.name.len() > NAME_1123_LABEL_LEN {
                 errors.push(format!(
@@ -218,39 +208,22 @@ impl PipelineCRD {
             }
             for dep in stage.dependencies.iter() {
                 if !graph.contains_node(dep.as_str()) {
-                    errors.push(format!(
-                        "stage '{}' depends upon stage '{}' which does not exist in pipeline {}",
-                        stage.name,
-                        dep,
-                        self.name()
-                    ));
+                    errors.push(format!("stage '{}' depends upon stage '{}' which does not exist in pipeline {}", stage.name, dep, self.name()));
                 }
                 graph.add_edge(dep.as_str(), stage.name.as_str(), ());
             }
             for after in stage.after.iter() {
                 if !graph.contains_node(after.as_str()) {
-                    errors.push(format!(
-                        "stage '{}' must execute after stage '{}' which does not exist in pipeline {}",
-                        stage.name,
-                        after,
-                        self.name()
-                    ));
+                    errors.push(format!("stage '{}' must execute after stage '{}' which does not exist in pipeline {}", stage.name, after, self.name()));
                 }
                 graph.add_edge(after.as_str(), stage.name.as_str(), ());
             }
         }
         if let Err(cycle_err) = petgraph::algo::toposort(&graph, None) {
-            errors.push(format!(
-                "stage '{}' of pipeline {} creates a cycle and pipelines must be acyclic",
-                cycle_err.node_id(),
-                self.name()
-            ));
+            errors.push(format!("stage '{}' of pipeline {} creates a cycle and pipelines must be acyclic", cycle_err.node_id(), self.name()));
         }
         if !has_entrypoint {
-            errors.push(format!(
-                "pipeline {} has no entrypoint stage with no `dependencies` and no `after` stages",
-                self.name()
-            ));
+            errors.push(format!("pipeline {} has no entrypoint stage with no `dependencies` and no `after` stages", self.name()));
         }
 
         // Ensure max_parallel is > 0.
@@ -277,12 +250,7 @@ impl PipelineCRD {
                 deleted.push(stage.name.as_str());
             }
         }
-        let allow_destructive = self
-            .metadata
-            .annotations
-            .as_ref()
-            .map(|ann| ann.contains_key(ANNOTATION_ALLOW_DESTRUCTIVE))
-            .unwrap_or(false);
+        let allow_destructive = self.metadata.annotations.as_ref().map(|ann| ann.contains_key(ANNOTATION_ALLOW_DESTRUCTIVE)).unwrap_or(false);
         if !deleted.is_empty() && !allow_destructive {
             Err(vec![format!(
                 "pipeline {} would incur data loss if stages {:?} are removed, set annotation {} to allow this change",
@@ -305,12 +273,7 @@ mod test {
             #[test]
             fn $name() {
                 let output = Pipeline::event_type_matches_triggers::<&str>($triggers, $event);
-                assert!(
-                    $expect == output,
-                    "expected output `{}` did not match actual output `{}`",
-                    $expect,
-                    output,
-                );
+                assert!($expect == output, "expected output `{}` did not match actual output `{}`", $expect, output,);
             }
         };
     }
@@ -318,12 +281,7 @@ mod test {
     matcher_test!(empty_triggers_match_any_0, &[], "", true);
     matcher_test!(empty_triggers_match_any_1, &[], "domain.event.v1", true);
 
-    matcher_test!(
-        no_match_with_event_type_too_long_and_no_matchall,
-        &["domain.event"],
-        "domain.event.v1",
-        false
-    );
+    matcher_test!(no_match_with_event_type_too_long_and_no_matchall, &["domain.event"], "domain.event.v1", false);
 
     matcher_test!(match_with_event_type_too_long_and_matchall_0, &["domain.>"], "domain.event", true);
     matcher_test!(match_with_event_type_too_long_and_matchall_1, &["domain.>"], "domain.event.v1", true);
@@ -341,13 +299,7 @@ mod test {
             #[test]
             fn $name() {
                 let output = NAME_1123_LABEL_RE.is_match($pat);
-                assert!(
-                    $expect == output,
-                    "match for pattern {} expected to be {} but got {}",
-                    $pat,
-                    $expect,
-                    output,
-                );
+                assert!($expect == output, "match for pattern {} expected to be {} but got {}", $pat, $expect, output,);
             }
         };
     }

@@ -48,11 +48,7 @@ impl Hadron {
             filter_layer = EnvFilter::new("info");
             level_filter = LevelFilter::INFO;
         }
-        tracing_subscriber::registry()
-            .with(filter_layer)
-            .with(fmt_layer)
-            .with(level_filter)
-            .init();
+        tracing_subscriber::registry().with(filter_layer).with(fmt_layer).with(level_filter).init();
 
         match &self.action {
             HadronSubcommands::Pipeline(inner) => inner.run(&self).await,

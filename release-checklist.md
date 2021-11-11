@@ -26,6 +26,12 @@ Updates to the Hadron Stream binary are isolated and only require an independent
 - [ ] Update `hadron-stream/Cargo.toml` version with correct semver bump per changes.
 - [ ] Commit changes, tag branch with `stream-vX.Y.Z`, CI will cut the new releases. CI will also update the Hadron Stream container `latest` tag.
 
+## Core
+Updates to the Hadron Core library impact both the Hadron Stream & Hadron Operator packages, however the Core library itself not currently independendently released.
+
+- [ ] Update `hadron-core/CHANGELOG.md`.
+- [ ] Update `hadron-core/Cargo.toml` version with correct semver bump per changes.
+
 ## CLI
 Updates to the Hadron CLI binary are isolated and only require an independent release.
 

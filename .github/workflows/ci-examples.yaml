@@ -11,12 +11,12 @@ on:
 
 jobs:
   pipeline-txp:
-    uses: hadron-project/hadron/.github/workflows/_rust-ci-base.yaml@main
+    uses: hadron-project/hadron/.github/workflows/_rust-ci.yaml@main
     with:
       project: pipeline-transactional-processing
       dir: examples
   pipeline-txp:
-    uses: hadron-project/hadron/.github/workflows/_rust-ci-base.yaml@main
+    uses: hadron-project/hadron/.github/workflows/_rust-ci.yaml@main
     with:
       project: stream-transactional-processing
       dir: examples

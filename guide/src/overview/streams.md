@@ -35,3 +35,11 @@ All consumers must declare their group name when they first establish a connecti
 
 #### Durable or Ephemeral
 Stream Consumers may be durable or ephemeral. Durable groups will have their progress recorded on each respective Stream partition. Ephemeral groups only have their progress tracked in memory, which is erased once all group members disconnect per partition.
+
+### Data Lifecycle
+Data residing within a Hadron Stream has a configurable retention policy. There are 2 retention policy strategies currently available:
+
+- `"time"`: (default) this strategy will preserve the data on the Stream for a configurable amount of time (defaults to 7 days). After the data has resided on the Stream for longer than the configured period of time, it will be deleted.
+- `"retain"`: this strategy will preserve the data on the Stream indefinitely.
+
+These configuration options are controlled via the [Stream CRD](../reference/streams.md).
