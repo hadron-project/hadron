@@ -30,8 +30,8 @@ use anyhow::{bail, Context, Result};
 use k8s_openapi::api::apps::v1::{StatefulSet, StatefulSetUpdateStrategy};
 use k8s_openapi::api::coordination::v1::Lease;
 use k8s_openapi::api::core::v1::{
-    Container, ContainerPort, EnvVar, EnvVarSource, ObjectFieldSelector, PersistentVolumeClaim, PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec,
-    Probe, ResourceRequirements, Secret, Service, ServicePort, TCPSocketAction, VolumeMount,
+    Container, ContainerPort, EnvVar, EnvVarSource, ObjectFieldSelector, PersistentVolumeClaim, PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec, Probe, ResourceRequirements, Secret, Service,
+    ServicePort, TCPSocketAction, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
@@ -174,12 +174,7 @@ impl Controller {
         };
 
         // Extract the STS name from the service using canonical labels.
-        let sts_name = match service
-            .metadata
-            .labels
-            .as_ref()
-            .and_then(|labels| labels.get(LABEL_HADRON_RS_STS))
-        {
+        let sts_name = match service.metadata.labels.as_ref().and_then(|labels| labels.get(LABEL_HADRON_RS_STS)) {
             Some(sts_name) => sts_name,
             // If the service object does not correspond to a STS, then there is nothing to do here.
             None => return,
@@ -221,11 +216,7 @@ impl Controller {
             None => return,
         };
         if (offset.saturating_add(1) as i32) > replicas {
-            tracing::info!(
-                service = name.as_str(),
-                replicas,
-                "deleting service because StatefulSet has fewer desired replicas"
-            );
+            tracing::info!(service = name.as_str(), replicas, "deleting service because StatefulSet has fewer desired replicas");
             if let Err(err) = self.delete_service(name.as_str()).await {
                 tracing::error!(error = ?err, service = %name, "error deleting service for Stream");
                 self.spawn_scheduler_task(SchedulerTask::ServiceUpdated(name), true);
@@ -243,12 +234,7 @@ impl Controller {
         tracing::debug!("handling scheduler service deleted");
 
         // Extract the STS name from the service using canonical labels.
-        let sts_name = match service
-            .metadata
-            .labels
-            .as_ref()
-            .and_then(|labels| labels.get(LABEL_HADRON_RS_STS))
-        {
+        let sts_name = match service.metadata.labels.as_ref().and_then(|labels| labels.get(LABEL_HADRON_RS_STS)) {
             Some(sts_name) => sts_name,
             // If the service object does not correspond to a STS, then there is nothing to do here.
             None => return,
@@ -416,14 +402,10 @@ impl Controller {
 
         // Check to see if we need to create a StatefulSet for this stream.
         let sts_res = if let Some(sts) = self.statefulsets.get(name.as_ref()) {
-            self.reconcile_stream_changes(stream, sts)
-                .await
-                .context("error reconciling Stream changes")
+            self.reconcile_stream_changes(stream, sts).await.context("error reconciling Stream changes")
         } else {
             let sts = self.build_stream_statefulset(stream);
-            self.create_statefulset(sts)
-                .await
-                .context("error creating new backing StatefulSet for Stream")
+            self.create_statefulset(sts).await.context("error creating new backing StatefulSet for Stream")
         };
         let sts = match sts_res {
             Ok(sts) => sts,
@@ -460,10 +442,7 @@ impl Controller {
 
         // Service does not exist in cache, so create it.
         let mut service = self.build_sts_service(stream);
-        service = self
-            .create_service(&service)
-            .await
-            .context("error creating frontend Service for Stream StatefulSet")?;
+        service = self.create_service(&service).await.context("error creating frontend Service for Stream StatefulSet")?;
         self.services.insert(name.clone(), service);
         Ok(())
     }
@@ -616,13 +595,12 @@ impl Controller {
             match_labels: Some(labels.clone()),
             ..Default::default()
         };
-        let rust_log = if stream.spec.debug {
-            "error,hadron_stream=debug"
-        } else {
-            "error,hadron_stream=info"
-        };
+        let rust_log = if stream.spec.debug { "error,hadron_stream=debug" } else { "error,hadron_stream=info" };
         spec.template = PodTemplateSpec {
-            metadata: Some(ObjectMeta { labels: Some(labels), ..Default::default() }),
+            metadata: Some(ObjectMeta {
+                labels: Some(labels),
+                ..Default::default()
+            }),
             spec: Some(PodSpec {
                 termination_grace_period_seconds: Some(30),
                 service_account_name: Some("hadron-stream".into()),
@@ -707,12 +685,7 @@ impl Controller {
                         },
                         EnvVar {
                             name: "RETENTION_POLICY_RETENTION_SECONDS".into(),
-                            value: stream
-                                .spec
-                                .retention_policy
-                                .retention_seconds
-                                .as_ref()
-                                .map(|val| format!("{}", val)),
+                            value: stream.spec.retention_policy.retention_seconds.as_ref().map(|val| format!("{}", val)),
                             ..Default::default()
                         },
                     ]),
@@ -747,13 +720,12 @@ impl Controller {
 
         // Build volume claim templates.
         spec.volume_claim_templates = Some(vec![PersistentVolumeClaim {
-            metadata: ObjectMeta { name: Some("data".into()), ..Default::default() },
+            metadata: ObjectMeta {
+                name: Some("data".into()),
+                ..Default::default()
+            },
             spec: Some(PersistentVolumeClaimSpec {
-                access_modes: stream
-                    .spec
-                    .pvc_access_modes
-                    .clone()
-                    .or_else(|| Some(vec!["ReadWriteOnce".into()])),
+                access_modes: stream.spec.pvc_access_modes.clone().or_else(|| Some(vec!["ReadWriteOnce".into()])),
                 storage_class_name: stream.spec.pvc_storage_class.clone(),
                 resources: Some(ResourceRequirements {
                     requests: Some(maplit::btreemap! {
@@ -810,9 +782,7 @@ impl Controller {
 
         // Secret does not exist. Mint a new JWT & create the backing secret.
         let rng = ring::rand::SystemRandom::new();
-        let key_value: [u8; ring::digest::SHA512_OUTPUT_LEN * 2] = ring::rand::generate(&rng)
-            .context("error generating key for JWT")?
-            .expose();
+        let key_value: [u8; ring::digest::SHA512_OUTPUT_LEN * 2] = ring::rand::generate(&rng).context("error generating key for JWT")?.expose();
         let encoding_key = jsonwebtoken::EncodingKey::from_secret(&key_value);
         let claims = TokenClaims::new(name.as_str());
         let jwt = claims.encode(&encoding_key).context("error encoding claims as JWT")?;
@@ -826,9 +796,7 @@ impl Controller {
 
         let labels = secret.meta_mut().labels.get_or_insert_with(Default::default);
         set_cannonical_labels(labels);
-        self.create_secret(&secret)
-            .await
-            .context("error creating backing secret for token")
+        self.create_secret(&secret).await.context("error creating backing secret for token")
     }
 }
 
@@ -898,9 +866,7 @@ impl Controller {
         self.fence().await?;
         tracing::info!(name, "deleting service");
         let api: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
-        let res = timeout(API_TIMEOUT, api.delete(name, &Default::default()))
-            .await
-            .context("timeout while deleting service")?;
+        let res = timeout(API_TIMEOUT, api.delete(name, &Default::default())).await.context("timeout while deleting service")?;
         match res {
             Ok(_val) => Ok(()),
             Err(err) => match err {
@@ -971,11 +937,7 @@ impl Controller {
         let is_lease_holder = lease
             .spec
             .as_ref()
-            .and_then(|spec| {
-                spec.holder_identity
-                    .as_deref()
-                    .map(|holder_id| holder_id == self.config.pod_name.as_str())
-            })
+            .and_then(|spec| spec.holder_identity.as_deref().map(|holder_id| holder_id == self.config.pod_name.as_str()))
             .unwrap_or(false);
         if !is_lease_holder {
             bail!("lease is no longer held by this pod");

@@ -66,8 +66,12 @@ impl PublisherClient {
     /// Publish a single event.
     #[tracing::instrument(level = "debug", skip(self, event, ack, fsync))]
     pub async fn publish(&mut self, event: Event, ack: WriteAck, fsync: bool) -> Result<StreamPublishResponse> {
-        self.try_publish_event(StreamPublishRequest { batch: vec![event], ack: ack as i32, fsync })
-            .await
+        self.try_publish_event(StreamPublishRequest {
+            batch: vec![event],
+            ack: ack as i32,
+            fsync,
+        })
+        .await
     }
 
     /// Publish a batch of events.
@@ -75,30 +79,20 @@ impl PublisherClient {
     /// They key of the first event in the given batch will be used to determine placement of the batch.
     #[tracing::instrument(level = "debug", skip(self, batch, ack, fsync))]
     pub async fn publish_batch(&mut self, batch: Vec<Event>, ack: WriteAck, fsync: bool) -> Result<StreamPublishResponse> {
-        self.try_publish_event(StreamPublishRequest { batch, ack: ack as i32, fsync })
-            .await
+        self.try_publish_event(StreamPublishRequest { batch, ack: ack as i32, fsync }).await
     }
 
     /// Publish the given event to the target stream.
     #[tracing::instrument(level = "debug", skip(self, proto))]
     async fn try_publish_event(&mut self, proto: StreamPublishRequest) -> Result<StreamPublishResponse> {
-        let (id, source) = proto
-            .batch
-            .get(0)
-            .map(|val| (val.id.as_str(), val.source.as_str()))
-            .unwrap_or(("", ""));
-        let mut conn = self
-            .select_partition(id, source)
-            .ok_or_else(|| anyhow!("no partitions available"))?;
+        let (id, source) = proto.batch.get(0).map(|val| (val.id.as_str(), val.source.as_str())).unwrap_or(("", ""));
+        let mut conn = self.select_partition(id, source).ok_or_else(|| anyhow!("no partitions available"))?;
 
         let header = self.client.inner.creds.header();
         let mut req = Request::new(proto);
         req.metadata_mut().insert(header.0, header.1);
         tracing::debug!("publishing request");
-        let res = conn
-            .stream_publish(req)
-            .await
-            .context("error publishing request to stream")?;
+        let res = conn.stream_publish(req).await.context("error publishing request to stream")?;
 
         tracing::debug!("request published");
         Ok(res.into_inner())

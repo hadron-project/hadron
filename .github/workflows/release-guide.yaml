@@ -1,4 +1,4 @@
-name: Pages
+name: Release Guide
 on:
   push:
     branches:

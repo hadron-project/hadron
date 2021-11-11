@@ -23,9 +23,7 @@ impl ClientCreds {
         let user = username.to_string();
         let pass = password.to_string();
         let basic_auth = base64::encode(format!("{}:{}", username, password));
-        let header: AsciiMetadataValue = format!("basic {}", basic_auth)
-            .parse()
-            .context("error setting username/password")?;
+        let header: AsciiMetadataValue = format!("basic {}", basic_auth).parse().context("error setting username/password")?;
         Ok(Self::User(user, pass, header))
     }
 

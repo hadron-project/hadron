@@ -35,15 +35,10 @@ impl App {
         let (shutdown_tx, shutdown_rx) = broadcast::channel(10);
 
         // Initialize K8s client.
-        let client = kube::Client::try_default()
-            .await
-            .context("error initializing K8s client")?;
+        let client = kube::Client::try_default().await.context("error initializing K8s client")?;
 
         // Spawn various core tasks.
-        let server = AppServer::new(config.clone(), shutdown_tx.clone())
-            .spawn()
-            .await
-            .context("error setting up client gRPC server")?;
+        let server = AppServer::new(config.clone(), shutdown_tx.clone()).spawn().await.context("error setting up client gRPC server")?;
 
         let controller = Controller::new(client, config.clone(), shutdown_tx.clone())?.spawn();
 
@@ -62,14 +57,8 @@ impl App {
 
     async fn run(mut self) -> Result<()> {
         let mut signals = StreamMap::new();
-        signals.insert(
-            "sigterm",
-            SignalStream::new(signal(SignalKind::terminate()).context("error building signal stream")?),
-        );
-        signals.insert(
-            "sigint",
-            SignalStream::new(signal(SignalKind::interrupt()).context("error building signal stream")?),
-        );
+        signals.insert("sigterm", SignalStream::new(signal(SignalKind::terminate()).context("error building signal stream")?));
+        signals.insert("sigint", SignalStream::new(signal(SignalKind::interrupt()).context("error building signal stream")?));
 
         loop {
             tokio::select! {
@@ -87,12 +76,7 @@ impl App {
         if let Err(err) = self.server.await {
             tracing::error!(error = ?err, "error joining client gRPC server task");
         }
-        if let Err(err) = self
-            .controller
-            .await
-            .context("error joining k8s controller handle")
-            .and_then(|res| res)
-        {
+        if let Err(err) = self.controller.await.context("error joining k8s controller handle").and_then(|res| res) {
             tracing::error!(error = ?err, "error shutting down k8s controller");
         }
 

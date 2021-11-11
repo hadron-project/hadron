@@ -35,12 +35,9 @@ pub(super) struct WebhookServer {
 impl WebhookServer {
     /// Construct a new instance.
     pub async fn new(config: Arc<Config>, shutdown: broadcast::Sender<()>) -> Result<Self> {
-        let rustls_config =
-            rustls_server_config(config.webhook_key.0.clone(), config.webhook_cert.0.clone()).context("error building webhook TLS config")?;
+        let rustls_config = rustls_server_config(config.webhook_key.0.clone(), config.webhook_cert.0.clone()).context("error building webhook TLS config")?;
         let acceptor = TlsAcceptor::from(rustls_config);
-        let listener = TcpListener::bind(("0.0.0.0", config.http_port))
-            .await
-            .context("error binding socket address for webhook server")?;
+        let listener = TcpListener::bind(("0.0.0.0", config.http_port)).await.context("error binding socket address for webhook server")?;
 
         Ok(Self {
             config,
@@ -91,18 +88,14 @@ impl WebhookServer {
 /// Build RusTLS server config.
 fn rustls_server_config(key: PrivateKey, certs: Vec<Certificate>) -> Result<Arc<ServerConfig>> {
     let mut config = ServerConfig::new(NoClientAuth::new());
-    config
-        .set_single_cert(certs, key)
-        .context("error configuring webhook certificate")?;
+    config.set_single_cert(certs, key).context("error configuring webhook certificate")?;
     config.set_protocols(&[b"h2".to_vec(), b"http/1.1".to_vec()]);
     Ok(Arc::new(config))
 }
 
 /// VAW handler for pipelines.
 #[tracing::instrument(level = "debug", skip(payload))]
-pub(super) async fn vaw_pipelines(
-    mut payload: extract::Json<AdmissionReview<Pipeline>>,
-) -> std::result::Result<axum::Json<AdmissionReview<DynamicObject>>, Infallible> {
+pub(super) async fn vaw_pipelines(mut payload: extract::Json<AdmissionReview<Pipeline>>) -> std::result::Result<axum::Json<AdmissionReview<DynamicObject>>, Infallible> {
     tracing::debug!(?payload, "received pipeline VAW request");
     let req = match payload.0.request.take() {
         Some(req) => req,
@@ -148,9 +141,7 @@ pub(super) async fn vaw_pipelines(
 
 /// VAW handler for streams.
 #[tracing::instrument(level = "debug", skip(payload))]
-pub(super) async fn vaw_streams(
-    mut payload: extract::Json<AdmissionReview<Stream>>,
-) -> std::result::Result<axum::Json<AdmissionReview<DynamicObject>>, Infallible> {
+pub(super) async fn vaw_streams(mut payload: extract::Json<AdmissionReview<Stream>>) -> std::result::Result<axum::Json<AdmissionReview<DynamicObject>>, Infallible> {
     tracing::debug!(?payload, "received streams VAW request");
     match payload.0.request.take() {
         Some(req) => Ok(axum::Json::from(AdmissionResponse::from(&req).into_review())),
@@ -163,9 +154,7 @@ pub(super) async fn vaw_streams(
 
 /// VAW handler for tokens.
 #[tracing::instrument(level = "debug", skip(payload))]
-pub(super) async fn vaw_tokens(
-    mut payload: extract::Json<AdmissionReview<Token>>,
-) -> std::result::Result<axum::Json<AdmissionReview<DynamicObject>>, Infallible> {
+pub(super) async fn vaw_tokens(mut payload: extract::Json<AdmissionReview<Token>>) -> std::result::Result<axum::Json<AdmissionReview<DynamicObject>>, Infallible> {
     tracing::debug!(?payload, "received token VAW request");
     match payload.0.request.take() {
         Some(req) => Ok(axum::Json::from(AdmissionResponse::from(&req).into_review())),

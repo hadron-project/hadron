@@ -131,13 +131,7 @@ impl Controller {
             }
         };
         let lease = Self::generate_lease(&self.config);
-        let (elector, state_rx_raw) = LeaderElector::new(
-            lease,
-            elect_config,
-            self.config.pod_name.as_str(),
-            self.client.clone(),
-            self.shutdown_tx.subscribe(),
-        );
+        let (elector, state_rx_raw) = LeaderElector::new(lease, elect_config, self.config.pod_name.as_str(), self.client.clone(), self.shutdown_tx.subscribe());
         let (elector, mut state_rx) = (elector.spawn(), WatchStream::new(state_rx_raw.clone()));
 
         // Build watcher streams.
@@ -155,14 +149,7 @@ impl Controller {
         let secrets_watcher = watcher(secrets, params_labels.clone());
         let services: Api<Service> = Api::namespaced(self.client.clone(), &self.config.namespace);
         let services_watcher = watcher(services, params_labels.clone());
-        tokio::pin!(
-            statefulsets_watcher,
-            pipelines_watcher,
-            streams_watcher,
-            tokens_watcher,
-            secrets_watcher,
-            services_watcher
-        );
+        tokio::pin!(statefulsets_watcher, pipelines_watcher, streams_watcher, tokens_watcher, secrets_watcher, services_watcher);
 
         tracing::info!("k8s controller initialized");
         loop {

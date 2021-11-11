@@ -47,3 +47,8 @@ As Pipelines evolve, users should take care to ensure that their applications ha
 In essence: add your Pipeline stage consumers first.
 
 If this protocol is not adhered to, then the only danger is that the Pipeline will eventually stop making progress, as too many parallel executions will remain in an incomplete state as they wait for the new Pipeline stages to be processed. Avoid this by deploying your updated application code first.
+
+### Data Lifecycle
+All Pipeline stage outputs are stored on disk per Pipeline instance. This data is preserved per Pipeline instance until all stages of the Pipeline instance have completed, at which point all data of that Pipeline instance is deleted.
+
+For cases where Pipelines need to produce outputs which should be transactionally written back to the source Stream of the Pipeline, the [Transactional Pipeline to Stream outputs](https://github.com/hadron-project/hadron/issues/50) feature will solve this use case nicely.

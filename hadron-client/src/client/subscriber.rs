@@ -128,11 +128,7 @@ impl SubscriptionTask {
     #[tracing::instrument(level = "debug", skip(self))]
     async fn build_subscriptions(&mut self) {
         let conns = self.client.inner.conns.load();
-        let max_batch_size = if self.config.max_batch_size == 0 {
-            DEFAULT_MAX_BATCH_SIZE
-        } else {
-            self.config.max_batch_size
-        };
+        let max_batch_size = if self.config.max_batch_size == 0 { DEFAULT_MAX_BATCH_SIZE } else { self.config.max_batch_size };
         for (partition, chan) in conns.iter() {
             if self.active_subs.contains(partition) {
                 continue;
@@ -285,7 +281,12 @@ pub(super) struct SubscriptionStream<Res, Req> {
 impl<Res, Req> SubscriptionStream<Res, Req> {
     /// Create a new instance.
     pub(super) fn new(tx: mpsc::Sender<Req>, inbound: Streaming<Res>, partition: u32) -> Self {
-        Self { tx, inbound, partition, closed: false }
+        Self {
+            tx,
+            inbound,
+            partition,
+            closed: false,
+        }
     }
 
     /// Process inbound data from this stream, fully managing its lifecycle.

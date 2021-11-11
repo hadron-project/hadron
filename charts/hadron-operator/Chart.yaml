@@ -2,5 +2,28 @@ apiVersion: v2
 name: hadron-operator
 description: Hadron is the Kubernetes native and CloudEvents native distributed event streaming, event orchestration & messaging platform.
 type: application
-version: 0.1.1
-appVersion: 0.1.0-beta.0
+version: 0.1.2
+appVersion: 0.1.0-beta.1
+
+annotations:
+  artifacthub.io/changes: |
+    - Support for Stream data retention policies per [#99](https://github.com/hadron-project/hadron/issues/99).
+  artifacthub.io/crds: |
+    - kind: Pipeline
+      version: v1beta1
+      name: pipelines.hadron.rs
+      displayName: Pipeline
+      description: "CRD spec for the Pipeline resource."
+  artifacthub.io/crds: |
+    - kind: Stream
+      version: v1beta1
+      name: streams.hadron.rs
+      displayName: Stream
+      description: "CRD spec for the Stream resource."
+  artifacthub.io/crds: |
+    - kind: Token
+      version: v1beta1
+      name: tokens.hadron.rs
+      displayName: Token
+      description: "CRD spec for the Token resource.\n\nTokens are used to establish authentication & authorization controls within a Hadron cluster.\n\nWhen Hadron detects a new Token CR, it will generate a new Kubernetes secret bearing the same name as the respective Token CR. The generated secret will contain a JWT signed by the Hadron cluster's private key."
+  artifacthub.io/operator: "true"
