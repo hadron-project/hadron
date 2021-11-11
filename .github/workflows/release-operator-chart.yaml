@@ -7,6 +7,8 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      HELM_EXPERIMENTAL_OCI: "1"
     steps:
     - name: Setup | Checkout
       uses: actions/checkout@v2
