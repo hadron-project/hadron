@@ -2,28 +2,82 @@ apiVersion: v2
 name: hadron-operator
 description: Hadron is the Kubernetes native and CloudEvents native distributed event streaming, event orchestration & messaging platform.
 type: application
-version: 0.1.2
+version: 0.1.3
 appVersion: 0.1.0-beta.1
 
 annotations:
-  artifacthub.io/changes: |
-    - Support for Stream data retention policies per [#99](https://github.com/hadron-project/hadron/issues/99).
+  artifacthub.io/operator: "true"
   artifacthub.io/crds: |
     - kind: Pipeline
       version: v1beta1
       name: pipelines.hadron.rs
       displayName: Pipeline
       description: "CRD spec for the Pipeline resource."
-  artifacthub.io/crds: |
     - kind: Stream
       version: v1beta1
       name: streams.hadron.rs
       displayName: Stream
       description: "CRD spec for the Stream resource."
-  artifacthub.io/crds: |
     - kind: Token
       version: v1beta1
       name: tokens.hadron.rs
       displayName: Token
       description: "CRD spec for the Token resource.\n\nTokens are used to establish authentication & authorization controls within a Hadron cluster.\n\nWhen Hadron detects a new Token CR, it will generate a new Kubernetes secret bearing the same name as the respective Token CR. The generated secret will contain a JWT signed by the Hadron cluster's private key."
-  artifacthub.io/operator: "true"
+  artifacthub.io/crdsExamples: |
+    - apiVersion: hadron.rs/v1beta1
+      kind: Stream
+      metadata:
+        name: events
+      spec:
+        partitions: 3
+        debug: true
+        image: "ghcr.io/hadron-project/hadron/hadron-stream:latest"
+        pvcVolumeSize: "5Gi"
+        pvcAccessModes:
+        - ReadWriteOnce
+    - apiVersion: hadron.rs/v1beta1
+      kind: Pipeline
+      metadata:
+        name: service-creation
+      spec:
+        sourceStream: events
+        triggers:
+          - service.created
+        maxParallel: 1000
+        startPoint:
+          location: beginning
+        stages:
+          - name: deploy-service
+          - name: setup-billing
+            dependencies: ["deploy-service"]
+          - name: setup-monitoring
+            dependencies: ["deploy-service"]
+          - name: notify-user
+            dependencies: ["deploy-service"]
+          - name: cleanup
+            dependencies:
+              - deploy-service
+              - setup-billing
+              - setup-monitoring
+              - notify-user
+    - apiVersion: hadron.rs/v1beta1
+      kind: Token
+      metadata:
+        name: app-token
+      spec:
+        all: false
+        streams:
+          pub: ["events"]
+          sub: ["events"]
+  artifacthub.io/changes: |
+    - kind: fixed
+      description: Fixed formatting of ArtifactHub CRDs section.
+    - kind: added
+      description: Added CRD examples.
+
+# artifacthub.io/changes: |
+#   - kind: added | changed | deprecated | removed | fixed | security
+#     description: A description of the change.
+#     links:
+#       - name: A pertinent link.
+#         url: https://github.com/hadron-project/hadron/issues/xyz
