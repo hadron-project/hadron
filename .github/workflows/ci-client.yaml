@@ -1,6 +1,6 @@
 name: CI Client
 on:
-  push:
+  pull_request:
     branches:
       - "*"
     paths:

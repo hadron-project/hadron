@@ -1,6 +1,6 @@
 name: CI Core
 on:
-  push:
+  pull_request:
     branches:
       - "*"
     paths:

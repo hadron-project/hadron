@@ -1,6 +1,6 @@
 name: CI Guide
 on:
-  push:
+  pull_request:
     branches:
       - "*"
     paths:

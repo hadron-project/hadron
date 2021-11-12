@@ -1,6 +1,6 @@
 name: CI Stream
 on:
-  push:
+  pull_request:
     branches:
       - "*"
     paths:

@@ -1,6 +1,6 @@
 name: CI CLI
 on:
-  push:
+  pull_request:
     branches:
       - "*"
     paths:
