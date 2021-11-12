@@ -14,6 +14,8 @@ pub struct Config {
     pub client_port: u16,
     /// The port which cluster internal network traffic is to use.
     pub server_port: u16,
+    /// The port which the metrics server uses to expose metrics.
+    pub metrics_port: u16,
 
     /// The Kubernetes namespace of this cluster.
     pub namespace: String,
@@ -64,7 +66,8 @@ impl Config {
             std::sync::Arc::new(Self {
                 rust_log: "".into(),
                 client_port: 7000,
-                server_port: 7000,
+                server_port: 7001,
+                metrics_port: 6000,
 
                 namespace: "default".into(),
                 stream: "testing".into(),

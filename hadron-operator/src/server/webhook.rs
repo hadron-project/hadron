@@ -2,12 +2,13 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use axum::handler::{get, post, Handler};
-use axum::http::StatusCode;
-use axum::{extract, Router};
+use axum::http::{header::HeaderName, HeaderMap, HeaderValue, StatusCode};
+use axum::routing::{get, post, Router};
+use axum::{extract, handler::Handler, AddExtensionLayer};
 use hyper::server::conn::Http;
 use kube::api::DynamicObject;
 use kube::core::admission::{AdmissionResponse, AdmissionReview, Operation};
+use metrics_exporter_prometheus::PrometheusHandle;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -16,10 +17,11 @@ use tokio_rustls::TlsAcceptor;
 use tower_http::trace::TraceLayer;
 
 use crate::config::Config;
+use crate::get_metrics_recorder;
 use hadron_core::crd::{Pipeline, Stream, Token};
 
-/// The server used for the webhook system.
-pub(super) struct WebhookServer {
+/// The HTTP server.
+pub(super) struct HttpServer {
     /// The application's runtime config.
     #[allow(dead_code)]
     config: Arc<Config>,
@@ -32,7 +34,7 @@ pub(super) struct WebhookServer {
     acceptor: TlsAcceptor,
 }
 
-impl WebhookServer {
+impl HttpServer {
     /// Construct a new instance.
     pub async fn new(config: Arc<Config>, shutdown: broadcast::Sender<()>) -> Result<Self> {
         let rustls_config = rustls_server_config(config.webhook_key.0.clone(), config.webhook_cert.0.clone()).context("error building webhook TLS config")?;
@@ -53,8 +55,10 @@ impl WebhookServer {
     }
 
     async fn run(mut self) -> Result<()> {
+        let state = get_metrics_recorder(&self.config).handle();
         let router = Router::new()
             .route("/health", get(|| async { StatusCode::OK }))
+            .route("/metrics", get(prom_metrics.layer(AddExtensionLayer::new(state))))
             .route("/k8s/admissions/vaw/pipelines", post(vaw_pipelines.layer(TraceLayer::new_for_http())))
             .route("/k8s/admissions/vaw/streams", post(vaw_streams.layer(TraceLayer::new_for_http())))
             .route("/k8s/admissions/vaw/tokens", post(vaw_tokens.layer(TraceLayer::new_for_http())));
@@ -163,4 +167,11 @@ pub(super) async fn vaw_tokens(mut payload: extract::Json<AdmissionReview<Token>
             Ok(axum::Json::from(res.into_review()))
         }
     }
+}
+
+/// Handler for serving Prometheus metrics.
+pub(super) async fn prom_metrics(extract::Extension(state): extract::Extension<PrometheusHandle>) -> (StatusCode, HeaderMap, String) {
+    let mut headers = HeaderMap::new();
+    headers.insert(HeaderName::from_static("content-type"), HeaderValue::from_static("text/plain; version=0.0.4"));
+    (StatusCode::OK, headers, state.render())
 }

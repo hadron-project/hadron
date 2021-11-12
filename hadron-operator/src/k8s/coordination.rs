@@ -28,6 +28,9 @@ type DateTimeUtc = DateTime<Utc>;
 
 const JITTER_FACTOR: f64 = 1.2;
 
+const METRIC_IS_LEADER: &str = "hadron_operator_is_leader";
+const METRIC_LEADERSHIP_CHANGE: &str = "hadron_operator_num_leadership_changes";
+
 /// Different states which a leader elector may be in.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LeaderState {
@@ -123,6 +126,12 @@ pub struct LeaderElector {
 impl LeaderElector {
     // Create a new `LeaderElector` instance.
     pub fn new(lease: Lease, config: LeaderElectionConfig, manager: impl AsRef<str>, client: Client, shutdown: broadcast::Receiver<()>) -> (Self, watch::Receiver<LeaderState>) {
+        metrics::register_counter!(METRIC_LEADERSHIP_CHANGE, metrics::Unit::Count, "the number of leadership changes in the operator consensus group");
+        metrics::register_gauge!(
+            METRIC_IS_LEADER,
+            metrics::Unit::Count,
+            "a gauge indicating if this node is the leader, where 1.0 indicates leadership, any other value does not"
+        );
         let (state_tx, state_rx) = watch::channel(LeaderState::Standby);
         (
             LeaderElector {
@@ -145,9 +154,6 @@ impl LeaderElector {
 
     async fn run(mut self) {
         tracing::info!("leader elector task started");
-
-        // FUTURE[telemetry]: monitor lease state and watch for rapid lease transitions, as this
-        // indicates unstable cluster leadership.
 
         // Perform an initail pass at acquiring / renewing the lease.
         if let Err(err) = self.try_acquire_or_renew().await {
@@ -336,8 +342,10 @@ impl LeaderElector {
 
     /// Set the current leader state & emit a state update.
     fn set_state(&mut self, state: LeaderState) {
+        metrics::increment_counter!(METRIC_LEADERSHIP_CHANGE);
         self.state = state;
         let _ = self.state_tx.send(self.state.clone());
+        metrics::gauge!(METRIC_IS_LEADER, if matches!(self.state, LeaderState::Leading) { 1.0 } else { 0.0 });
     }
 
     /// The default timeout to use for interacting with the K8s API.

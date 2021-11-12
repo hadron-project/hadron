@@ -80,6 +80,11 @@ pub const KEY_STREAM_LAST_COMPACTION: &[u8; 1] = b"c";
 const COMPACTION_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60 * 30);
 const ERR_DECODING_STREAM_META_GROUP_NAME: &str = "error decoding stream meta group name from storage";
 
+pub(self) const METRIC_CURRENT_OFFSET: &str = "hadron_stream_current_offset";
+pub(self) const METRIC_SUB_NUM_GROUPS: &str = "hadron_stream_subscriber_num_groups";
+pub(self) const METRIC_SUB_GROUP_MEMBERS: &str = "hadron_stream_subscriber_group_members";
+pub(self) const METRIC_SUB_LAST_OFFSET: &str = "hadron_stream_subscriber_last_offset_processed";
+
 /// A controller encapsulating all logic for interacting with a stream.
 pub struct StreamCtl {
     /// The application's runtime config.
@@ -129,6 +134,8 @@ impl StreamCtl {
         let partition = config.partition;
         let tree = db.get_stream_tree().await?;
         let recovery_data = recover_stream_state(tree.clone()).await?;
+        metrics::register_counter!(METRIC_CURRENT_OFFSET, metrics::Unit::Count, "the offset of the last entry written to the stream");
+        metrics::counter!(METRIC_CURRENT_OFFSET, recovery_data.last_written_offset);
 
         // Spawn the subscriber controller.
         let (offset_signal, offset_signal_rx) = watch::channel(recovery_data.last_written_offset);

@@ -38,15 +38,16 @@ use hadron_core::crd::{Pipeline, Stream, Token};
 
 /// The app name used by the operator.
 const APP_NAME: &str = "hadron-operator";
-/// The timeout duration used before rescheduling a scheduler task.
-const RESCHEDULE_TIMEOUT: Duration = Duration::from_secs(5);
-
-type EventResult<T> = std::result::Result<Event<T>, WatcherError>;
-
 /// The duration which leader elector clients should wait between action retries.
 ///
 /// Core K8s clients default this value to 2 seconds.
 const LEASE_RETRY_SECONDS: i64 = 2;
+/// The timeout duration used before rescheduling a scheduler task.
+const RESCHEDULE_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub(self) const METRIC_WATCHER_ERRORS: &str = "hadron_operator_watcher_errors";
+
+type EventResult<T> = std::result::Result<Event<T>, WatcherError>;
 
 /// Kubernetes controller for watching Hadron CRs.
 pub struct Controller {
@@ -87,6 +88,8 @@ pub struct Controller {
 impl Controller {
     /// Create a new instance.
     pub fn new(client: Client, config: Arc<Config>, shutdown_tx: broadcast::Sender<()>) -> Result<Self> {
+        metrics::register_counter!(METRIC_WATCHER_ERRORS, metrics::Unit::Count, "a counter of errors encountered while watching resources in the K8s API");
+
         let lease_name = Self::generate_lease_name();
         let elect_conf = LeaderElectionConfig::new(
             &config.namespace,
@@ -162,7 +165,7 @@ impl Controller {
                 Some(k8s_event_res) = tokens_watcher.next() => self.handle_token_event(k8s_event_res).await,
                 Some(new_leader_state) = state_rx.next() => {
                     // If just becoming a leader, then perform a full data reconciliation to ensure
-                    // there are no outstanding tasks which need to be performed since the last leader.
+                    // there are no outstanding tasks which need to be performed from the last leader's term.
                     //
                     // NOTE WELL: this routine will block this controller from making progress elsewhere.
                     // This is required as an up-to-date view of the system data is required.

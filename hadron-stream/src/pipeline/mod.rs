@@ -43,6 +43,10 @@ const PREFIX_ACTIVE_INSTANCES: &[u8; 1] = b"a";
 /// Outputs are keyed as `o{offset}{stage_name}`.
 const PREFIX_PIPELINE_STAGE_OUTPUTS: &[u8; 1] = b"o";
 
+const METRIC_ACTIVE_INSTANCES: &str = "hadron_pipeline_active_instances";
+const METRIC_LAST_OFFSET_PROCESSED: &str = "hadron_pipeline_last_offset_processed";
+const METRIC_STAGE_SUBS: &str = "hadron_pipeline_stage_subscriptions";
+
 /// The liveness stream type used by a pipeline controller.
 type PipelineLivenessStream = LivenessStream<RpcResult<PipelineSubscribeResponse>, PipelineSubscribeRequest>;
 /// The client channel type used by this controller.
@@ -101,6 +105,11 @@ impl PipelineCtl {
         let stream_tree = db.get_stream_tree().await?;
         let stream_offset = *stream_signal.borrow();
         let (last_offset_processed, active_pipelines) = recover_pipeline_state(tree.clone(), pipeline.clone(), stream_offset).await?;
+
+        metrics::register_counter!(METRIC_LAST_OFFSET_PROCESSED, metrics::Unit::Count, "the last offset to be processed by the pipeline", "pipeline" => pipeline.name().to_string());
+        metrics::counter!(METRIC_LAST_OFFSET_PROCESSED, last_offset_processed, "pipeline" => pipeline.name().to_string());
+        metrics::register_gauge!(METRIC_ACTIVE_INSTANCES, metrics::Unit::Count, "the number of active pipeline instances", "pipeline" => pipeline.name().to_string());
+        metrics::gauge!(METRIC_ACTIVE_INSTANCES, active_pipelines.len() as f64, "pipeline" => pipeline.name().to_string());
 
         Ok(Self {
             config,
@@ -194,7 +203,9 @@ impl PipelineCtl {
             Some(group) => group,
             None => return,
         };
-        group.active_channels.remove(&id);
+        if let Some(_old) = group.active_channels.remove(&id) {
+            metrics::decrement_gauge!(METRIC_STAGE_SUBS, 1.0, "pipeline" => self.pipeline.name().to_string(), "stage" => stage_name.as_ref().to_string());
+        }
         if !group.active_channels.is_empty() {
             self.stage_subs.insert(group.stage_name.clone(), group);
         }
@@ -282,6 +293,8 @@ impl PipelineCtl {
         self.last_offset_processed = data.last_offset_processed;
         tracing::debug!(data.last_offset_processed, "response from pipeline data fetch");
         self.active_pipelines.extend(data.new_pipeline_instances.into_iter().map(|inst| (inst.root_event_offset, inst)));
+        metrics::counter!(METRIC_LAST_OFFSET_PROCESSED, data.last_offset_processed, "pipeline" => self.pipeline.name().to_string());
+        metrics::gauge!(METRIC_ACTIVE_INSTANCES, self.active_pipelines.len() as f64, "pipeline" => self.pipeline.name().to_string());
 
         // Drive another delivery pass.
         self.execute_delivery_pass().await;
@@ -320,7 +333,14 @@ impl PipelineCtl {
 
         // Add the new stage subscriber to its corresponding group.
         let stage_name = Arc::new(stage_name.clone());
-        let group = self.stage_subs.entry(stage_name.clone()).or_insert_with(|| SubscriptionGroup::new(stage_name.clone()));
+        let group = self.stage_subs.entry(stage_name.clone()).or_insert_with(|| {
+            metrics::register_gauge!(
+                METRIC_STAGE_SUBS, metrics::Unit::Count, "the number of stage subscribers currently registered",
+                "pipeline" => self.pipeline.name().to_string(), "stage" => stage_name.as_ref().to_string(),
+            );
+            SubscriptionGroup::new(stage_name.clone())
+        });
+        metrics::increment_gauge!(METRIC_STAGE_SUBS, 1.0, "pipeline" => self.pipeline.name().to_string(), "stage" => stage_name.as_ref().to_string());
 
         // Roll a new ID for the channel & add it to the group's active channels.
         let id = Uuid::new_v4();
@@ -552,6 +572,7 @@ impl PipelineCtl {
         // it from the active instances set.
         if self.pipeline.spec.stages.iter().all(|stage| inst.outputs.contains_key(&stage.name)) {
             self.active_pipelines.remove(&offset);
+            metrics::decrement_gauge!(METRIC_ACTIVE_INSTANCES, 1.0, "pipeline" => self.pipeline.name().to_string());
             tracing::debug!(offset, "pipeline workflow finished");
             let events_tx = self.events_tx.clone();
             tokio::spawn(async move {

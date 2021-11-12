@@ -1,3 +1,5 @@
+mod prom;
+
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
@@ -16,6 +18,8 @@ use crate::stream::StreamCtlMsg;
 use crate::watchers::{PipelinesMap, SecretsMap, StreamMetadataRx, TokensMap};
 use hadron_core::auth;
 use hadron_core::crd::Token;
+
+pub use prom::spawn_prom_server;
 
 const CLIENT_ADDR: &str = "0.0.0.0:7000";
 

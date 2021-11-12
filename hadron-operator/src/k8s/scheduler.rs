@@ -66,6 +66,8 @@ const STREAM_DATA_PATH: &str = "/usr/local/hadron-stream/data";
 const STREAM_PORT_CLIENT: i32 = 7000;
 /// The port used by server peers to connect to Stream StatefulSets.
 const STREAM_PORT_SERVER: i32 = 7001;
+/// The port used to expose metrics of Stream StatefulSet replicas.
+const STREAM_PORT_METRICS: i32 = 6000;
 
 /// A scheduling task to be performed.
 #[derive(Debug)]
@@ -624,6 +626,12 @@ impl Controller {
                             protocol: Some("TCP".into()),
                             ..Default::default()
                         },
+                        ContainerPort {
+                            name: Some("metrics-port".into()),
+                            container_port: STREAM_PORT_METRICS,
+                            protocol: Some("TCP".into()),
+                            ..Default::default()
+                        },
                     ]),
                     env: Some(vec![
                         EnvVar {
@@ -639,6 +647,11 @@ impl Controller {
                         EnvVar {
                             name: "SERVER_PORT".into(),
                             value: Some(format!("{}", STREAM_PORT_SERVER)),
+                            ..Default::default()
+                        },
+                        EnvVar {
+                            name: "METRICS_PORT".into(),
+                            value: Some(format!("{}", STREAM_PORT_METRICS)),
                             ..Default::default()
                         },
                         EnvVar {

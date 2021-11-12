@@ -11,7 +11,8 @@ impl StreamCtl {
     pub(super) async fn handle_publisher_request(&mut self, tx: oneshot::Sender<RpcResult<StreamPublishResponse>>, data: StreamPublishRequest) {
         // Publish the new data frame.
         let _write_ack = data.ack;
-        let offset = match Self::publish_data_frame(&self.tree, &mut self.current_offset, &mut self.earliest_timestamp, &self.offset_signal, data).await {
+        let publish_res = Self::publish_data_frame(&self.tree, &mut self.current_offset, &mut self.earliest_timestamp, &self.offset_signal, data).await;
+        let offset = match publish_res {
             Ok(offset) => offset,
             Err(err) => {
                 tracing::error!(error = ?err, "error while publishing data to stream");
@@ -46,6 +47,7 @@ impl StreamCtl {
         // index for the last offset in the batch.
         let ts = time::OffsetDateTime::now_utc().unix_timestamp();
         let mut batch = sled::Batch::default();
+        let batch_len = req.batch.len();
         for new_event in req.batch {
             *current_offset += 1;
             let entry = utils::encode_model(&new_event).context("error encoding stream event record for storage")?;
@@ -54,6 +56,7 @@ impl StreamCtl {
         batch.insert(&utils::encode_byte_prefix_i64(PREFIX_STREAM_TS, ts), &utils::encode_u64(*current_offset));
         batch.insert(KEY_STREAM_LAST_WRITTEN_OFFSET, &utils::encode_u64(*current_offset));
         tree.apply_batch(batch).context("error applying write batch").map_err(ShutdownError::from)?;
+        metrics::counter!(super::METRIC_CURRENT_OFFSET, batch_len as u64);
 
         // Fsync if requested.
         if req.fsync {

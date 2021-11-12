@@ -7,13 +7,16 @@ mod k8s;
 mod server;
 
 use std::io::Write;
-use std::sync::Arc;
+use std::mem::MaybeUninit;
+use std::sync::{Arc, Once};
 
 use anyhow::{Context, Result};
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusRecorder};
 use tracing_subscriber::prelude::*;
 
 use crate::app::App;
 use crate::config::Config;
+use hadron_core::prom::register_proc_metrics;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,6 +36,10 @@ async fn main() -> Result<()> {
         .context("error initializing logging/tracing system")?;
 
     let cfg = Arc::new(Config::new()?);
+    let recorder = get_metrics_recorder(&cfg);
+    metrics::set_recorder(recorder).context("error setting prometheus metrics recorder")?;
+    register_proc_metrics();
+
     tracing::info!(
         client_port = %cfg.client_port,
         namespace = %cfg.namespace,
@@ -47,4 +54,21 @@ async fn main() -> Result<()> {
     let _ = std::io::stderr().flush();
 
     Ok(())
+}
+
+/// Get a handle to the metrics recorder, initializing it as needed.
+pub fn get_metrics_recorder(config: &Config) -> &'static PrometheusRecorder {
+    static mut RECORDER: MaybeUninit<PrometheusRecorder> = MaybeUninit::uninit();
+    static ONCE: Once = Once::new();
+    unsafe {
+        ONCE.call_once(|| {
+            RECORDER.write(
+                PrometheusBuilder::new()
+                    .add_global_label("namespace", config.namespace.clone())
+                    .add_global_label("pod_name", config.pod_name.clone())
+                    .build(),
+            );
+        });
+        RECORDER.assume_init_ref()
+    }
 }

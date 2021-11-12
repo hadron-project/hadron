@@ -11,6 +11,7 @@ use tokio_stream::StreamMap;
 use crate::config::Config;
 use crate::k8s::Controller;
 use crate::server::AppServer;
+use hadron_core::prom::spawn_proc_metrics_sampler;
 
 /// The application object for when Hadron is running as a server.
 pub struct App {
@@ -59,6 +60,10 @@ impl App {
         let mut signals = StreamMap::new();
         signals.insert("sigterm", SignalStream::new(signal(SignalKind::terminate()).context("error building signal stream")?));
         signals.insert("sigint", SignalStream::new(signal(SignalKind::interrupt()).context("error building signal stream")?));
+        let mut sampler_shutdown = self.shutdown_tx.subscribe();
+        let sampler = spawn_proc_metrics_sampler(async move {
+            let _res = sampler_shutdown.recv().await;
+        });
 
         loop {
             tokio::select! {
@@ -78,6 +83,9 @@ impl App {
         }
         if let Err(err) = self.controller.await.context("error joining k8s controller handle").and_then(|res| res) {
             tracing::error!(error = ?err, "error shutting down k8s controller");
+        }
+        if let Err(err) = sampler.await {
+            tracing::error!(error = ?err, "error joining metrics sampler task");
         }
 
         tracing::debug!("Hadron Operator shutdown complete");

@@ -13,6 +13,8 @@ use crate::config::Config;
 use crate::grpc::StreamPartition;
 use hadron_core::crd::{RequiredMetadata, Stream};
 
+const METRIC_STREAMS_WATCHER_ERRORS: &str = "hadron_streams_watcher_errors";
+
 /// A `watch::Sender` of `StreamPartition` metadata.
 pub type StreamMetadataTx = watch::Sender<Vec<StreamPartition>>;
 /// A `watch::Receiver` of `StreamPartition` metadata.
@@ -30,6 +32,7 @@ pub struct StreamWatcher {
     /// A channel used for triggering graceful shutdown.
     shutdown: BroadcastStream<()>,
 
+    /// Stream metadata channel.
     metadata: StreamMetadataTx,
 }
 
@@ -37,6 +40,7 @@ impl StreamWatcher {
     /// Create a new instance.
     pub fn new(client: Client, config: Arc<Config>, shutdown: broadcast::Receiver<()>) -> (Self, StreamMetadataRx) {
         let shutdown = BroadcastStream::new(shutdown);
+        metrics::register_counter!(METRIC_STREAMS_WATCHER_ERRORS, metrics::Unit::Count, "k8s watcher errors from the streams watcher");
         let (tx, rx) = watch::channel(vec![]);
         (
             Self {
@@ -80,6 +84,7 @@ impl StreamWatcher {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from k8s watch stream");
+                metrics::increment_counter!(METRIC_STREAMS_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 return;
             }

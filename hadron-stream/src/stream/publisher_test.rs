@@ -23,12 +23,12 @@ async fn publish_data_frame_err_with_empty_batch() -> Result<()> {
     let res = super::StreamCtl::publish_data_frame(&stream_tree, &mut current_offset, &mut earliest_timestamp, &tx, req).await;
 
     let last_watcher_offset = *rx.borrow();
-    assert_eq!(last_watcher_offset, current_offset, "expected watcher offset to be {} got {}", current_offset, last_watcher_offset,);
+    assert_eq!(last_watcher_offset, current_offset, "expected watcher offset to be {} got {}", current_offset, last_watcher_offset);
     assert!(res.is_err(), "expected an error to be returned");
     let err = res.unwrap_err();
     let app_err = err.downcast::<AppError>().context("unexpected error type")?;
-    assert!(matches!(app_err, AppError::InvalidInput(val) if val == "entries batch was empty, no-op"), "unexpected error returned",);
-    assert!(earliest_timestamp.is_none(), "expected earliest_timestamp to remain `None`, got {:?}", earliest_timestamp,);
+    assert!(matches!(app_err, AppError::InvalidInput(val) if val == "entries batch was empty, no-op"), "unexpected error returned");
+    assert!(earliest_timestamp.is_none(), "expected earliest_timestamp to remain `None`, got {:?}", earliest_timestamp);
 
     Ok(())
 }
@@ -66,7 +66,7 @@ async fn publish_data_frame() -> Result<()> {
         events.push(val);
     }
     events.sort_by(|a, b| a.id.cmp(&b.id));
-    assert_eq!(events, expected_events, "unexpected data on stream\nexpected: {:?}\ngot: {:?}", expected_events, events,);
+    assert_eq!(events, expected_events, "unexpected data on stream\nexpected: {:?}\ngot: {:?}", expected_events, events);
 
     // Check storage for the last offset key.
     let db_offset_ivec = stream_tree

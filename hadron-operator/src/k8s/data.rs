@@ -32,6 +32,7 @@ impl Controller {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from Pipeline k8s watcher");
+                metrics::increment_counter!(super::METRIC_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(Duration::from_secs(10)).await;
                 return;
             }
@@ -94,6 +95,7 @@ impl Controller {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from Secret k8s watcher");
+                metrics::increment_counter!(super::METRIC_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(Duration::from_secs(10)).await;
                 return;
             }
@@ -156,6 +158,7 @@ impl Controller {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from Service k8s watcher");
+                metrics::increment_counter!(super::METRIC_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(Duration::from_secs(10)).await;
                 return;
             }
@@ -218,6 +221,7 @@ impl Controller {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from StatefulSet k8s watcher");
+                metrics::increment_counter!(super::METRIC_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(Duration::from_secs(10)).await;
                 return;
             }
@@ -280,6 +284,7 @@ impl Controller {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from Stream k8s watcher");
+                metrics::increment_counter!(super::METRIC_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(Duration::from_secs(10)).await;
                 return;
             }
@@ -342,6 +347,7 @@ impl Controller {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from Token k8s watcher");
+                metrics::increment_counter!(super::METRIC_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(Duration::from_secs(10)).await;
                 return;
             }

@@ -16,6 +16,8 @@ use crate::database::Database;
 use crate::pipeline::{PipelineCtl, PipelineCtlMsg, PipelineHandle};
 use hadron_core::crd::Pipeline;
 
+const METRIC_PIPELINES_WATCHER_ERRORS: &str = "hadron_pipelines_watcher_errors";
+
 /// All known Pipelines mapped from their name to a handle holding their CR & controller.
 pub type PipelinesMap = Arc<ArcSwap<HashMap<Arc<String>, PipelineHandle>>>;
 
@@ -46,6 +48,7 @@ impl PipelineWatcher {
     /// Create a new instance.
     pub fn new(client: Client, config: Arc<Config>, db: Database, stream_signal: watch::Receiver<u64>, shutdown_tx: broadcast::Sender<()>) -> (Self, PipelinesMap) {
         let pipelines: PipelinesMap = Default::default();
+        metrics::register_counter!(METRIC_PIPELINES_WATCHER_ERRORS, metrics::Unit::Count, "k8s watcher errors from the pipelines watcher");
         (
             Self {
                 client,
@@ -88,6 +91,7 @@ impl PipelineWatcher {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from k8s watch stream");
+                metrics::increment_counter!(METRIC_PIPELINES_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 return;
             }
