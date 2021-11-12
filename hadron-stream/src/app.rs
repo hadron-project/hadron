@@ -10,9 +10,10 @@ use tokio_stream::StreamMap;
 
 use crate::config::Config;
 use crate::database::Database;
-use crate::server::AppServer;
+use crate::server::{spawn_prom_server, AppServer};
 use crate::stream::StreamCtl;
 use crate::watchers::{PipelineWatcher, PipelinesMap, SecretsMap, StreamWatcher, TokensMap, TokensWatcher};
+use hadron_core::prom::spawn_proc_metrics_sampler;
 
 /// The application object for when Hadron is running as a server.
 pub struct App {
@@ -43,14 +44,13 @@ pub struct App {
     pipelines_handle: JoinHandle<Result<()>>,
     /// The join handle of the client gRPC server.
     client_server: JoinHandle<()>,
+    /// The join handle of the metrics server.
+    metrics_server: JoinHandle<Result<()>>,
 }
 
 impl App {
     /// Create a new instance.
-    pub async fn new(config: Arc<Config>) -> Result<Self> {
-        // App shutdown channel.
-        let (shutdown_tx, shutdown_rx) = broadcast::channel(10);
-
+    pub async fn new(config: Arc<Config>, shutdown_tx: broadcast::Sender<()>) -> Result<Self> {
         // Initialize this node's storage.
         let db = Database::new(config.clone()).await.context("error opening database")?;
 
@@ -85,19 +85,22 @@ impl App {
         .spawn()
         .context("error setting up client gRPC server")?;
 
+        let metrics_server = spawn_prom_server(&config, shutdown_tx.subscribe());
+
         Ok(Self {
             _config: config,
             _db: db,
             _tokens: tokens_map,
             _secrets: secrets_map,
             _pipelines: pipelines_map,
-            shutdown_rx: BroadcastStream::new(shutdown_rx),
+            shutdown_rx: BroadcastStream::new(shutdown_tx.subscribe()),
             shutdown_tx,
             stream_handle,
             stream_watcher_handle,
             tokens_handle,
             pipelines_handle,
             client_server,
+            metrics_server,
         })
     }
 
@@ -109,6 +112,10 @@ impl App {
         let mut signals = StreamMap::new();
         signals.insert("sigterm", SignalStream::new(signal(SignalKind::terminate()).context("error building signal stream")?));
         signals.insert("sigint", SignalStream::new(signal(SignalKind::interrupt()).context("error building signal stream")?));
+        let mut sampler_shutdown = self.shutdown_tx.subscribe();
+        let sampler = spawn_proc_metrics_sampler(async move {
+            let _res = sampler_shutdown.recv().await;
+        });
 
         loop {
             tokio::select! {
@@ -137,6 +144,12 @@ impl App {
         }
         if let Err(err) = self.client_server.await {
             tracing::error!(error = ?err, "error joining client gRPC server task");
+        }
+        if let Err(err) = self.metrics_server.await.context("error joining metrics server handle").and_then(|res| res) {
+            tracing::error!(error = ?err, "error shutting down metrics server");
+        }
+        if let Err(err) = sampler.await {
+            tracing::error!(error = ?err, "error joining metrics sampler task");
         }
 
         tracing::debug!("Hadron shutdown complete");

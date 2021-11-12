@@ -24,6 +24,7 @@ Updates to the Hadron Stream binary are isolated and only require an independent
 
 - [ ] Update `hadron-stream/CHANGELOG.md`.
 - [ ] Update `hadron-stream/Cargo.toml` version with correct semver bump per changes.
+- [ ] Ensure the Operator chart has been updated to pull the latest versios, which necessitates a new release of the Operator chart.
 - [ ] Commit changes, tag branch with `stream-vX.Y.Z`, CI will cut the new releases. CI will also update the Hadron Stream container `latest` tag.
 
 ## Core

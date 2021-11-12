@@ -17,7 +17,7 @@ impl UserCredentials {
 
         // Split the header on the basic auth prefix & ensure the leading segment is empty.
         let mut splits = header_str.splitn(2, BASIC_PREFIX);
-        ensure!(splits.next() == Some(""), AppError::InvalidCredentials("authorization header value must begin with 'basic '".into()),);
+        ensure!(splits.next() == Some(""), AppError::InvalidCredentials("authorization header value must begin with 'basic '".into()));
 
         // Decode the credentials value.
         let datab64 = match splits.next() {

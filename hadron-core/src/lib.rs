@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod crd;
 pub mod error;
+pub mod prom;
 
 pub use error::AppError;
 

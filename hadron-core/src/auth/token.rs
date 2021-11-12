@@ -31,7 +31,7 @@ impl UnverifiedTokenCredentials {
 
         // Split the header on the bearer prefix & ensure the leading segment is empty.
         let mut splits = header_str.splitn(2, BEARER_PREFIX);
-        ensure!(splits.next() == Some(""), AppError::InvalidCredentials("authorization header value must begin with 'bearer '".into()),);
+        ensure!(splits.next() == Some(""), AppError::InvalidCredentials("authorization header value must begin with 'bearer '".into()));
 
         // Check the final segment and ensure we have a populated value.
         let token = match splits.next() {

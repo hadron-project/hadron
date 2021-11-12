@@ -71,7 +71,15 @@ impl StreamSubCtl {
         config: Arc<Config>, db: Database, tree: Tree, partition: u32, shutdown_tx: broadcast::Sender<()>, events_tx: mpsc::Sender<StreamSubCtlMsg>, events_rx: mpsc::Receiver<StreamSubCtlMsg>,
         stream_offset: watch::Receiver<u64>, subs: Vec<(Subscription, u64)>, current_offset: u64,
     ) -> Self {
+        metrics::register_gauge!(super::METRIC_SUB_NUM_GROUPS, metrics::Unit::Count, "number of subscribers currently registered on this stream");
+        metrics::gauge!(super::METRIC_SUB_NUM_GROUPS, subs.len() as f64);
         let subs = SubscriberInfo::new(subs);
+        for sub in subs.groups.iter() {
+            metrics::register_counter!(super::METRIC_SUB_LAST_OFFSET, metrics::Unit::Count, "stream subscriber group last offset processed", "group" => sub.0.clone());
+            metrics::counter!(super::METRIC_SUB_LAST_OFFSET, sub.1.offset, "group" => sub.0.clone());
+            metrics::register_gauge!(super::METRIC_SUB_GROUP_MEMBERS, metrics::Unit::Count, "stream subscriber group members count", "group" => sub.0.clone());
+        }
+
         Self {
             config,
             _db: db,
@@ -93,7 +101,7 @@ impl StreamSubCtl {
     }
 
     async fn run(mut self) -> Result<()> {
-        tracing::debug!("stream subscriber controller {}/{} has started", self.config.stream, self.partition,);
+        tracing::debug!("stream subscriber controller {}/{} has started", self.config.stream, self.partition);
 
         loop {
             tokio::select! {
@@ -138,6 +146,8 @@ impl StreamSubCtl {
         };
         group.active_channels.remove(&id);
         self.subs.groups.retain(|_, group| group.durable || !group.active_channels.is_empty());
+        metrics::gauge!(super::METRIC_SUB_NUM_GROUPS, self.subs.groups.len() as f64);
+        metrics::decrement_gauge!(super::METRIC_SUB_GROUP_MEMBERS, 1.0, "group" => group_name.as_ref().clone());
     }
 
     /// Handle a request which has been sent to this controller.
@@ -320,7 +330,7 @@ impl StreamSubCtl {
             _ => Err("unexpected or malformed response returned from subscriber, expected ack or nack".into()),
         };
         if group.durable {
-            try_record_delivery_response(record_res, group.group_name.clone(), self.tree.clone())
+            try_record_delivery_response(record_res, group.offset, group.group_name.clone(), self.tree.clone())
                 .await
                 .context("error while recording subscriber delivery response")?;
         }
@@ -416,6 +426,9 @@ pub(super) async fn ensure_subscriber_record<'a>(tree: &Tree, sub: &StreamSubscr
     let entry = subs.groups.entry(sub.group_name.clone())
         // Ensure the subscription model exists.
         .or_insert_with(|| {
+            metrics::register_counter!(super::METRIC_SUB_LAST_OFFSET, metrics::Unit::Count, "stream subscriber group last offset processed", "group" => sub.group_name.clone());
+            metrics::register_gauge!(super::METRIC_SUB_GROUP_MEMBERS, metrics::Unit::Count, "stream subscriber group members count", "group" => sub.group_name.clone());
+            metrics::increment_gauge!(super::METRIC_SUB_NUM_GROUPS, 1.0);
             let durable = sub.durable;
             let max_batch_size = if sub.max_batch_size == 0 { DEFAULT_MAX_BATCH_SIZE } else { sub.max_batch_size };
             let sub = Subscription {
@@ -424,6 +437,7 @@ pub(super) async fn ensure_subscriber_record<'a>(tree: &Tree, sub: &StreamSubscr
             };
             SubscriptionGroup::new(sub, offset, durable)
         });
+    metrics::increment_gauge!(super::METRIC_SUB_GROUP_MEMBERS, 1.0, "group" => sub.group_name.clone());
 
     // If the subscription is durable & did not already exist, then write the subscription model to disk.
     if sub.durable && !already_exists {
@@ -480,8 +494,8 @@ pub(super) fn spawn_group_fetch(group_name: Arc<String>, next_offset: u64, max_b
 }
 
 /// Record the ack/nack response from a subscriber delivery.
-#[tracing::instrument(level = "trace", skip(res, group_name, tree))]
-pub(super) async fn try_record_delivery_response(res: std::result::Result<u64, String>, group_name: Arc<String>, tree: Tree) -> ShutdownResult<()> {
+#[tracing::instrument(level = "trace", skip(res, old_last_offset, group_name, tree))]
+pub(super) async fn try_record_delivery_response(res: std::result::Result<u64, String>, old_last_offset: u64, group_name: Arc<String>, tree: Tree) -> ShutdownResult<()> {
     let offset = match res {
         Ok(offset) => offset,
         Err(_err) => {
@@ -494,6 +508,7 @@ pub(super) async fn try_record_delivery_response(res: std::result::Result<u64, S
         .context("error updating subscription offsets on disk")
         .map_err(ShutdownError::from)?;
     tree.flush_async().await.context(ERR_DB_FLUSH).map_err(ShutdownError::from)?;
+    metrics::counter!(super::METRIC_SUB_LAST_OFFSET, offset.saturating_sub(old_last_offset), "group" => group_name.as_ref().to_string());
     Ok(())
 }
 

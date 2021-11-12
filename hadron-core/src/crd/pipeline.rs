@@ -273,7 +273,7 @@ mod test {
             #[test]
             fn $name() {
                 let output = Pipeline::event_type_matches_triggers::<&str>($triggers, $event);
-                assert!($expect == output, "expected output `{}` did not match actual output `{}`", $expect, output,);
+                assert!($expect == output, "expected output `{}` did not match actual output `{}`", $expect, output);
             }
         };
     }
@@ -299,7 +299,7 @@ mod test {
             #[test]
             fn $name() {
                 let output = NAME_1123_LABEL_RE.is_match($pat);
-                assert!($expect == output, "match for pattern {} expected to be {} but got {}", $pat, $expect, output,);
+                assert!($expect == output, "match for pattern {} expected to be {} but got {}", $pat, $expect, output);
             }
         };
     }

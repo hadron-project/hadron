@@ -16,6 +16,9 @@ use tokio_stream::wrappers::BroadcastStream;
 use crate::config::Config;
 use hadron_core::crd::{RequiredMetadata, Token};
 
+const METRIC_TOKENS_WATCHER_ERRORS: &str = "hadron_tokens_watcher_errors";
+const METRIC_SECRETS_WATCHER_ERRORS: &str = "hadron_secrets_watcher_errors";
+
 /// A map of all known Token CRs in the namespace.
 pub type TokensMap = Arc<ArcSwap<HashMap<Arc<String>, Arc<Token>>>>;
 /// A map of all known Secrets in the namespace belonging to Hadron.
@@ -45,6 +48,8 @@ impl TokensWatcher {
         let shutdown = BroadcastStream::new(shutdown);
         let tokens: TokensMap = Default::default();
         let secrets: SecretsMap = Default::default();
+        metrics::register_counter!(METRIC_TOKENS_WATCHER_ERRORS, metrics::Unit::Count, "k8s watcher errors from the tokens watcher");
+        metrics::register_counter!(METRIC_SECRETS_WATCHER_ERRORS, metrics::Unit::Count, "k8s watcher errors from the secrets watcher");
         (
             Self {
                 client,
@@ -89,6 +94,7 @@ impl TokensWatcher {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from k8s Token CR watcher stream");
+                metrics::increment_counter!(METRIC_TOKENS_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 return;
             }
@@ -139,6 +145,7 @@ impl TokensWatcher {
             Ok(event) => event,
             Err(err) => {
                 tracing::error!(error = ?err, "error from k8s Secret watcher stream");
+                metrics::increment_counter!(METRIC_SECRETS_WATCHER_ERRORS);
                 let _ = tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 return;
             }

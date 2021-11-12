@@ -11,7 +11,7 @@ use tonic::transport::Server as TonicServer;
 
 use crate::config::Config;
 use crate::grpc;
-use crate::server::webhook::WebhookServer;
+use crate::server::webhook::HttpServer;
 
 /// Application server.
 pub struct AppServer {
@@ -34,7 +34,7 @@ impl AppServer {
     /// by the system.
     pub async fn spawn(self) -> Result<JoinHandle<()>> {
         // Spawn the HTTP server for webhooks & healthcheck.
-        let http_server = WebhookServer::new(self.config.clone(), self.shutdown.clone()).await.context("error building webhook server")?.spawn();
+        let http_server = HttpServer::new(self.config.clone(), self.shutdown.clone()).await.context("error building webhook server")?.spawn();
 
         // Spawn the gRPC server.
         let shutdown = self.shutdown.clone();

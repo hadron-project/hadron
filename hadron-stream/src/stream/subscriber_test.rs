@@ -82,7 +82,7 @@ async fn try_record_delivery_response_ok_no_update_with_error_response() -> Resu
     let group_name = Arc::new(String::from("test-group"));
     let err_msg = String::from("test error message");
 
-    let _output = subscriber::try_record_delivery_response(Err(err_msg), group_name.clone(), stream_tree.clone())
+    let _output = subscriber::try_record_delivery_response(Err(err_msg), 0, group_name.clone(), stream_tree.clone())
         .await
         .context("error from try_record_delivery_response")?;
 
@@ -101,7 +101,7 @@ async fn try_record_delivery_response_ok_with_expected_stream_record() -> Result
     let group_name = Arc::new(String::from("test-group"));
     let last_offset_processed = 100;
 
-    let _output = subscriber::try_record_delivery_response(Ok(last_offset_processed), group_name.clone(), stream_tree.clone())
+    let _output = subscriber::try_record_delivery_response(Ok(last_offset_processed), 0, group_name.clone(), stream_tree.clone())
         .await
         .context("error from try_record_delivery_response")?;
 

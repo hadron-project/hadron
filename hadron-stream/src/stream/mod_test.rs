@@ -172,5 +172,5 @@ fn calculate_initial_compaction_delay_returns_delta_under_30_min() {
     let expected_seconds = time::OffsetDateTime::now_utc().unix_timestamp() - (60 * 25);
     let expected_output = time::Duration::seconds(expected_seconds);
     let output = super::calculate_initial_compaction_delay(Some(60 * 25));
-    assert_eq!(output, expected_output, "unexpected duration returned, expected {:?}, got {:?}", expected_output, output,);
+    assert_eq!(output, expected_output, "unexpected duration returned, expected {:?}, got {:?}", expected_output, output);
 }

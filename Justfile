@@ -110,3 +110,7 @@ helmUpdateArtifactHubRepo:
     oras push ghcr.io/hadron-project/charts/hadron-operator:artifacthub.io \
         --manifest-config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
         charts/hadron-operator/artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
+
+helmUpKubePromStack:
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm --kube-context="kind-hadron" upgrade monitoring prometheus-community/kube-prometheus-stack --install
