@@ -16,23 +16,23 @@ pub const METRIC_THREADS: &str = "process_threads";
 pub fn register_proc_metrics() {
     // metrics::register_counter!(METRIC_START_TIME_SECONDS, metrics::Unit::Count, "Start time of the process since unix epoch in seconds.");
     // metrics::register_counter!(METRIC_CPU_SECONDS_TOTAL, metrics::Unit::Count, "Total user and system CPU time spent in seconds.");
+    // metrics::register_gauge!(METRIC_HEAP_BYTES, metrics::Unit::Bytes, "Process heap size in bytes.");
     metrics::register_gauge!(METRIC_OPEN_FDS, metrics::Unit::Count, "Number of open file descriptors.");
     metrics::register_gauge!(METRIC_MAX_FDS, metrics::Unit::Count, "Maximum number of open file descriptors.");
     metrics::register_gauge!(METRIC_VIRTUAL_MEMORY_BYTES, metrics::Unit::Bytes, "Virtual memory size in bytes.");
     metrics::register_gauge!(METRIC_VIRTUAL_MEMORY_MAX_BYTES, metrics::Unit::Bytes, "Maximum amount of virtual memory available in bytes.");
     metrics::register_gauge!(METRIC_RESIDENT_MEMORY_BYTES, metrics::Unit::Bytes, "Resident memory size in bytes.");
-    metrics::register_gauge!(METRIC_HEAP_BYTES, metrics::Unit::Bytes, "Process heap size in bytes.");
     metrics::register_gauge!(METRIC_THREADS, metrics::Unit::Count, "Number of OS threads in the process.");
 }
 
 /// Collect a sample of process metrics.
-#[cfg(not(feature = "prom"))]
+#[cfg(not(target_os = "linux"))]
 pub fn collect_proc_metrics() -> Result<()> {
     anyhow::bail!("metrics sampling is only configured for Linux")
 }
 
 /// Collect a sample of process metrics.
-#[cfg(feature = "prom")]
+#[cfg(target_os = "linux")]
 pub fn collect_proc_metrics() -> Result<()> {
     use anyhow::Context;
     let proc = procfs::process::Process::myself().context("error gather process metrics")?;
@@ -47,10 +47,7 @@ pub fn collect_proc_metrics() -> Result<()> {
                 metrics::gauge!(METRIC_MAX_FDS, max as f64);
             }
             if let procfs::process::LimitValue::Value(max) = limits.max_address_space.soft_limit {
-                metrics::gauge!(METRIC_VIRTUAL_MEMORY_MAX_BYTES, max);
-            }
-            if let procfs::process::LimitValue::Value(max) = limits.max_data_size.soft_limit {
-                metrics::gauge!(METRIC_HEAP_BYTES, max);
+                metrics::gauge!(METRIC_VIRTUAL_MEMORY_MAX_BYTES, max as f64);
             }
         }
         Err(err) => tracing::error!(error = ?err, "error gathering metric {}", METRIC_MAX_FDS),
@@ -68,7 +65,8 @@ pub fn collect_proc_metrics() -> Result<()> {
 
 /// Spawn a process metrics sampler which will shutdown when the given `shutdown` future resolves.
 pub fn spawn_proc_metrics_sampler(shutdown: impl std::future::Future<Output = ()> + Send + 'static) -> tokio::task::JoinHandle<()> {
-    if cfg!(feature = "prom") {
+    if cfg!(target_os = "linux") {
+        tracing::info!("spawning process metrics sampler");
         tokio::spawn(async move {
             let mut sample_interval = tokio::time::interval(std::time::Duration::from_secs(5));
             tokio::pin!(shutdown);
@@ -83,6 +81,7 @@ pub fn spawn_proc_metrics_sampler(shutdown: impl std::future::Future<Output = ()
             }
         })
     } else {
+        tracing::info!("not spawning process metrics sampler, as feature 'prom' is not enabled");
         tokio::spawn(async move {})
     }
 }

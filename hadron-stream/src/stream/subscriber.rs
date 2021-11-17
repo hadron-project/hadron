@@ -508,7 +508,8 @@ pub(super) async fn try_record_delivery_response(res: std::result::Result<u64, S
         .context("error updating subscription offsets on disk")
         .map_err(ShutdownError::from)?;
     tree.flush_async().await.context(ERR_DB_FLUSH).map_err(ShutdownError::from)?;
-    metrics::counter!(super::METRIC_SUB_LAST_OFFSET, offset.saturating_sub(old_last_offset), "group" => group_name.as_ref().to_string());
+    let increment_by = offset.saturating_sub(old_last_offset); // The amount to increment the metric counter by.
+    metrics::counter!(super::METRIC_SUB_LAST_OFFSET, increment_by, "group" => group_name.as_ref().to_string());
     Ok(())
 }
 

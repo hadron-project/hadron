@@ -67,7 +67,7 @@ impl Config {
                 rust_log: "".into(),
                 client_port: 7000,
                 server_port: 7001,
-                metrics_port: 6000,
+                metrics_port: 7002,
 
                 namespace: "default".into(),
                 stream: "testing".into(),

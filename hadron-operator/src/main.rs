@@ -16,7 +16,7 @@ use tracing_subscriber::prelude::*;
 
 use crate::app::App;
 use crate::config::Config;
-use hadron_core::prom::register_proc_metrics;
+use hadron_core::procmetrics::register_proc_metrics;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -65,7 +65,7 @@ pub fn get_metrics_recorder(config: &Config) -> &'static PrometheusRecorder {
             RECORDER.write(
                 PrometheusBuilder::new()
                     .add_global_label("namespace", config.namespace.clone())
-                    .add_global_label("pod_name", config.pod_name.clone())
+                    .add_global_label("pod", config.pod_name.clone())
                     .build(),
             );
         });

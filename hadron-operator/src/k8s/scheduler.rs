@@ -67,7 +67,7 @@ const STREAM_PORT_CLIENT: i32 = 7000;
 /// The port used by server peers to connect to Stream StatefulSets.
 const STREAM_PORT_SERVER: i32 = 7001;
 /// The port used to expose metrics of Stream StatefulSet replicas.
-const STREAM_PORT_METRICS: i32 = 6000;
+const STREAM_PORT_METRICS: i32 = 7002;
 
 /// A scheduling task to be performed.
 #[derive(Debug)]
@@ -597,7 +597,11 @@ impl Controller {
             match_labels: Some(labels.clone()),
             ..Default::default()
         };
-        let rust_log = if stream.spec.debug { "error,hadron_stream=debug" } else { "error,hadron_stream=info" };
+        let rust_log = if stream.spec.debug {
+            "error,hadron_stream=debug,hadron_core=debug"
+        } else {
+            "error,hadron_stream=info,hadron_core=info"
+        };
         spec.template = PodTemplateSpec {
             metadata: Some(ObjectMeta {
                 labels: Some(labels),
@@ -995,5 +999,6 @@ impl Controller {
 /// Set the cannonical labels on an object controlled by Hadron.
 fn set_cannonical_labels(labels: &mut BTreeMap<String, String>) {
     labels.insert("app".into(), "hadron".into());
+    labels.insert("hadron.rs/component".into(), "hadron-stream".into());
     labels.insert("hadron.rs/controlled-by".into(), "hadron-operator".into());
 }

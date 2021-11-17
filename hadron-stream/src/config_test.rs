@@ -9,7 +9,7 @@ fn config_deserializes_from_full_env() -> Result<()> {
         ("RUST_LOG".into(), "error".into()),
         ("CLIENT_PORT".into(), "7000".into()),
         ("SERVER_PORT".into(), "7001".into()),
-        ("METRICS_PORT".into(), "6000".into()),
+        ("METRICS_PORT".into(), "7002".into()),
         ("NAMESPACE".into(), "default".into()),
         ("STREAM".into(), "events".into()),
         ("STATEFULSET".into(), "events".into()),
@@ -22,6 +22,12 @@ fn config_deserializes_from_full_env() -> Result<()> {
     assert!(config.rust_log == "error", "unexpected value parsed for RUST_LOG, got {}, expected {}", config.rust_log, "");
     assert!(config.client_port == 7000, "unexpected value parsed for CLIENT_PORT, got {}, expected {}", config.client_port, "7000");
     assert!(config.server_port == 7001, "unexpected value parsed for SERVER_PORT, got {}, expected {}", config.server_port, "7001");
+    assert!(
+        config.metrics_port == 7002,
+        "unexpected value parsed for METRICS_PORT, got {}, expected {}",
+        config.metrics_port,
+        "7002"
+    );
     assert!(config.namespace == "default", "unexpected value parsed for NAMESPACE, got {}, expected {}", config.namespace, "default");
     assert!(config.stream == "events", "unexpected value parsed for STREAM, got {}, expected {}", config.stream, "events");
     assert!(
@@ -60,7 +66,7 @@ fn config_deserializes_from_sparse_env() -> Result<()> {
         ("RUST_LOG".into(), "error".into()),
         ("CLIENT_PORT".into(), "7000".into()),
         ("SERVER_PORT".into(), "7001".into()),
-        ("METRICS_PORT".into(), "6000".into()),
+        ("METRICS_PORT".into(), "7002".into()),
         ("NAMESPACE".into(), "default".into()),
         ("STREAM".into(), "events".into()),
         ("STATEFULSET".into(), "events".into()),
@@ -72,6 +78,12 @@ fn config_deserializes_from_sparse_env() -> Result<()> {
     assert!(config.rust_log == "error", "unexpected value parsed for RUST_LOG, got {}, expected {}", config.rust_log, "");
     assert!(config.client_port == 7000, "unexpected value parsed for CLIENT_PORT, got {}, expected {}", config.client_port, "7000");
     assert!(config.server_port == 7001, "unexpected value parsed for SERVER_PORT, got {}, expected {}", config.server_port, "7001");
+    assert!(
+        config.metrics_port == 7002,
+        "unexpected value parsed for METRICS_PORT, got {}, expected {}",
+        config.metrics_port,
+        "7002"
+    );
     assert!(config.namespace == "default", "unexpected value parsed for NAMESPACE, got {}, expected {}", config.namespace, "default");
     assert!(config.stream == "events", "unexpected value parsed for STREAM, got {}, expected {}", config.stream, "events");
     assert!(

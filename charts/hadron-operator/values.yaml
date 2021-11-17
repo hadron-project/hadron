@@ -1,13 +1,20 @@
 ## Services for the Operator.
 service:
+  ## The K8s service used for client interaction with the operator.
   client:
     annotations: {}
     labels: {}
     port: 7000
+  ## The K8s service used for K8s webhooks.
   webhooks:
     annotations: {}
     labels: {}
     port: 7001
+  ## The K8s service used for metrics & healthchecks.
+  metrics:
+    annotations: {}
+    labels: {}
+    port: 7002
 
 ## Deployment spec.
 deployment:
@@ -35,10 +42,12 @@ container:
     tag: v0.1.0-beta.1
     pullPolicy: IfNotPresent
 
-  ## The port used for client connections.
+  ## The port used for client interaction with the operator.
   clientPort: 7000
-  ## The port used for HTTP webhooks & healthchecks.
-  httpPort: 7001
+  ## The port used for K8s webhooks.
+  webhooksPort: 7001
+  ## The port used for metrics & healthchecks.
+  metricsPort: 7002
 
   ## Operator's container resources.
   resources:
@@ -52,7 +61,7 @@ container:
   ## Operator env vars.
   env:
     ## Logging configuration.
-    logging: "error,hadron_operator=trace"
+    logging: "error,hadron_operator=trace,hadron_core=trace"
 
     ## K8s Leadership Config
     lease:
@@ -96,3 +105,19 @@ vaw:
 ## This will also inject the Certificate's corresponding CA bundle into the VAW webhook resource.
 certManager:
   enabled: true
+
+## Optional Prometheus Operator integration.
+prometheusOperator:
+  enabled: false
+  ## The ServiceMonitor used to monitor the Hadron Operator itself.
+  serviceMonitor:
+    annotations: {}
+    ## Ensure that a well-defined label is added here so that the ServiceMonitor is detected by
+    ## the Prometheus Operator and actually used, else you will not see any metrics.
+    labels: {}
+  ## The PodMonitor used to monitor all Hadron Streams created and managed by the Hadron Operator.
+  podMonitor:
+    annotations: {}
+    ## Ensure that a well-defined label is added here so that the PodMonitor is detected by
+    ## the Prometheus Operator and actually used, else you will not see any metrics.
+    labels: {}

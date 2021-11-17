@@ -21,3 +21,6 @@ Hadron is designed to ingest data in the form of events, and to facilitate worki
 
 ### CertManager Integration
 This chart ships with cert-manager integration for managing various TLS certs used by Hadron. It is the recommended way to manage TLS/cryptography needs in the Kubernetes context and is enabled by default. This can be controlled with the `.Values.certManager.enabled` key.
+
+### Prometheus Operator & kube-prometheus-stack Integration
+This chart ships with Prometheus Operator / kube-prometheus-stack integration for automatic monitoring via Prometheus. When `prometheusOperator.enabled=true`, this chart will generate a `ServiceMonitor` CRD instance (from the Prometheus Operator chart) which handles everything needed for automatic monitoring. **Note well:** ensure that `prometheusOperator.serviceMonitor.labels` & `prometheusOperator.podMonitor.labels` are supplied so that the `ServiceMonitor` & `PodMonitor` created by this chart will be detected by your Prometheus deployment. [See the docs here](https://github.com/prometheus-operator/prometheus-operator/blob/v0.52.1/Documentation/user-guides/getting-started.md#include-servicemonitors).

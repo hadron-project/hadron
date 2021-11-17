@@ -2,7 +2,7 @@
 authors = ["Anthony Dodd <dodd.anthonyjosiah@gmail.com>"]
 edition = "2021"
 name = "hadron-stream"
-version = "0.1.0-beta.2"
+version = "0.2.0"
 description = "The Hadron stream controller."
 resolver = "2"
 
@@ -22,10 +22,9 @@ http = "0.2"
 jsonwebtoken = "7.2"
 k8s-openapi = { version = "0.13", default-features = false, features = ["api", "v1_22"] }
 kube = { version = "0.63", default-features = false, features = ["admission", "client", "derive", "gzip", "jsonpatch", "runtime", "rustls-tls", "ws"] }
-lazy_static = "1.4"
 metrics = "0.17"
 metrics-exporter-prometheus = { version = "0.6", default-features = false }
-metrics-util = "0.10.1"
+metrics-util = "0.10"
 prost = "0.9"
 rand = "0.8"
 serde = { version="1", features = ["derive"] }
@@ -41,9 +40,6 @@ tonic = "0.6"
 tracing = { version = "0.1", features = ["attributes", "release_max_level_trace"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
 uuid = { version="0.8", default-features=false, features=["serde", "v4"] }
-
-[target.'cfg(linux)'.dependencies]
-hadron-core = { path = "../hadron-core", features = ["prom"] }
 
 [build-dependencies]
 anyhow = "1"

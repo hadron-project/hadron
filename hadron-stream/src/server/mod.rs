@@ -2,7 +2,7 @@ mod prom;
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use futures::prelude::*;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -20,8 +20,6 @@ use hadron_core::auth;
 use hadron_core::crd::Token;
 
 pub use prom::spawn_prom_server;
-
-const CLIENT_ADDR: &str = "0.0.0.0:7000";
 
 /// Application server.
 pub struct AppServer {
@@ -60,19 +58,19 @@ impl AppServer {
     }
 
     /// Spawn this controller which also creates the client gRPC server.
-    pub fn spawn(self) -> Result<JoinHandle<()>> {
-        let addr = CLIENT_ADDR.parse().context("failed to parse listener address")?;
+    pub fn spawn(self) -> JoinHandle<()> {
+        let addr = ([0, 0, 0, 0], self.config.client_port).into();
         let (shutdown, mut shutdown_rx) = (self.shutdown.clone(), self.shutdown.subscribe());
         let service = grpc::StreamControllerServer::new(self);
         let fut = Server::builder().add_service(service).serve_with_shutdown(addr, async move {
             let _res = shutdown_rx.recv().await;
         });
-        Ok(tokio::spawn(async move {
+        tokio::spawn(async move {
             if let Err(err) = fut.await {
                 tracing::error!(error = ?err, "error from client gRPC server");
             }
             let _res = shutdown.send(());
-        }))
+        })
     }
 
     /// Extract the given request's auth token, else fail.

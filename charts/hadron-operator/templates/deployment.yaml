@@ -2,7 +2,8 @@
 ## {{ required "required value .Values.container.image.repo" .Values.container.image.repo }}
 ## {{ required "required value .Values.container.image.tag" .Values.container.image.tag }}
 ## {{ required "required value .Values.container.clientPort" .Values.container.clientPort }}
-## {{ required "required value .Values.container.httpPort" .Values.container.httpPort }}
+## {{ required "required value .Values.container.webhookPort" .Values.container.webhooksPort }}
+## {{ required "required value .Values.container.metricsPort" .Values.container.metricsPort }}
 ## {{ required "required value .Values.container.env.logging" .Values.container.env.logging }}
 ## {{ required "required value .Values.container.env.lease.durationSeconds" .Values.container.env.lease.durationSeconds }}
 ## {{ required "required value .Values.container.env.lease.renewSeconds" .Values.container.env.lease.renewSeconds }}
@@ -61,15 +62,17 @@ spec:
           imagePullPolicy: {{ .Values.container.image.pullPolicy | default "IfNotPresent" }}
           ports:
             - containerPort: {{ .Values.container.clientPort }}
-            - containerPort: {{ .Values.container.httpPort }}
+            - containerPort: {{ .Values.container.webhooksPort }}
 
           env:
           - name: RUST_LOG
             value: {{ .Values.container.env.logging }}
           - name: CLIENT_PORT
             value: {{ .Values.container.clientPort | quote }}
-          - name: HTTP_PORT
-            value: {{ .Values.container.httpPort | quote }}
+          - name: WEBHOOKS_PORT
+            value: {{ .Values.container.webhooksPort | quote }}
+          - name: METRICS_PORT
+            value: {{ .Values.container.metricsPort | quote }}
 
           - name: NAMESPACE
             valueFrom:
@@ -94,16 +97,14 @@ spec:
 
           livenessProbe:
             httpGet:
-              scheme: HTTPS
               path: /health
-              port: {{ .Values.container.httpPort }}
+              port: {{ .Values.container.metricsPort }}
             initialDelaySeconds: 10
             periodSeconds: 5
 
           readinessProbe:
             httpGet:
-              scheme: HTTPS
               path: /health
-              port: {{ .Values.container.httpPort }}
+              port: {{ .Values.container.metricsPort }}
             initialDelaySeconds: 10
             periodSeconds: 5

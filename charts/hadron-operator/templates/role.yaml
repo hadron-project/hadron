@@ -6,6 +6,7 @@ metadata:
   name: hadron-operator
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
+    hadron.rs/component: hadron-operator-role
     {{- include "chart.labels" . | indent 4 }}
 rules:
 # This rule allows for management of the Hadron cluster lease & all Hadron resources.
@@ -37,6 +38,7 @@ metadata:
   name: hadron-stream
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
+    hadron.rs/component: hadron-stream-role
     {{- include "chart.labels" . | indent 4 }}
 rules:
 # This rule allows for management of the Hadron cluster lease & all Hadron resources.
