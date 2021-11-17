@@ -9,6 +9,7 @@ metadata:
   name: hadron-webhooks
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
+    hadron.rs/component: hadron-operator-webhooks-cert
     {{- include "chart.labels" . | indent 4 }}
 spec:
   ## This secret name is referenced directly by the operator to mount the TLS components.
@@ -30,6 +31,7 @@ metadata:
   name: hadron-issuer
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
+    hadron.rs/component: hadron-operator-issuer
     {{- include "chart.labels" . | indent 4 }}
 spec:
   selfSigned: {}

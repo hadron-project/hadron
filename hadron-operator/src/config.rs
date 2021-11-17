@@ -14,8 +14,10 @@ pub struct Config {
     pub rust_log: String,
     /// The port used for client interaction.
     pub client_port: u16,
-    /// The port used for HTTP webhooks and healthchecks.
-    pub http_port: u16,
+    /// The port used for Kubernetes controller webhooks.
+    pub webhooks_port: u16,
+    /// The port used for HTTP metrics and healthchecks.
+    pub metrics_port: u16,
 
     /// The Kubernetes namespace of this cluster.
     pub namespace: String,

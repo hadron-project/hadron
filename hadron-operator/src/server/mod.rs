@@ -1,4 +1,4 @@
-mod webhook;
+mod http;
 
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ use tonic::transport::Server as TonicServer;
 
 use crate::config::Config;
 use crate::grpc;
-use crate::server::webhook::HttpServer;
+use crate::server::http::HttpServer;
 
 /// Application server.
 pub struct AppServer {

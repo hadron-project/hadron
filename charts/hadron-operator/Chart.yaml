@@ -2,10 +2,26 @@ apiVersion: v2
 name: hadron-operator
 description: Hadron is the Kubernetes native and CloudEvents native distributed event streaming, event orchestration & messaging platform.
 type: application
-version: 0.1.3
-appVersion: 0.1.0-beta.1
+version: 0.2.0
+appVersion: 0.2.0
 
 annotations:
+  artifacthub.io/changes: |
+    - kind: added
+      description: Prometheus monitoring & instrumentation for Operator & Stream components.
+      links:
+        - name: issue
+          url: https://github.com/hadron-project/hadron/issues/110
+
+  ## Changes template. Don't remove this.
+  ## See https://artifacthub.io/docs/topics/annotations/helm/#supported-annotations
+  ## artifacthub.io/changes: |
+  ##   - kind: added | changed | deprecated | removed | fixed | security
+  ##     description: A description of the change.
+  ##     links:
+  ##       - name: A pertinent link.
+  ##         url: https://github.com/hadron-project/hadron/issues/xyz
+
   artifacthub.io/operator: "true"
   artifacthub.io/crds: |
     - kind: Pipeline
@@ -69,15 +85,3 @@ annotations:
         streams:
           pub: ["events"]
           sub: ["events"]
-  artifacthub.io/changes: |
-    - kind: fixed
-      description: Fixed formatting of ArtifactHub CRDs section.
-    - kind: added
-      description: Added CRD examples.
-
-# artifacthub.io/changes: |
-#   - kind: added | changed | deprecated | removed | fixed | security
-#     description: A description of the change.
-#     links:
-#       - name: A pertinent link.
-#         url: https://github.com/hadron-project/hadron/issues/xyz

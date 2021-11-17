@@ -2,7 +2,9 @@
 ## {{ required "required value .Values.service.client.port" .Values.service.client.port }}
 ## {{ required "required value .Values.container.clientPort" .Values.container.clientPort }}
 ## {{ required "required value .Values.service.webhooks.port" .Values.service.webhooks.port }}
-## {{ required "required value .Values.container.httpPort" .Values.container.httpPort }}
+## {{ required "required value .Values.container.webhooksPort" .Values.container.webhooksPort }}
+## {{ required "required value .Values.service.metrics.port" .Values.service.metrics.port }}
+## {{ required "required value .Values.container.metricsPort" .Values.container.metricsPort }}
 
 ---
 kind: Service
@@ -15,6 +17,7 @@ metadata:
 {{ toYaml .Values.service.client.annotations | indent 4 }}
   {{- end}}
   labels:
+    hadron.rs/component: hadron-operator-service
     {{- include "chart.labels" . | indent 4 }}
     {{- if .Values.service.client.labels }}
 {{ toYaml .Values.service.client.labels | indent 4 }}
@@ -41,6 +44,7 @@ metadata:
 {{ toYaml .Values.service.webhooks.annotations | indent 4 }}
   {{- end }}
   labels:
+    hadron.rs/component: hadron-operator-webooks-service
     {{- include "chart.labels" . | indent 4 }}
     {{- if .Values.service.webhooks.labels }}
 {{ toYaml .Values.service.webhooks.labels | indent 4 }}
@@ -54,4 +58,31 @@ spec:
     - name: http
       port: {{ .Values.service.webhooks.port }}
       protocol: TCP
-      targetPort: {{ .Values.container.httpPort }}
+      targetPort: {{ .Values.container.webhooksPort }}
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: hadron-operator-metrics
+  namespace: {{.Values.namespace | default .Release.Namespace}}
+  {{- if .Values.service.metrics.annotations }}
+  annotations:
+{{ toYaml .Values.service.metrics.annotations | indent 4 }}
+  {{- end }}
+  labels:
+    hadron.rs/component: hadron-operator-metrics-service
+    {{- include "chart.labels" . | indent 4 }}
+    {{- if .Values.service.metrics.labels }}
+{{ toYaml .Values.service.metrics.labels | indent 4 }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    app: hadron
+    hadron.rs/component: operator
+  ports:
+    - name: metrics
+      port: {{ .Values.service.metrics.port }}
+      protocol: TCP
+      targetPort: {{ .Values.container.metricsPort }}

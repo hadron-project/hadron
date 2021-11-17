@@ -13,7 +13,7 @@ use crate::database::Database;
 use crate::server::{spawn_prom_server, AppServer};
 use crate::stream::StreamCtl;
 use crate::watchers::{PipelineWatcher, PipelinesMap, SecretsMap, StreamWatcher, TokensMap, TokensWatcher};
-use hadron_core::prom::spawn_proc_metrics_sampler;
+use hadron_core::procmetrics::spawn_proc_metrics_sampler;
 
 /// The application object for when Hadron is running as a server.
 pub struct App {
@@ -82,8 +82,7 @@ impl App {
             shutdown_tx.clone(),
             stream_tx,
         )
-        .spawn()
-        .context("error setting up client gRPC server")?;
+        .spawn();
 
         let metrics_server = spawn_prom_server(&config, shutdown_tx.subscribe());
 

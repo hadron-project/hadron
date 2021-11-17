@@ -6,6 +6,7 @@ metadata:
   name: hadron-operator
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
+    hadron.rs/component: hadron-operator-role-binding
     {{- include "chart.labels" . | indent 4 }}
 subjects:
 - kind: ServiceAccount
@@ -24,6 +25,7 @@ metadata:
   name: hadron-stream
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
+    hadron.rs/component: hadron-stream-role-binding
     {{- include "chart.labels" . | indent 4 }}
 subjects:
 - kind: ServiceAccount

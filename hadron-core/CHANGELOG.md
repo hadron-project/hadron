@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- Added `prom` module used for registering, and sampling process metrics.
+- Added `procmetrics` module used for registering, and sampling process metrics.
 
 ## [0.2.0] - 2021-11-10
 ### Added

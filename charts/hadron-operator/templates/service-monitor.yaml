@@ -1,0 +1,56 @@
+{{- if .Values.prometheusOperator.enabled }}
+## Required values:
+## {{ required "required value .Values.prometheusOperator.serviceMonitor" .Values.prometheusOperator.serviceMonitor }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hadron-operator
+  labels:
+    hadron.rs/component: hadron-operator-service-monitor
+    {{- include "chart.labels" . | indent 4 }}
+    {{- range $label, $val := .Values.prometheusOperator.serviceMonitor.labels }}
+    {{ $label }}: {{ $val }}
+    {{- end }}
+  {{- if .Values.prometheusOperator.serviceMonitor.annotations }}
+  annotations:
+{{ toYaml .Values.prometheusOperator.serviceMonitor.annotations | indent 4 }}
+  {{- end}}
+spec:
+  selector:
+    matchLabels:
+      hadron.rs/component: hadron-operator-metrics-service
+  # See https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#endpoint
+  endpoints:
+  - port: metrics
+    path: /metrics
+    scheme: http
+    interval: 10s
+
+---
+## Required values:
+## {{ required "required value .Values.prometheusOperator.podMonitor" .Values.prometheusOperator.podMonitor }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: hadron-stream
+  labels:
+    hadron.rs/component: hadron-operator-pod-monitor
+    {{- include "chart.labels" . | indent 4 }}
+    {{- range $label, $val := .Values.prometheusOperator.podMonitor.labels }}
+    {{ $label }}: {{ $val }}
+    {{- end }}
+  {{- if .Values.prometheusOperator.podMonitor.annotations }}
+  annotations:
+{{ toYaml .Values.prometheusOperator.podMonitor.annotations | indent 4 }}
+  {{- end}}
+spec:
+  selector:
+    matchLabels:
+      hadron.rs/component: hadron-stream
+  # See https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#podmetricsendpoint
+  podMetricsEndpoints:
+  - port: metrics-port
+    path: /metrics
+    scheme: http
+    interval: 10s
+{{- end }}

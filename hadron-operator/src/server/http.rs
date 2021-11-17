@@ -39,7 +39,7 @@ impl HttpServer {
     pub async fn new(config: Arc<Config>, shutdown: broadcast::Sender<()>) -> Result<Self> {
         let rustls_config = rustls_server_config(config.webhook_key.0.clone(), config.webhook_cert.0.clone()).context("error building webhook TLS config")?;
         let acceptor = TlsAcceptor::from(rustls_config);
-        let listener = TcpListener::bind(("0.0.0.0", config.http_port)).await.context("error binding socket address for webhook server")?;
+        let listener = TcpListener::bind(("0.0.0.0", config.webhooks_port)).await.context("error binding socket address for webhook server")?;
 
         Ok(Self {
             config,
@@ -56,12 +56,23 @@ impl HttpServer {
 
     async fn run(mut self) -> Result<()> {
         let state = get_metrics_recorder(&self.config).handle();
-        let router = Router::new()
+        let mut http_shutdown = self.shutdown_tx.subscribe();
+        let http_router = Router::new()
             .route("/health", get(|| async { StatusCode::OK }))
-            .route("/metrics", get(prom_metrics.layer(AddExtensionLayer::new(state))))
+            .route("/metrics", get(prom_metrics.layer(AddExtensionLayer::new(state))));
+        let http_server = axum::Server::bind(&([0, 0, 0, 0], self.config.metrics_port).into())
+            .serve(http_router.into_make_service())
+            .with_graceful_shutdown(async move {
+                let _res = http_shutdown.recv().await;
+            });
+        let http_server_handle = tokio::spawn(http_server);
+        tracing::info!("metrics server is listening at 0.0.0.0:{}", self.config.metrics_port);
+
+        let webhook_router = Router::new()
             .route("/k8s/admissions/vaw/pipelines", post(vaw_pipelines.layer(TraceLayer::new_for_http())))
             .route("/k8s/admissions/vaw/streams", post(vaw_streams.layer(TraceLayer::new_for_http())))
             .route("/k8s/admissions/vaw/tokens", post(vaw_tokens.layer(TraceLayer::new_for_http())));
+        tracing::info!("webhook server is listening at 0.0.0.0:{}", self.config.webhooks_port);
 
         loop {
             tokio::select! {
@@ -74,15 +85,19 @@ impl HttpServer {
                             break;
                         }
                     };
-                    let (acceptor, router) = (self.acceptor.clone(), router.clone());
+                    let (acceptor, webhook_router) = (self.acceptor.clone(), webhook_router.clone());
                     tokio::spawn(async move {
                         if let Ok(stream) = acceptor.accept(stream).await {
-                            let _res = Http::new().serve_connection(stream, router).await;
+                            let _res = Http::new().serve_connection(stream, webhook_router).await;
                         }
                     });
                 },
                 _ = self.shutdown_rx.recv() => break,
             }
+        }
+
+        if let Err(err) = http_server_handle.await {
+            tracing::error!(error = ?err, "error shutting down http server");
         }
 
         Ok(())

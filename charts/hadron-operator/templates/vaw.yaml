@@ -8,6 +8,7 @@ metadata:
   name: validations-hadron-rs
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
+    hadron.rs/component: hadron-operator-vaw
     {{- include "chart.labels" . | indent 4 }}
   annotations:
     {{- if .Values.certManager.enabled }}

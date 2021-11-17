@@ -61,9 +61,11 @@ kindLoadStream tag="latest":
     kind load docker-image --name hadron ghcr.io/hadron-project/hadron/hadron-stream:{{tag}}
 
 # Perform a upgrade --install of the Hadron chart into the kind cluster.
-helmUp tag="latest" pull="IfNotPresent":
+helmUp tag="latest" pull="IfNotPresent" prom="false":
     helm --kube-context="kind-hadron" upgrade hadron-operator ./charts/hadron-operator -i \
-        --set container.image.tag={{tag}},container.image.pullPolicy={{pull}}
+        --set container.image.tag={{tag}},container.image.pullPolicy={{pull}} \
+        --set prometheusOperator.enabled={{prom}},prometheusOperator.serviceMonitor.labels.release=monitoring \
+        --set prometheusOperator.podMonitor.labels.release=monitoring
 
 # Purge all Hadron data in the local kind cluster.
 helmPurge:
@@ -113,4 +115,5 @@ helmUpdateArtifactHubRepo:
 
 helmUpKubePromStack:
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-    helm --kube-context="kind-hadron" upgrade monitoring prometheus-community/kube-prometheus-stack --install
+    helm --kube-context="kind-hadron" upgrade monitoring prometheus-community/kube-prometheus-stack --install \
+        --set fullnameOverride=monitoring

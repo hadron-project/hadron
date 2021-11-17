@@ -11,7 +11,7 @@ use tokio_stream::StreamMap;
 use crate::config::Config;
 use crate::k8s::Controller;
 use crate::server::AppServer;
-use hadron_core::prom::spawn_proc_metrics_sampler;
+use hadron_core::procmetrics::spawn_proc_metrics_sampler;
 
 /// The application object for when Hadron is running as a server.
 pub struct App {
