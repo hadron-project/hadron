@@ -126,7 +126,7 @@ pub struct LeaderElector {
 impl LeaderElector {
     // Create a new `LeaderElector` instance.
     pub fn new(lease: Lease, config: LeaderElectionConfig, manager: impl AsRef<str>, client: Client, shutdown: broadcast::Receiver<()>) -> (Self, watch::Receiver<LeaderState>) {
-        metrics::register_counter!(METRIC_LEADERSHIP_CHANGE, metrics::Unit::Count, "the number of leadership changes in the operator consensus group");
+        metrics::register_gauge!(METRIC_LEADERSHIP_CHANGE, metrics::Unit::Count, "the number of leadership changes in the operator consensus group");
         metrics::register_gauge!(
             METRIC_IS_LEADER,
             metrics::Unit::Count,
@@ -197,10 +197,6 @@ impl LeaderElector {
     /// Handle a change from the lease watcher.
     #[tracing::instrument(level = "debug", skip(self, res))]
     async fn handle_lease_watcher_change(&mut self, res: WatcherResult<Event<Lease>>) {
-        // Don't consider updates from the stream when currently leader.
-        if matches!(&self.state, LeaderState::Leading) {
-            return;
-        }
         let event = match res {
             Ok(event) => event,
             Err(err) => {
@@ -212,6 +208,9 @@ impl LeaderElector {
             Event::Applied(lease) => lease,
             _ => return,
         };
+        if let Some(Some(transitions)) = lease.spec.as_ref().map(|spec| spec.lease_transitions) {
+            metrics::gauge!(METRIC_LEADERSHIP_CHANGE, transitions as f64);
+        }
         if lease != self.last_observed_lease {
             tracing::debug!("lease update observed from watcher stream");
             self.last_observed_change = Utc::now();
@@ -307,7 +306,12 @@ impl LeaderElector {
             .last_observed_lease
             .spec
             .as_ref()
-            .map(|spec| spec.holder_identity.as_deref().unwrap_or_default())
+            .map(|spec| {
+                if let Some(transitions) = spec.lease_transitions {
+                    metrics::gauge!(METRIC_LEADERSHIP_CHANGE, transitions as f64);
+                }
+                spec.holder_identity.as_deref().unwrap_or_default()
+            })
             .unwrap_or_default();
         let lease_is_held = holder == self.config.identity;
         let state_opt = match &self.state {
@@ -342,7 +346,6 @@ impl LeaderElector {
 
     /// Set the current leader state & emit a state update.
     fn set_state(&mut self, state: LeaderState) {
-        metrics::increment_counter!(METRIC_LEADERSHIP_CHANGE);
         self.state = state;
         let _ = self.state_tx.send(self.state.clone());
         metrics::gauge!(METRIC_IS_LEADER, if matches!(self.state, LeaderState::Leading) { 1.0 } else { 0.0 });

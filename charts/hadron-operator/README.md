@@ -24,3 +24,5 @@ This chart ships with cert-manager integration for managing various TLS certs us
 
 ### Prometheus Operator & kube-prometheus-stack Integration
 This chart ships with Prometheus Operator / kube-prometheus-stack integration for automatic monitoring via Prometheus. When `prometheusOperator.enabled=true`, this chart will generate a `ServiceMonitor` CRD instance (from the Prometheus Operator chart) which handles everything needed for automatic monitoring. **Note well:** ensure that `prometheusOperator.serviceMonitor.labels` & `prometheusOperator.podMonitor.labels` are supplied so that the `ServiceMonitor` & `PodMonitor` created by this chart will be detected by your Prometheus deployment. [See the docs here](https://github.com/prometheus-operator/prometheus-operator/blob/v0.52.1/Documentation/user-guides/getting-started.md#include-servicemonitors).
+
+Hadron also includes support for the Monitoring Mixins system. Head over to the [Hadron Guide](https://hadron-project.github.io/hadron/overview/monitoring.html) for more details on how to integrate.

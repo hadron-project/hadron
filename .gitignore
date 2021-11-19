@@ -5,3 +5,5 @@
 .git
 **/target
 guide/book
+monitoring/dist/**
+monitoring/hadron-mixin/vendor
