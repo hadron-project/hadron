@@ -296,7 +296,7 @@ impl StreamSubCtl {
         let group = self.subs.groups.get_mut(group_name).context("response from subscription delivery dropped as group no longer exists")?;
 
         // Unpack response body.
-        let last_offset = delivery_res.orig_data.last_included_offset;
+        let (old_last_offset, last_offset) = (group.offset, delivery_res.orig_data.last_included_offset);
         group.delivery_cache = SubGroupDataCache::NeedsDelivery(delivery_res.orig_data);
         let res = delivery_res.output.context("subscriber channel closed while awaiting delivery response").map_err(|err| {
             let _ = group.active_channels.remove(chan_id);
@@ -330,7 +330,7 @@ impl StreamSubCtl {
             _ => Err("unexpected or malformed response returned from subscriber, expected ack or nack".into()),
         };
         if group.durable {
-            try_record_delivery_response(record_res, group.offset, group.group_name.clone(), self.tree.clone())
+            try_record_delivery_response(record_res, old_last_offset, group.group_name.clone(), self.tree.clone())
                 .await
                 .context("error while recording subscriber delivery response")?;
         }

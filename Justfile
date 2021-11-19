@@ -117,3 +117,9 @@ helmUpKubePromStack:
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
     helm --kube-context="kind-hadron" upgrade monitoring prometheus-community/kube-prometheus-stack --install \
         --set fullnameOverride=monitoring
+
+# Build & test the monitoring hadron-mixin jsonnet code.
+jsonnetBuild:
+    jsonnet -S -e 'std.manifestYamlDoc((import "monitoring/hadron-mixin/mixin.libsonnet").prometheusAlerts)' > monitoring/dist/alerts.yaml
+    jsonnet -S -e 'std.manifestYamlDoc((import "monitoring/hadron-mixin/mixin.libsonnet").prometheusRules)' > monitoring/dist/rules.yaml
+    jsonnet -e '(import "monitoring/hadron-mixin/mixin.libsonnet").grafanaDashboards' -m monitoring/dist

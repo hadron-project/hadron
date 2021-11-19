@@ -11,6 +11,7 @@ Hadron
 - [Exchanges](./overview/exchanges.md)
 - [Endpoints](./overview/endpoints.md)
 - [Producers & Consumers](./overview/producers-consumers.md)
+- [Monitoring](./overview/monitoring.md)
 
 # Use Cases
 - [Local Development](./usecases/local-development.md)
