@@ -11,10 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Stream current offset (counter).
     - Stream subscriber count (gauge).
     - Stream subscriber group last offset processed (counter).
+    - Stream last offset compacted (counter).
     - Per Pipeline last offset processed (counter).
     - Per Pipeline active instances (gauge).
     - Per Pipeline number of stage subscribers (gauge).
     - Process metrics.
+
+### Fixed
+- Fixed a bug in Stream Subscribers where subscriber group could get stuck within a range of the Stream which was recently compacted.
 
 ## [0.1.0-beta.1] - 2021-11-10
 ### Added

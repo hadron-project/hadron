@@ -84,6 +84,7 @@ pub(self) const METRIC_CURRENT_OFFSET: &str = "hadron_stream_current_offset";
 pub(self) const METRIC_SUB_NUM_GROUPS: &str = "hadron_stream_subscriber_num_groups";
 pub(self) const METRIC_SUB_GROUP_MEMBERS: &str = "hadron_stream_subscriber_group_members";
 pub(self) const METRIC_SUB_LAST_OFFSET: &str = "hadron_stream_subscriber_last_offset_processed";
+pub(self) const METRIC_LAST_COMPACTED_OFFSET: &str = "hadron_stream_last_compacted_offset";
 
 /// A controller encapsulating all logic for interacting with a stream.
 pub struct StreamCtl {
@@ -135,7 +136,9 @@ impl StreamCtl {
         let tree = db.get_stream_tree().await?;
         let recovery_data = recover_stream_state(tree.clone()).await?;
         metrics::register_counter!(METRIC_CURRENT_OFFSET, metrics::Unit::Count, "the offset of the last entry written to the stream");
+        metrics::register_counter!(METRIC_LAST_COMPACTED_OFFSET, metrics::Unit::Count, "the offset of the last compacted event");
         metrics::counter!(METRIC_CURRENT_OFFSET, recovery_data.last_written_offset);
+        metrics::counter!(METRIC_LAST_COMPACTED_OFFSET, recovery_data.first_written_offset.saturating_sub(1));
 
         // Spawn the subscriber controller.
         let (offset_signal, offset_signal_rx) = watch::channel(recovery_data.last_written_offset);
@@ -367,6 +370,17 @@ async fn recover_stream_state(tree: Tree) -> Result<StreamRecoveryState> {
             .transpose()?
             .unwrap_or(0);
 
+        // Fetch the first offset info.
+        let first_written_offset = tree
+            .scan_prefix(PREFIX_STREAM_EVENT)
+            .keys()
+            .next()
+            .transpose()
+            .context("error fetching first event record")?
+            .map(|key| utils::decode_u64(&key[1..]))
+            .transpose()?
+            .unwrap_or(0);
+
         // Fetch first timestamp record.
         let first_timestamp_opt = tree
             .scan_prefix(PREFIX_STREAM_TS)
@@ -415,6 +429,7 @@ async fn recover_stream_state(tree: Tree) -> Result<StreamRecoveryState> {
 
         let subscriptions: Vec<_> = subs.into_iter().map(|(_, val)| val).collect();
         Ok(StreamRecoveryState {
+            first_written_offset,
             last_written_offset,
             subscriptions,
             first_timestamp_opt,
@@ -427,7 +442,9 @@ async fn recover_stream_state(tree: Tree) -> Result<StreamRecoveryState> {
 
 /// A representation of a Stream's state recovered from disk on startup.
 struct StreamRecoveryState {
-    /// The last offset to have been written to disk.
+    /// The first offset still present on disk, or `0` if no entry found.
+    first_written_offset: u64,
+    /// The last offset to have been written to disk, or `0` if no entry found.
     last_written_offset: u64,
     /// All stream subscriber info.
     subscriptions: Vec<(Subscription, u64)>,
