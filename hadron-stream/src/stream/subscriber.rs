@@ -463,15 +463,19 @@ pub(super) fn spawn_group_fetch(group_name: Arc<String>, next_offset: u64, max_b
         // Spawn a blocking read of the stream.
         let res = Database::spawn_blocking(move || -> Result<FetchStreamRecords> {
             let start = utils::encode_byte_prefix(PREFIX_STREAM_EVENT, next_offset);
-            let stop = utils::encode_byte_prefix(PREFIX_STREAM_EVENT, next_offset + max_batch_size as u64);
+            let stop = utils::encode_byte_prefix(PREFIX_STREAM_EVENT, u64::MAX);
             let mut data = Vec::with_capacity(max_batch_size as usize);
-            let mut last_included_offset = None;
+            let (mut last_included_offset, mut count) = (None, 0);
             for iter_res in tree.range(start..stop) {
                 let (key, val) = iter_res.context(ERR_ITER_FAILURE).map_err(ShutdownError::from)?;
                 let offset = utils::decode_u64(&key[1..]).context("error decoding event offset").map_err(ShutdownError::from)?;
                 let event: Event = utils::decode_model(val.as_ref()).context("error decoding event from storage").map_err(ShutdownError::from)?;
                 data.push(event);
                 last_included_offset = Some(offset);
+                count += 1;
+                if count == max_batch_size {
+                    break;
+                }
             }
             Ok(FetchStreamRecords {
                 group_name,
