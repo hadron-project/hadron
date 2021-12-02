@@ -1,0 +1,356 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Monitoring - Hadron | event streaming, workflow orchestration &amp; messaging</title>
+        
+        
+
+
+        <!-- Custom HTML head -->
+        
+
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="The Hadron user guide">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        
+        <link rel="icon" href="../favicon.svg">
+        
+        
+        <link rel="shortcut icon" href="../favicon.png">
+        
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        
+        <link rel="stylesheet" href="../css/print.css" media="print">
+        
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        
+        <link rel="stylesheet" href="../fonts/fonts.css">
+        
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><li class="part-title">Overview</li><li class="chapter-item expanded "><a href="../index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../overview/quick-start.html"><strong aria-hidden="true">1.1.</strong> Quick Start</a></li></ol></li><li class="chapter-item expanded "><a href="../overview/kubernetes.html"><strong aria-hidden="true">2.</strong> Kubernetes</a></li><li class="chapter-item expanded "><a href="../overview/events.html"><strong aria-hidden="true">3.</strong> Events</a></li><li class="chapter-item expanded "><a href="../overview/streams.html"><strong aria-hidden="true">4.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../overview/pipelines.html"><strong aria-hidden="true">5.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../overview/exchanges.html"><strong aria-hidden="true">6.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../overview/endpoints.html"><strong aria-hidden="true">7.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../overview/producers-consumers.html"><strong aria-hidden="true">8.</strong> Producers &amp; Consumers</a></li><li class="chapter-item expanded "><a href="../overview/monitoring.html" class="active"><strong aria-hidden="true">9.</strong> Monitoring</a></li><li class="chapter-item expanded affix "><li class="part-title">Use Cases</li><li class="chapter-item expanded "><a href="../usecases/local-development.html"><strong aria-hidden="true">10.</strong> Local Development</a></li><li class="chapter-item expanded "><a href="../usecases/service-provisioning.html"><strong aria-hidden="true">11.</strong> Service Provisioning</a></li><li class="chapter-item expanded "><a href="../usecases/transactional-processing.html"><strong aria-hidden="true">12.</strong> Transactional Processing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../usecases/transactional-processing/learn.html"><strong aria-hidden="true">12.1.</strong> What is Transactional Processing</a></li><li class="chapter-item expanded "><a href="../usecases/transactional-processing/implement.html"><strong aria-hidden="true">12.2.</strong> Implement Transactional Processing</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/tokens.html"><strong aria-hidden="true">13.</strong> Tokens</a></li><li class="chapter-item expanded "><a href="../reference/streams.html"><strong aria-hidden="true">14.</strong> Streams</a></li><li class="chapter-item expanded "><a href="../reference/pipelines.html"><strong aria-hidden="true">15.</strong> Pipelines</a></li><li class="chapter-item expanded "><a href="../reference/exchanges.html"><strong aria-hidden="true">16.</strong> Exchanges</a></li><li class="chapter-item expanded "><a href="../reference/endpoints.html"><strong aria-hidden="true">17.</strong> Endpoints</a></li><li class="chapter-item expanded "><a href="../reference/clients.html"><strong aria-hidden="true">18.</strong> Clients</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">19.</strong> CLI</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                        
+                    </div>
+
+                    <h1 class="menu-title">Hadron | event streaming, workflow orchestration &amp; messaging</h1>
+
+                    <div class="right-buttons">
+                        
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        
+                        
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1><a class="header" href="#monitoring" id="monitoring">Monitoring</a></h1>
+<p>All Hadron components, including the Operator and Streams, are instrumented with Prometheus metrics.</p>
+<p>Metrics exposed by Hadron components can be easily collected using <code>ServiceMonitors</code> &amp; <code>PodMonitors</code> which come from the Prometheus Operator project. The Hadron helm chart can optionally generate these monitors for you by setting <code>prometheusOperator.enabled=true</code>. More details are included in the <a href="https://github.com/hadron-project/hadron/tree/main/charts/hadron-operator#prometheus-operator--kube-prometheus-stack-integration">Helm chart's README</a>.</p>
+<p>Hadron components expose their metrics over standard HTTP, and can be easily collected using any other pattern supported by Prometheus, such as direct Prometheus discovery and scraping, the OTEL collector, and the like.</p>
+<h2><a class="header" href="#monitoring-mixin" id="monitoring-mixin">Monitoring Mixin</a></h2>
+<p>Hadron monitoring can also be configured using <a href="https://monitoring.mixins.dev/#how-to-use-mixins">Monitoring Mixins</a>. We are currently in the process of adding the Hadron mixin to the official mixin's site, however the functionality is the same:</p>
+<ul>
+<li>Vendor the Hadron mixin into the repo with your infrastructure config using <a href="https://github.com/jsonnet-bundler/jsonnet-bundler">jsonnet-bundler</a>: <code>jb install https://github.com/hadron-project/hadron/monitoring/hadron-mixin</code>,</li>
+<li>Generate the Hadron mixin config files (dashboards, alerts, rules &amp;c) along with whatever customizations you would like,</li>
+<li>Then apply the generated config files to your monitoring stack.</li>
+</ul>
+<p>Generating the config and making customizations to it is described in the <a href="https://monitoring.mixins.dev/#customising-the-mixin">Monitoring Mixins docs here</a>.</p>
+<p>Out of the box, a reference Hadron dashboard is included which can help with getting started. The following image is based on the <a href="../usecases/transactional-processing.html">Pipeline Transactional Processing demo app</a>:</p>
+<div style="text-align:center;"><img src="../assets/dash.png" style="max-width:600px;"/></div>
+<h2><a class="header" href="#metrics" id="metrics">Metrics</a></h2>
+<p>The following metrics are exposed by the various Hadron components, which are accessible on port <code>7002</code> at the path <code>/metrics</code> on each respective component.</p>
+<h3><a class="header" href="#operator" id="operator">Operator</a></h3>
+<pre><code># HELP hadron_operator_is_leader a gauge indicating if this node is the leader, where 1.0 indicates leadership, any other value does not
+# TYPE hadron_operator_is_leader gauge
+hadron_operator_is_leader
+
+# HELP hadron_operator_num_leadership_changes the number of leadership changes in the operator consensus group
+# TYPE hadron_operator_num_leadership_changes counter
+hadron_operator_num_leadership_changes
+
+# HELP hadron_operator_watcher_errors a counter of errors encountered while watching resources in the K8s API
+# TYPE hadron_operator_watcher_errors counter
+hadron_operator_watcher_errors
+
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds
+
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds
+
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes
+
+# HELP process_threads Number of OS threads in the process.
+# TYPE process_threads gauge
+process_threads
+
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes
+
+# HELP process_virtual_memory_max_bytes Maximum amount of virtual memory available in bytes.
+# TYPE process_virtual_memory_max_bytes gauge
+process_virtual_memory_max_bytes
+</code></pre>
+<h3><a class="header" href="#stream" id="stream">Stream</a></h3>
+<pre><code># HELP hadron_pipeline_active_instances the number of active pipeline instances
+# TYPE hadron_pipeline_active_instances gauge
+hadron_pipeline_active_instances
+
+# HELP hadron_pipeline_last_offset_processed the last offset to be processed by the pipeline
+# TYPE hadron_pipeline_last_offset_processed counter
+hadron_pipeline_last_offset_processed
+
+# HELP hadron_pipeline_stage_subscriptions the number of stage subscribers currently registered
+# TYPE hadron_pipeline_stage_subscriptions gauge
+hadron_pipeline_stage_subscriptions
+
+# HELP hadron_pipelines_watcher_errors k8s watcher errors from the pipelines watcher
+# TYPE hadron_pipelines_watcher_errors counter
+hadron_pipelines_watcher_errors
+
+# HELP hadron_secrets_watcher_errors k8s watcher errors from the secrets watcher
+# TYPE hadron_secrets_watcher_errors counter
+hadron_secrets_watcher_errors
+
+# HELP hadron_stream_current_offset the offset of the last entry written to the stream
+# TYPE hadron_stream_current_offset counter
+hadron_stream_current_offset
+
+# HELP hadron_stream_subscriber_last_offset_processed stream subscriber group last offset processed
+# TYPE hadron_stream_subscriber_last_offset_processed counter
+hadron_stream_subscriber_last_offset_processed
+
+# HELP hadron_stream_subscriber_group_members stream subscriber group members count
+# TYPE hadron_stream_subscriber_group_members gauge
+hadron_stream_subscriber_group_members
+
+# HELP hadron_stream_subscriber_num_groups number of subscribers currently registered on this stream
+# TYPE hadron_stream_subscriber_num_groups gauge
+hadron_stream_subscriber_num_groups
+
+# HELP hadron_streams_watcher_errors k8s watcher errors from the streams watcher
+# TYPE hadron_streams_watcher_errors counter
+hadron_streams_watcher_errors
+
+# HELP hadron_tokens_watcher_errors k8s watcher errors from the tokens watcher
+# TYPE hadron_tokens_watcher_errors counter
+hadron_tokens_watcher_errors
+
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds
+
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds
+
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes
+
+# HELP process_threads Number of OS threads in the process.
+# TYPE process_threads gauge
+process_threads
+
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes
+
+# HELP process_virtual_memory_max_bytes Maximum amount of virtual memory available in bytes.
+# TYPE process_virtual_memory_max_bytes gauge
+process_virtual_memory_max_bytes
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="../overview/producers-consumers.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+                            <a rel="next" href="../usecases/local-development.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a rel="prev" href="../overview/producers-consumers.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a rel="next" href="../usecases/local-development.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+
+        
+
+        
+        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+
+    </body>
+</html>
