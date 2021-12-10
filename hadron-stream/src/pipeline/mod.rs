@@ -7,8 +7,9 @@ use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use prost::Message;
 use rand::seq::IteratorRandom;
+use sled::transaction::{abort, ConflictableTransactionError, TransactionError};
 use sled::Tree;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::{
     wrappers::{BroadcastStream, ReceiverStream, WatchStream},
@@ -19,9 +20,9 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use crate::database::Database;
-use crate::error::{RpcResult, ShutdownError, ShutdownResult, ERR_DB_FLUSH, ERR_ITER_FAILURE};
+use crate::error::{AppError, RpcResult, ShutdownError, ShutdownResult, ERR_DB_FLUSH, ERR_ITER_FAILURE};
 use crate::futures::LivenessStream;
-use crate::grpc::{Event, PipelineSubscribeRequest, PipelineSubscribeRequestAction, PipelineSubscribeResponse};
+use crate::grpc::{Event, EventPartition, PipelineEventLocation, PipelineEventLocationStage, PipelineSubscribeRequest, PipelineSubscribeRequestAction, PipelineSubscribeResponse};
 use crate::stream::PREFIX_STREAM_EVENT;
 use crate::utils;
 use hadron_core::crd::{Pipeline, PipelineStage, PipelineStartPointLocation, RequiredMetadata};
@@ -243,6 +244,7 @@ impl PipelineCtl {
             PipelineCtlMsg::PipelineUpdated(pipeline) => self.handle_pipeline_updated(pipeline),
             PipelineCtlMsg::PipelineDeleted(pipeline) => self.handle_pipeline_deleted(pipeline),
             PipelineCtlMsg::PipelineInstanceComplete(offset) => self.handle_pipeline_instance_complete(offset).await,
+            PipelineCtlMsg::UpdatePipelineEventData { data, location, tx } => self.handle_update_event_data(data, location, tx).await,
         }
     }
 
@@ -389,6 +391,19 @@ impl PipelineCtl {
             tracing::error!(error = ?err, "error deleting finished pipeline data, shutting down");
             let _ = self.shutdown_tx.send(());
         }
+    }
+
+    /// Handle requests to update the data payload of an event of this Pipeline.
+    #[tracing::instrument(level = "trace", skip(self, data, location, tx))]
+    async fn handle_update_event_data(&mut self, data: Vec<u8>, location: PipelineEventLocation, tx: oneshot::Sender<Result<()>>) {
+        let res = update_event_data(data, location, &mut self.active_pipelines, self.tree.clone()).await;
+        if let Err(err) = &res {
+            tracing::error!(error = ?err, "error handling request to update event data");
+            if err.downcast_ref::<ShutdownError>().is_some() {
+                let _ = self.shutdown_tx.send(());
+            }
+        }
+        let _res = tx.send(res);
     }
 
     /// Execute a loop over all active pipeline stage subscription groups, delivering data if possible.
@@ -564,7 +579,7 @@ impl PipelineCtl {
             Some(PipelineSubscribeRequestAction::Nack(err)) => Err(err),
             _ => Err("malformed response returned from pipeline subscriber, unknown result variant".into()),
         };
-        Self::try_record_delivery_response(record_res, offset, group.stage_name.clone(), self.tree.clone())
+        Self::try_record_delivery_response(record_res, offset, self.partition, group.stage_name.clone(), self.tree.clone())
             .await
             .context("error while recording subscriber delivery response")?;
 
@@ -584,15 +599,16 @@ impl PipelineCtl {
     }
 
     /// Record the ack/nack response from a subscriber delivery.
-    #[tracing::instrument(level = "trace", skip(res, offset, stage_name, pipeline_tree))]
-    async fn try_record_delivery_response(res: std::result::Result<Event, String>, offset: u64, stage_name: Arc<String>, pipeline_tree: Tree) -> ShutdownResult<()> {
-        let event = match res {
+    #[tracing::instrument(level = "trace", skip(res, offset, partition, stage_name, pipeline_tree))]
+    async fn try_record_delivery_response(res: std::result::Result<Event, String>, offset: u64, partition: u32, stage_name: Arc<String>, pipeline_tree: Tree) -> ShutdownResult<()> {
+        let mut event = match res {
             Ok(event) => event,
             Err(_err) => {
                 // FUTURE: record this error info for observability system.
                 return Ok(());
             }
         };
+        event.partition = Some(EventPartition { partition, offset });
         let key = utils::ivec_from_iter(
             PREFIX_PIPELINE_STAGE_OUTPUTS
                 .iter()
@@ -690,7 +706,7 @@ impl PipelineCtl {
 /// The pipeline tree records pipeline instances/executions based on the input stream's
 /// offset, which provides easy "exactly once" consumption of the input stream. In the pipeline
 /// tree:
-/// - The key for a pipeline instance will be roughly `a{offset}/`, where `{offset}` is the
+/// - The key for a pipeline instance will be roughly `a{offset}`, where `{offset}` is the
 /// source stream record's offset. The value stored here is a copy of the root event from the stream.
 /// - The output of each stage of a pipeline instance is recorded under `o{instance}{stage}` where
 /// `{instance}` is the source stream record's offset and `{stage}` is the name of the pipeline stage.
@@ -745,16 +761,81 @@ async fn recover_pipeline_state(pipeline_tree: Tree, pipeline: Arc<Pipeline>, st
     Ok(val)
 }
 
+/// Update the data payload of an event of this Pipeline, both in memory and on disk.
+#[tracing::instrument(level = "trace", skip(data, location, active_pipelines, db))]
+async fn update_event_data(data: Vec<u8>, location: PipelineEventLocation, active_pipelines: &mut BTreeMap<u64, ActivePipelineInstance>, db: Tree) -> Result<()> {
+    // Check for the active pipeline instance first. If we don't have it in memory, then
+    // we do not proceed to attempt to update the event on disk.
+    let pipeline = active_pipelines.get_mut(&location.offset).ok_or(AppError::ResourceNotFound)?;
+    match &location.stage {
+        Some(PipelineEventLocationStage::RootEvent(_)) => {
+            // Update the root event on disk.
+            let key = utils::encode_byte_prefix(PREFIX_ACTIVE_INSTANCES, location.offset);
+            db.transaction(|tx| {
+                let val = tx.get(&key)?.ok_or_else(|| ConflictableTransactionError::Abort(AppError::ResourceNotFound.into()))?;
+                let mut event: Event = utils::decode_model(&val).or_else(abort)?;
+                event.data = data.clone();
+                let event_bytes = utils::encode_model(&event).or_else(abort)?;
+                tx.insert(&key, event_bytes.as_slice())?;
+                Ok(())
+            })
+            .map_err(|err| match err {
+                TransactionError::Abort(err) => err,
+                TransactionError::Storage(err) => ShutdownError(err.into()).into(),
+            })?;
+            db.flush_async().await.map_err(|err| ShutdownError(err.into()))?;
+
+            // Update the root event held in the active pipeline struct.
+            pipeline.root_event.data = data;
+            Ok(())
+        }
+        Some(PipelineEventLocationStage::StageName(name)) => {
+            // Ensure the target stage actually exists on the active instance, else error.
+            let stage_event = pipeline.outputs.get_mut(name).ok_or(AppError::ResourceNotFound)?;
+
+            // Update the stage event on disk.
+            let key = utils::ivec_from_iter(
+                PREFIX_PIPELINE_STAGE_OUTPUTS
+                    .iter()
+                    .copied()
+                    .chain(utils::encode_u64(location.offset))
+                    .chain(name.as_bytes().iter().copied()),
+            );
+            db.transaction(|tx| {
+                let val = tx.get(&key)?.ok_or_else(|| ConflictableTransactionError::Abort(AppError::ResourceNotFound.into()))?;
+                let mut event: Event = utils::decode_model(&val).or_else(abort)?;
+                event.data = data.clone();
+                let event_bytes = utils::encode_model(&event).or_else(abort)?;
+                tx.insert(&key, event_bytes.as_slice())?;
+                Ok(())
+            })
+            .map_err(|err| match err {
+                TransactionError::Abort(err) => err,
+                TransactionError::Storage(err) => ShutdownError(err.into()).into(),
+            })?;
+            db.flush_async().await.map_err(|err| ShutdownError(err.into()))?;
+
+            // Update the stage event held in the active pipeline struct.
+            stage_event.data = data;
+            Ok(())
+        }
+        None => Err(AppError::ResourceNotFound.into()),
+    }
+}
+
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 
 /// A message bound for a pipeline controller.
 #[allow(clippy::large_enum_variant)]
 pub enum PipelineCtlMsg {
-    /// A client request being routed to the controller.
+    /// A client request to subscribe to a stage of this Pipeline.
     Request {
+        /// The channel used to send response payloads to the client.
         tx: mpsc::Sender<RpcResult<PipelineSubscribeResponse>>,
+        /// The channel used to received data from the client.
         rx: Streaming<PipelineSubscribeRequest>,
+        /// The name of the Pipeline stage to process.
         stage_name: String,
     },
     /// A response from a subscriber following a delivery of data for processing.
@@ -767,6 +848,15 @@ pub enum PipelineCtlMsg {
     PipelineDeleted(Arc<Pipeline>),
     /// The pipeline instance at the given offset is complete and can be deleted.
     PipelineInstanceComplete(u64),
+    /// A request to update the data payload of an event of this Pipeline.
+    UpdatePipelineEventData {
+        /// The data to overwrite the target payload with.
+        data: Vec<u8>,
+        /// Details on the event identity.
+        location: PipelineEventLocation,
+        /// Response channel.
+        tx: oneshot::Sender<Result<()>>,
+    },
 }
 
 /// A result from fetching stream records for pipeline creation.

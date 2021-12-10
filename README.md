@@ -11,6 +11,8 @@ Hadron is the Kubernetes native and CloudEvents native distributed event streami
 
 Hadron is designed to ingest data in the form of events, and to facilitate working with that data in the form of multi-stage structured workflows.
 
+**💪 Powerful Event Pipelines** - Hadron Pipelines provide structured workflow orchestration featuring parallel task execution, transactional inputs and outputs, cross-service coordination, and many other features.
+
 **⎈ Built for Kubernetes** - Hadron was born into the world of Kubernetes and is designed to leverage the Kubernetes platform to the max.
 
 **📬 CloudEvents** - Hadron uses the CloudEvents model for everything going in and coming out.
@@ -18,6 +20,8 @@ Hadron is designed to ingest data in the form of events, and to facilitate worki
 **⚙️ Operational Simplicity** - Hadron leverages the Kubernetes platform for horizontal scaling, high availability, and ease of application integration.
 
 **📦 Easy Installation** - Deploy Hadron into your cluster with Helm, the Kubernetes package manager.
+
+**📡 Monitoring Ready** - Hadron ships with Prometheus metrics instrumentation and easy integration points for CloudNative monitoring.
 
 ## Getting Started
 Head over to the [Hadron Guide](https://hadron-project.github.io/hadron/) to learn more. A few quick links:

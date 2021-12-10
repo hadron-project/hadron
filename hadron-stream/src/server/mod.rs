@@ -2,7 +2,7 @@ mod prom;
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use futures::prelude::*;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -221,4 +221,55 @@ impl grpc::StreamController for AppServer {
 
         Ok(Response::new(ReceiverStream::new(res_rx)))
     }
+
+    /// Update the event data of the target event which can be a Stream or Pipeline event.
+    async fn update_event_data(&self, request: Request<grpc::UpdateEventDataRequest>) -> RpcResult<Response<grpc::UpdateEventDataResponse>> {
+        let creds = self.must_get_token(&request).map_err(AppError::grpc)?;
+        let (claims, _creds) = self.must_get_token_claims(creds).map_err(AppError::grpc)?;
+        claims.check_stream_pub_auth(&self.config.stream).map_err(AppError::grpc)?;
+
+        // Route the request to the target controller.
+        let req = request.into_inner();
+        match req.target {
+            Some(grpc::UpdateEventDataRequestTarget::StreamEvent(location)) => {
+                let _res = update_stream_event_data(req.data, location, self.stream_tx.clone()).await.map_err(AppError::grpc)?;
+            }
+            Some(grpc::UpdateEventDataRequestTarget::PipelineEvent(location)) => {
+                let _res = update_pipeline_event_data(req.data, location, self.pipelines.clone()).await.map_err(AppError::grpc)?;
+            }
+            _ => return Err(Status::invalid_argument("invalid event target in request")),
+        };
+
+        todo!()
+    }
+}
+
+/// Update the data of the target event on its corresponding Stream controller.
+async fn update_stream_event_data(data: Vec<u8>, location: grpc::StreamEventLocation, stream_tx: mpsc::Sender<StreamCtlMsg>) -> Result<()> {
+    // Forward the request.
+    let (tx, rx) = oneshot::channel();
+    stream_tx
+        .send(StreamCtlMsg::UpdateEventData { data, location, tx })
+        .await
+        .map_err(|_err| AppError::grpc(anyhow!("error communicating with stream controller")))?;
+    let res = rx.await.context("error awaiting response from stream controller for event update")?;
+    res
+}
+
+/// Update the data of the target event on its corresponding Pipeline controller.
+async fn update_pipeline_event_data(data: Vec<u8>, location: grpc::PipelineEventLocation, pipelines: PipelinesMap) -> Result<()> {
+    // Find the target controller & forward the request.
+    let pipeline_handle = pipelines
+        .load()
+        .get(&location.pipeline)
+        .cloned()
+        .ok_or_else(|| Status::not_found("the target pipeline controller was not found"))?;
+    let (tx, rx) = oneshot::channel();
+    pipeline_handle
+        .tx
+        .send(PipelineCtlMsg::UpdatePipelineEventData { data, location, tx })
+        .await
+        .map_err(|_err| AppError::grpc(anyhow!("error communicating with pipeline controller")))?;
+    let res = rx.await.context("error awaiting response from pipeline controller for event update")?;
+    res
 }

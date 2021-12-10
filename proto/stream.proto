@@ -14,6 +14,9 @@ service StreamController {
 
     // Open a pipeline subscriber channel.
     rpc PipelineSubscribe(stream PipelineSubscribeRequest) returns (stream PipelineSubscribeResponse);
+
+    // Update the event data of the target event which can be a Stream or Pipeline event.
+    rpc UpdateEventData(UpdateEventDataRequest) returns (UpdateEventDataResponse);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -40,13 +43,25 @@ message Event {
     //
     // See [`type`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type).
     string type = 4;
+    // The Hadron partition info where this event is recorded.
+    //
+    // This value is only populated after the event has been recorded to a Stream.
+    EventPartition partition = 5;
     // Any additional optional attributes or extension attributes of this event.
     //
     // See [`optional attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes)
     // and [`extension context attributes`](https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes).
-    map<string, string> optattrs = 5;
+    map<string, string> optattrs = 6;
     // The data payload of this event.
-    bytes data = 6;
+    bytes data = 7;
+}
+
+// Partition info of the Stream partition where an event resides.
+message EventPartition {
+    // The Stream partition where this event resides, which always starts at 0.
+    uint32 partition = 1;
+    // The offset of this event on the partition.
+    uint64 offset = 2;
 }
 
 // The replication acknowledgement mode to use for a write batch.
@@ -189,3 +204,58 @@ message StreamPartition {
     // The Kubernetes external address of this partition, or empty string if not externally accessible.
     string external = 3;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// KV API /////////////////////////////////////////////////////////////////////
+
+// A request to update the data payload of an event.
+message UpdateEventDataRequest {
+    // The new data payload to overwrite the target event with.
+    bytes data = 1;
+
+    reserved 2 to 9;
+
+    oneof target {
+        // The target event to update is a Stream event.
+        //
+        // NOTE WELL that for Pipeline events, the root event is copied over to the running
+        // Pipeline, so updating the root event on the Stream will not update Pipelines.
+        StreamEventLocation stream_event = 10;
+        // The target event to update is a Pipeline event and its corresponding
+        // stage is specified by this string value.
+        //
+        // NOTE WELL that for Pipeline events, the root event is copied over to the running
+        // Pipeline, so updating the root event on the Stream will not update Pipelines.
+        PipelineEventLocation pipeline_event = 11;
+    }
+
+    message StreamEventLocation {
+        // The Stream partition where this event resides, which always starts at 0.
+        uint32 partition = 1;
+        // The offset of this event on the partition.
+        uint64 offset = 2;
+    }
+
+    message PipelineEventLocation {
+        // The Stream partition where this event resides, which always starts at 0.
+        uint32 partition = 1;
+        // The offset of this event on the partition.
+        uint64 offset = 2;
+        // The name of the Pipeline which the event is a part of.
+        string pipeline = 3;
+
+        reserved 4 to 9;
+
+        // The stage of the Pipeline event to update.
+        oneof stage {
+            // The event to update is the root event.
+            Empty root_event = 10;
+            // The event to update the is event which was produced as
+            // the output of the given stage name.
+            string stage_name = 11;
+        }
+    }
+}
+
+// A response from updating the data payload of an event.
+message UpdateEventDataResponse {}

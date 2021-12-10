@@ -5,7 +5,7 @@ use tokio::sync::watch;
 use crate::config::Config;
 use crate::database::Database;
 use crate::error::AppError;
-use crate::grpc::{Event, StreamPublishRequest};
+use crate::grpc::{Event, EventPartition, StreamPublishRequest};
 use crate::stream::{KEY_STREAM_LAST_WRITTEN_OFFSET, PREFIX_STREAM_EVENT};
 use crate::utils;
 
@@ -20,7 +20,7 @@ async fn publish_data_frame_err_with_empty_batch() -> Result<()> {
     let (tx, rx) = watch::channel(current_offset);
     let req = StreamPublishRequest { batch: vec![], fsync: true, ack: 0 };
 
-    let res = super::StreamCtl::publish_data_frame(&stream_tree, &mut current_offset, &mut earliest_timestamp, &tx, req).await;
+    let res = super::StreamCtl::publish_data_frame(&stream_tree, &mut current_offset, 0, &mut earliest_timestamp, &tx, req).await;
 
     let last_watcher_offset = *rx.borrow();
     assert_eq!(last_watcher_offset, current_offset, "expected watcher offset to be {} got {}", current_offset, last_watcher_offset);
@@ -38,20 +38,20 @@ async fn publish_data_frame() -> Result<()> {
     let (config, _tmpdir) = Config::new_test()?;
     let db = Database::new(config.clone()).await?;
     let stream_tree = db.get_stream_tree().await?;
-    let (mut current_offset, mut earliest_timestamp) = (0u64, None);
+    let (mut current_offset, mut earliest_timestamp, partition) = (0u64, None, 7);
     let (tx, rx) = watch::channel(current_offset);
     let expected_ts_min = time::OffsetDateTime::now_utc().unix_timestamp() - 5;
 
     let mut req = StreamPublishRequest { batch: vec![], fsync: true, ack: 0 };
     let (mut expected_events, expected_offset) = (1u64..rand::thread_rng().gen_range(50u64..100u64)).fold((vec![], 0u64), |(mut events, _), offset| {
-        let event = Event::new_test(offset, "test", "empty");
+        let event = Event::new_test(offset, "test", "empty", Some(EventPartition { partition, offset }));
         req.batch.push(event.clone());
         events.push(event);
         (events, offset)
     });
     expected_events.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let last_offset = super::StreamCtl::publish_data_frame(&stream_tree, &mut current_offset, &mut earliest_timestamp, &tx, req).await?;
+    let last_offset = super::StreamCtl::publish_data_frame(&stream_tree, &mut current_offset, partition, &mut earliest_timestamp, &tx, req).await?;
 
     // Check emitted info on last offset.
     let last_watcher_offset = *rx.borrow();
@@ -61,8 +61,24 @@ async fn publish_data_frame() -> Result<()> {
     // Check all written events.
     let mut events = vec![];
     for kv_res in stream_tree.scan_prefix(PREFIX_STREAM_EVENT) {
-        let (_, val) = kv_res.context("error reading data from stream in test")?;
+        let (offset, val) = kv_res.context("error reading data from stream in test")?;
+        let offset = utils::decode_u64(&offset[1..])?;
         let val: Event = utils::decode_model(&val)?;
+        // Ensure partition/offset info has been updated as part of the write.
+        assert_eq!(
+            Some(partition),
+            val.partition.as_ref().map(|prtn| prtn.partition),
+            "expected event partition to be {}, got {:?}",
+            partition,
+            val.partition,
+        );
+        assert_eq!(
+            Some(offset),
+            val.partition.as_ref().map(|prtn| prtn.offset),
+            "expected event offset to be {}, got {:?}",
+            offset,
+            val.partition,
+        );
         events.push(val);
     }
     events.sort_by(|a, b| a.id.cmp(&b.id));

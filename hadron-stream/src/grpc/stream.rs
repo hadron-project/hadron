@@ -27,15 +27,30 @@ pub struct Event {
     /// See \[`type`\](<https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#type>).
     #[prost(string, tag = "4")]
     pub r#type: ::prost::alloc::string::String,
+    /// The Hadron partition info where this event is recorded.
+    ///
+    /// This value is only populated after the event has been recorded to a Stream.
+    #[prost(message, optional, tag = "5")]
+    pub partition: ::core::option::Option<EventPartition>,
     /// Any additional optional attributes or extension attributes of this event.
     ///
     /// See [`optional attributes`](<https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#optional-attributes>)
     /// and [`extension context attributes`](<https://github.com/cloudevents/spec/blob/v1.0.1/spec.md#extension-context-attributes>).
-    #[prost(map = "string, string", tag = "5")]
+    #[prost(map = "string, string", tag = "6")]
     pub optattrs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     /// The data payload of this event.
-    #[prost(bytes = "vec", tag = "6")]
+    #[prost(bytes = "vec", tag = "7")]
     pub data: ::prost::alloc::vec::Vec<u8>,
+}
+/// Partition info of the Stream partition where an event resides.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EventPartition {
+    /// The Stream partition where this event resides, which always starts at 0.
+    #[prost(uint32, tag = "1")]
+    pub partition: u32,
+    /// The offset of this event on the partition.
+    #[prost(uint64, tag = "2")]
+    pub offset: u64,
 }
 //////////////////////////////////////////////////////////////////////////////
 // Stream Publish ////////////////////////////////////////////////////////////
@@ -209,6 +224,78 @@ pub struct StreamPartition {
     #[prost(string, tag = "3")]
     pub external: ::prost::alloc::string::String,
 }
+///////////////////////////////////////////////////////////////////////////////
+// KV API /////////////////////////////////////////////////////////////////////
+
+/// A request to update the data payload of an event.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateEventDataRequest {
+    /// The new data payload to overwrite the target event with.
+    #[prost(bytes = "vec", tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
+    #[prost(oneof = "update_event_data_request::Target", tags = "10, 11")]
+    pub target: ::core::option::Option<update_event_data_request::Target>,
+}
+/// Nested message and enum types in `UpdateEventDataRequest`.
+pub mod update_event_data_request {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct StreamEventLocation {
+        /// The Stream partition where this event resides, which always starts at 0.
+        #[prost(uint32, tag = "1")]
+        pub partition: u32,
+        /// The offset of this event on the partition.
+        #[prost(uint64, tag = "2")]
+        pub offset: u64,
+    }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct PipelineEventLocation {
+        /// The Stream partition where this event resides, which always starts at 0.
+        #[prost(uint32, tag = "1")]
+        pub partition: u32,
+        /// The offset of this event on the partition.
+        #[prost(uint64, tag = "2")]
+        pub offset: u64,
+        /// The name of the Pipeline which the event is a part of.
+        #[prost(string, tag = "3")]
+        pub pipeline: ::prost::alloc::string::String,
+        /// The stage of the Pipeline event to update.
+        #[prost(oneof = "pipeline_event_location::Stage", tags = "10, 11")]
+        pub stage: ::core::option::Option<pipeline_event_location::Stage>,
+    }
+    /// Nested message and enum types in `PipelineEventLocation`.
+    pub mod pipeline_event_location {
+        /// The stage of the Pipeline event to update.
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Stage {
+            /// The event to update is the root event.
+            #[prost(message, tag = "10")]
+            RootEvent(super::super::Empty),
+            /// The event to update the is event which was produced as
+            /// the output of the given stage name.
+            #[prost(string, tag = "11")]
+            StageName(::prost::alloc::string::String),
+        }
+    }
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Target {
+        /// The target event to update is a Stream event.
+        ///
+        /// NOTE WELL that for Pipeline events, the root event is copied over to the running
+        /// Pipeline, so updating the root event on the Stream will not update Pipelines.
+        #[prost(message, tag = "10")]
+        StreamEvent(StreamEventLocation),
+        /// The target event to update is a Pipeline event and its corresponding
+        /// stage is specified by this string value.
+        ///
+        /// NOTE WELL that for Pipeline events, the root event is copied over to the running
+        /// Pipeline, so updating the root event on the Stream will not update Pipelines.
+        #[prost(message, tag = "11")]
+        PipelineEvent(PipelineEventLocation),
+    }
+}
+/// A response from updating the data payload of an event.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateEventDataResponse {}
 /// The replication acknowledgement mode to use for a write batch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -241,6 +328,8 @@ pub mod stream_controller_server {
         type PipelineSubscribeStream: futures_core::Stream<Item = Result<super::PipelineSubscribeResponse, tonic::Status>> + Send + 'static;
         #[doc = " Open a pipeline subscriber channel."]
         async fn pipeline_subscribe(&self, request: tonic::Request<tonic::Streaming<super::PipelineSubscribeRequest>>) -> Result<tonic::Response<Self::PipelineSubscribeStream>, tonic::Status>;
+        #[doc = " Update the event data of the target event which can be a Stream or Pipeline event."]
+        async fn update_event_data(&self, request: tonic::Request<super::UpdateEventDataRequest>) -> Result<tonic::Response<super::UpdateEventDataResponse>, tonic::Status>;
     }
     #[doc = " The Hadron stream controller interface."]
     #[derive(Debug)]
@@ -381,6 +470,31 @@ pub mod stream_controller_server {
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
                         let res = grpc.streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/stream.StreamController/UpdateEventData" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateEventDataSvc<T: StreamController>(pub Arc<T>);
+                    impl<T: StreamController> tonic::server::UnaryService<super::UpdateEventDataRequest> for UpdateEventDataSvc<T> {
+                        type Response = super::UpdateEventDataResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::UpdateEventDataRequest>) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).update_event_data(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateEventDataSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(accept_compression_encodings, send_compression_encodings);
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

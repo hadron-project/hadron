@@ -45,8 +45,8 @@ use tonic::Streaming;
 
 use crate::config::Config;
 use crate::database::Database;
-use crate::error::{RpcResult, ERR_DB_FLUSH, ERR_ITER_FAILURE};
-use crate::grpc::{StreamPublishRequest, StreamPublishResponse, StreamSubscribeRequest, StreamSubscribeResponse, StreamSubscribeSetup};
+use crate::error::{RpcResult, ShutdownError, ERR_DB_FLUSH, ERR_ITER_FAILURE};
+use crate::grpc::{StreamEventLocation, StreamPublishRequest, StreamPublishResponse, StreamSubscribeRequest, StreamSubscribeResponse, StreamSubscribeSetup};
 use crate::models::stream::Subscription;
 use crate::stream::subscriber::StreamSubCtlMsg;
 use crate::utils;
@@ -224,12 +224,26 @@ impl StreamCtl {
             StreamCtlMsg::RequestPublish { tx, request } => self.handle_publisher_request(tx, request).await,
             StreamCtlMsg::RequestSubscribe { tx, rx, setup } => self.handle_request_subscribe(tx, rx, setup).await,
             StreamCtlMsg::CompactionFinished { earliest_timestamp } => self.handle_compaction_finished(earliest_timestamp).await,
+            StreamCtlMsg::UpdateEventData { data, location, tx } => self.handle_update_event_data(data, location, tx).await,
         }
     }
 
     /// Handle a request to setup a subscriber channel.
     async fn handle_request_subscribe(&mut self, tx: mpsc::Sender<RpcResult<StreamSubscribeResponse>>, rx: Streaming<StreamSubscribeRequest>, setup: StreamSubscribeSetup) {
         let _ = self.subs_tx.send(StreamSubCtlMsg::Request { tx, rx, setup }).await;
+    }
+
+    /// Handle a request to update the data of the target event.
+    #[tracing::instrument(level = "trace", skip(self, data, location, tx))]
+    async fn handle_update_event_data(&mut self, data: Vec<u8>, location: StreamEventLocation, tx: oneshot::Sender<Result<()>>) {
+        let res = update_event_data(data, location, self.tree.clone()).await;
+        if let Err(err) = &res {
+            tracing::error!(error = ?err, "error handling request to update event data");
+            if err.downcast_ref::<ShutdownError>().is_some() {
+                let _ = self.shutdown_tx.send(());
+            }
+        }
+        let _res = tx.send(res);
     }
 
     /// Begin a compaction routine, if possible.
@@ -260,6 +274,19 @@ impl StreamCtl {
         self.is_compacting = false;
         self.earliest_timestamp = earliest_timestamp;
     }
+}
+
+/// Update the data payload of an event of this Stream, both in memory and on disk.
+#[tracing::instrument(level = "trace", skip(data, location, db))]
+async fn update_event_data(data: Vec<u8>, location: StreamEventLocation, db: Tree) -> Result<()> {
+    /* TODO:
+    - either move this to the subscriber child controller, or combine all of these components
+      under the same controller.
+    - update data on disk.
+    - update / purge the subscription payloads for all subscriber groups which have an event
+      payload which includes a copy of the updated event.
+    */
+    todo!()
 }
 
 /// Calculate the initial compaction delay based on the given last compaction timestamp.
@@ -471,5 +498,14 @@ pub enum StreamCtlMsg {
     CompactionFinished {
         /// The new earliest timestamp of data on disk.
         earliest_timestamp: Option<(i64, u64)>,
+    },
+    /// A client request to update the data of a target event record.
+    UpdateEventData {
+        /// The replacement data.
+        data: Vec<u8>,
+        /// The location of the event to be updated.
+        location: StreamEventLocation,
+        /// The response channel.
+        tx: oneshot::Sender<Result<()>>,
     },
 }

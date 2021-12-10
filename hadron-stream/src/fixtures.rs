@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rand::prelude::*;
 
-use crate::grpc::Event;
+use crate::grpc::{Event, EventPartition};
 use crate::models::stream::Subscription;
 use crate::stream::{KEY_STREAM_LAST_WRITTEN_OFFSET, PREFIX_STREAM_EVENT, PREFIX_STREAM_SUBS, PREFIX_STREAM_SUB_OFFSETS, PREFIX_STREAM_TS};
 use crate::utils;
@@ -12,7 +12,7 @@ pub async fn setup_stream_data(db: &sled::Tree) -> Result<(i64, u64)> {
     let mut last_offset = 0;
     let ts = time::OffsetDateTime::now_utc().unix_timestamp();
     for offset in 0..rand::thread_rng().gen_range(50..100) {
-        let event = Event::new_test(offset, "test", "empty");
+        let event = Event::new_test(offset, "test", "empty", Some(EventPartition { partition: 0, offset }));
         let event_bytes = utils::encode_model(&event)?;
         batch.insert(&utils::encode_byte_prefix(PREFIX_STREAM_EVENT, offset), event_bytes.as_slice());
         last_offset = offset;

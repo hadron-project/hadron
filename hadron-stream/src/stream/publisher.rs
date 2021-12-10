@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use tokio::sync::{oneshot, watch};
 
 use crate::error::{AppError, AppErrorExt, RpcResult, ShutdownError, ERR_DB_FLUSH};
-use crate::grpc::{StreamPublishRequest, StreamPublishResponse};
+use crate::grpc::{EventPartition, StreamPublishRequest, StreamPublishResponse};
 use crate::stream::{StreamCtl, KEY_STREAM_LAST_WRITTEN_OFFSET, PREFIX_STREAM_EVENT, PREFIX_STREAM_TS};
 use crate::utils;
 
@@ -11,7 +11,7 @@ impl StreamCtl {
     pub(super) async fn handle_publisher_request(&mut self, tx: oneshot::Sender<RpcResult<StreamPublishResponse>>, data: StreamPublishRequest) {
         // Publish the new data frame.
         let _write_ack = data.ack;
-        let publish_res = Self::publish_data_frame(&self.tree, &mut self.current_offset, &mut self.earliest_timestamp, &self.offset_signal, data).await;
+        let publish_res = Self::publish_data_frame(&self.tree, &mut self.current_offset, self.config.partition, &mut self.earliest_timestamp, &self.offset_signal, data).await;
         let offset = match publish_res {
             Ok(offset) => offset,
             Err(err) => {
@@ -36,7 +36,7 @@ impl StreamCtl {
     /// Publish a frame of data to the target stream, returning the offset of the last entry written.
     #[tracing::instrument(level = "trace", skip(tree, current_offset, offset_signal, req))]
     pub(super) async fn publish_data_frame(
-        tree: &sled::Tree, current_offset: &mut u64, earliest_timestamp: &mut Option<(i64, u64)>, offset_signal: &watch::Sender<u64>, req: StreamPublishRequest,
+        tree: &sled::Tree, current_offset: &mut u64, partition: u32, earliest_timestamp: &mut Option<(i64, u64)>, offset_signal: &watch::Sender<u64>, req: StreamPublishRequest,
     ) -> Result<u64> {
         tracing::debug!("writing data to stream");
         if req.batch.is_empty() {
@@ -48,8 +48,9 @@ impl StreamCtl {
         let ts = time::OffsetDateTime::now_utc().unix_timestamp();
         let mut batch = sled::Batch::default();
         let batch_len = req.batch.len();
-        for new_event in req.batch {
+        for mut new_event in req.batch {
             *current_offset += 1;
+            new_event.partition = Some(EventPartition { partition, offset: *current_offset });
             let entry = utils::encode_model(&new_event).context("error encoding stream event record for storage")?;
             batch.insert(&utils::encode_byte_prefix(PREFIX_STREAM_EVENT, *current_offset), entry.as_slice());
         }
