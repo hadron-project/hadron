@@ -4,7 +4,7 @@ language = "en"
 multilingual = false
 src = "src"
 title = "Hadron | event streaming, workflow orchestration & messaging"
-description = "The Hadron user guide"
+description = "The Hadron user guide."
 
 [build]
 build-dir = "book"
