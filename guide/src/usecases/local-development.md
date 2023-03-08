@@ -29,7 +29,7 @@ Now we are ready to install the Hadron Operator:
 
 ```
 # Helm >= v3.7.0 is required for OCI usage.
-helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.0
+helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.3
 ```
 
 ### Install Example Resources

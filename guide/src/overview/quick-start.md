@@ -23,7 +23,7 @@ Now we are ready to install the Hadron Operator:
 
 ```
 # Helm >= v3.7.0 is required for OCI usage.
-helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.0
+helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.3
 ```
 
 This will install the Hadron Operator along with roles, service accounts, validating webhooks, and other Kubernetes resources which the Operator requires.
@@ -38,7 +38,6 @@ metadata:
   name: events
 spec:
   partitions: 3
-  ttl: 0
   image: ghcr.io/hadron-project/hadron/hadron-stream:latest
   pvcVolumeSize: "5Gi"
 ```
@@ -96,7 +95,7 @@ Here we are running a temporary pod which will be removed from the Kubernetes cl
 From here, we can execute CLI commands to interact with our new Stream. Let's publish a simple event:
 
 ```sh
-hadron stream pub --subject demo --type example.event '{"demo": "live"}'
+hadron stream pub --type example.event '{"demo": "live"}'
 ```
 
 This will publish a simple event as a JSON blob. Publishing of binary events, such as protobuf, is also fully supported. Let's create a consumer to read this event.
@@ -108,7 +107,7 @@ hadron stream sub --group demo --start-beginning
 You should see some output which looks like:
 
 ```sh
-INFO hadron_cli::cmd::stream::sub: handling subscription delivery id=1 source=/example.hadron.rs/events/2 specversion=1.0 type=example.event subject=demo optattrs={} data='{"demo": "live"}'
+handling subscription delivery id=<generated> source=hadron-cli specversion=1.0 type=example.event optattrs={} data='{"demo": "live"}'
 ```
 
 ### Wrapping Up
