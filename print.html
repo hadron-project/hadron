@@ -197,7 +197,7 @@ helm upgrade cert-manager jetstack/cert-manager --install --set installCRDs=true
 </code></pre>
 <p>Now we are ready to install the Hadron Operator:</p>
 <pre><code># Helm &gt;= v3.7.0 is required for OCI usage.
-helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.0
+helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.3
 </code></pre>
 <p>This will install the Hadron Operator along with roles, service accounts, validating webhooks, and other Kubernetes resources which the Operator requires.</p>
 <h3><a class="header" href="#create-a-stream" id="create-a-stream">Create a Stream</a></h3>
@@ -517,7 +517,7 @@ helm upgrade cert-manager jetstack/cert-manager --install --set installCRDs=true
 </code></pre>
 <p>Now we are ready to install the Hadron Operator:</p>
 <pre><code># Helm &gt;= v3.7.0 is required for OCI usage.
-helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.0
+helm install hadron-operator oci://ghcr.io/hadron-project/charts/hadron-operator --version 0.1.3
 </code></pre>
 <h3><a class="header" href="#install-example-resources" id="install-example-resources">Install Example Resources</a></h3>
 <p>For this use case, let's use the example resources found in the Hadron repo. <a href="https://raw.githubusercontent.com/hadron-project/hadron/tree/main/charts/hadron-operator/examples/full.yaml">Here is the code</a>.</p>
