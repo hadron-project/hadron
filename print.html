@@ -242,13 +242,13 @@ spec:
 </code></pre>
 <p>Here we are running a temporary pod which will be removed from the Kubernetes cluster when disconnected. Once the pod session is started, you should see the help text of the CLI displayed, and then you should have access to the shell prompt.</p>
 <p>From here, we can execute CLI commands to interact with our new Stream. Let's publish a simple event:</p>
-<pre><code class="language-sh">hadron stream pub --subject demo --type example.event '{&quot;demo&quot;: &quot;live&quot;}'
+<pre><code class="language-sh">hadron stream pub --type example.event '{&quot;demo&quot;: &quot;live&quot;}'
 </code></pre>
 <p>This will publish a simple event as a JSON blob. Publishing of binary events, such as protobuf, is also fully supported. Let's create a consumer to read this event.</p>
 <pre><code class="language-sh">hadron stream sub --group demo --start-beginning
 </code></pre>
 <p>You should see some output which looks like:</p>
-<pre><code class="language-sh">INFO hadron_cli::cmd::stream::sub: handling subscription delivery id=1 source=/example.hadron.rs/events/2 specversion=1.0 type=example.event subject=demo optattrs={} data='{&quot;demo&quot;: &quot;live&quot;}'
+<pre><code class="language-sh">handling subscription delivery id=&lt;generated&gt; source=hadron-cli specversion=1.0 type=example.event optattrs={} data='{&quot;demo&quot;: &quot;live&quot;}'
 </code></pre>
 <h3><a class="header" href="#wrapping-up" id="wrapping-up">Wrapping Up</a></h3>
 <p>This example shows the most basic usage of Hadron. From here, the next logical steps might be:</p>
